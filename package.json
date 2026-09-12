@@ -1,0 +1,13 @@
+{
+  "name": "yolotask",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "check": "node --check api/admin.js && node --check api/auth.js && node --check api/campaigns.js && node --check api/community.js && node --check api/payments.js && node --check api/tasks.js && node --check api/wallet.js && node --check src/server/http.js && node --check src/server/rate-limit.js && node --check src/server/supabase.js && node --check src/server/validation.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0"
+  }
+}
