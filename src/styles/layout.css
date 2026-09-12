@@ -1,0 +1,104 @@
+/* Auth pages: split shell — a branded "ledger" moment on the left, the
+   actual form on the right. Stacks on mobile. */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 900px) {
+  .auth-shell { grid-template-columns: 5fr 6fr; }
+}
+
+.auth-hero {
+  background: var(--ink);
+  color: #EAF2EC;
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+}
+.auth-hero .brand { color: #fff; }
+.auth-hero .brand-mark { background: var(--gold); color: var(--ink); }
+
+.ledger-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--radius);
+  padding: 22px;
+  max-width: 360px;
+}
+.ledger-card .ledger-title {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #9FCBB7;
+  margin-bottom: 14px;
+}
+.ledger-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px dashed rgba(255,255,255,.16);
+  font-size: .88rem;
+}
+.ledger-line:last-of-type { border-bottom: none; }
+.ledger-line .amount { font-family: var(--font-display); }
+.ledger-line.credit .amount { color: var(--gold); font-weight: 600; }
+.ledger-total {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.2);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+}
+.ledger-total .amount { color: var(--gold); }
+
+.auth-hero-copy h1 { color: #fff; font-size: 2rem; }
+.auth-hero-copy p { color: #B9CBC1; max-width: 380px; }
+
+.auth-form-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background: var(--paper);
+}
+.auth-form-card { width: 100%; max-width: 400px; }
+.auth-form-card .brand { margin-bottom: 28px; }
+.auth-switch { text-align: center; margin-top: 20px; font-size: .88rem; color: var(--muted); }
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.15rem;
+}
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--green);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+}
+
+.role-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+.role-toggle button {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-weight: 600;
+  font-size: .85rem;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.role-toggle button.active { border-color: var(--green); background: var(--green-tint); color: var(--green-dark); }

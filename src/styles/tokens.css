@@ -1,0 +1,42 @@
+/* Design tokens for YOLOTASK — a ledger, not a generic SaaS dashboard.
+   Color grounds in Naira green + reward gold on a sage-tinted paper, not
+   the common indigo/teal or cream/terracotta defaults. */
+:root {
+  /* Color */
+  --ink: #10251F;
+  --ink-soft: #3B5049;
+  --paper: #F3F6F1;
+  --surface: #FFFFFF;
+  --line: #DCE5DD;
+  --muted: #5F7268;
+  --green: #0E6E4F;
+  --green-dark: #0A5A40;
+  --green-tint: #E4F3EB;
+  --gold: #D9A441;
+  --gold-tint: #FBF1DD;
+  --danger: #B3423A;
+  --danger-tint: #FBEAE8;
+
+  /* Type */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+
+  /* Structure */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 20px 50px rgba(16, 37, 31, 0.10);
+  --shadow-sm: 0 6px 18px rgba(16, 37, 31, 0.08);
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+body.dark-mode {
+  --ink: #EAF2EC;
+  --ink-soft: #B9CBC1;
+  --paper: #0C1713;
+  --surface: #12211B;
+  --line: #26382F;
+  --muted: #8FA69B;
+  --green-tint: #163829;
+  --gold-tint: #33291A;
+  --danger-tint: #3A1D1B;
+}
