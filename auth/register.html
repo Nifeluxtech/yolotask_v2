@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create your account — YOLOTASK</title>
+<meta name="description" content="Join YOLOTASK as an earner or an advertiser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <aside class="auth-hero">
+      <a class="brand" href="/index.html"><span class="brand-mark">Y</span> YOLOTASK</a>
+      <div class="ledger-card">
+        <div class="ledger-title">What advertisers pay, general audience</div>
+        <div class="ledger-line"><span>Community Join</span><span class="amount">₦50</span></div>
+        <div class="ledger-line"><span>Follow</span><span class="amount">₦30</span></div>
+        <div class="ledger-line"><span>Visit site &amp; register</span><span class="amount">₦100</span></div>
+        <div class="ledger-line"><span>Social Engagement</span><span class="amount">₦20</span></div>
+        <div class="ledger-total"><span>Targeted tasks</span><span class="amount">3x</span></div>
+      </div>
+      <div class="auth-hero-copy">
+        <h1>Two sides, one ledger.</h1>
+        <p>Earners complete tasks and get paid on approval. Advertisers reach real people and only pay for verified completions.</p>
+      </div>
+    </aside>
+    <main class="auth-form-wrap">
+      <div class="auth-form-card">
+        <div class="brand"><span class="brand-mark">Y</span> YOLOTASK</div>
+        <h2>Create your account</h2>
+        <p class="muted">Registration is free. Earners pay a one-time ₦1,000 activation after signing up.</p>
+
+        <div class="role-toggle" role="tablist" aria-label="Account type" style="margin-top:20px">
+          <button type="button" data-role="earner" class="active" role="tab" aria-selected="true">I want to earn</button>
+          <button type="button" data-role="advertiser" role="tab" aria-selected="false">I want to advertise</button>
+        </div>
+
+        <form id="register-form" class="form-grid" novalidate>
+          <input type="hidden" name="role" value="earner">
+          <label>Full name<input name="full_name" required autocomplete="name"></label>
+          <label>Email<input type="email" name="email" required autocomplete="email"></label>
+          <label>Password<input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
+
+          <div id="earner-fields">
+            <label>Gender
+              <select name="gender">
+                <option value="prefer_not_to_say">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </label>
+            <label style="margin-top:12px">Interests <span class="muted">(choose at least 3)</span></label>
+            <div class="interest-grid" id="interest-grid">
+              <p class="muted">Loading interests…</p>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="submit" style="margin-top:6px">Create account</button>
+        </form>
+        <p class="auth-switch">Already have an account? <a href="/auth/login.html">Log in</a></p>
+      </div>
+    </main>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/auth/register.js"></script>
+</body>
+</html>
