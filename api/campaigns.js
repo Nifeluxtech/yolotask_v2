@@ -29,12 +29,44 @@ export default async function handler(req, res) {
         p_description: requiredString(input.description, 'Brief', 5000),
         p_target_url: input.target_url || null,
         p_audience_type: audience,
-        p_gender_target: audience === 'targeted' ? oneOf(input.gender_target || 'prefer_not_to_say', 'Gender target', ['male', 'female', 'prefer_not_to_say']) : null,
+        // No gender restriction is a valid, common choice for a targeted
+        // (interest-only) campaign — 'prefer_not_to_say' is a profile's own
+        // gender option, not a meaningful targeting choice, so it's not
+        // offered here.
+        p_gender_target: (audience === 'targeted' && input.gender_target) ? oneOf(input.gender_target, 'Gender target', ['male', 'female']) : null,
         p_price_per_worker: positiveNumber(input.price_per_worker, 'Price per worker'),
         p_worker_limit: positiveInt(input.worker_limit, 'Number of workers'),
         p_interest_ids: audience === 'targeted' ? (Array.isArray(input.interest_ids) ? input.interest_ids : []) : []
       });
       return ok(res, { campaign: result });
+    }
+
+    if (act === 'analytics' && req.method === 'GET') {
+      if (profile.role !== 'advertiser') throw Object.assign(new Error('Advertiser authorization required.'), { status: 403 });
+      const { data: myCampaigns, error: campErr } = await adminClient.from('campaigns').select('id,workers_completed,worker_limit,price_per_worker').eq('advertiser_id', profile.id);
+      if (campErr) throw campErr;
+      const campaignIds = (myCampaigns || []).map(c => c.id);
+      const workersReached = (myCampaigns || []).reduce((sum, c) => sum + (c.workers_completed || 0), 0);
+      const workerCapacity = (myCampaigns || []).reduce((sum, c) => sum + (c.worker_limit || 0), 0);
+
+      let totalSubmissions = 0, approvedSubmissions = 0;
+      if (campaignIds.length) {
+        const [{ count: total }, { count: approved }] = await Promise.all([
+          adminClient.from('task_submissions').select('id', { count: 'exact', head: true }).in('campaign_id', campaignIds),
+          adminClient.from('task_submissions').select('id', { count: 'exact', head: true }).in('campaign_id', campaignIds).eq('status', 'approved')
+        ]);
+        totalSubmissions = total || 0;
+        approvedSubmissions = approved || 0;
+      }
+
+      return ok(res, {
+        campaign_count: campaignIds.length,
+        workers_reached: workersReached,
+        worker_capacity: workerCapacity,
+        total_submissions: totalSubmissions,
+        approved_submissions: approvedSubmissions,
+        approval_rate: totalSubmissions ? approvedSubmissions / totalSubmissions : null
+      });
     }
 
     if (act === 'list' && req.method === 'GET') {
