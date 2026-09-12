@@ -50,7 +50,13 @@ export default async function handler(req, res) {
       const { profile } = await requireUser(req, ['earner', 'advertiser']);
       await enforceRateLimit(req, 'payments:initialize', profile.id);
       const input = await body(req);
-      const amount = profile.role === 'earner' ? 1000 : positiveInt(input.amount, 'Amount');
+      let amount;
+      if (profile.role === 'earner') {
+        const { data: feeRow } = await adminClient.from('platform_settings').select('value').eq('key', 'earner_activation_fee').maybeSingle();
+        amount = Number(feeRow?.value ?? 1000);
+      } else {
+        amount = positiveInt(input.amount, 'Amount');
+      }
       const reference = `YOTO-${profile.id.slice(0, 8)}-${Date.now()}`;
       const returnPath = profile.role === 'earner' ? '/earner/index.html' : '/advertiser/wallet.html';
       const response = await fetch('https://api.paystack.co/transaction/initialize', {

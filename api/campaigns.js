@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     }
 
     if (act === 'list' && req.method === 'GET') {
-      let query = adminClient.from('campaigns').select('*, task_types(name)').order('created_at', { ascending: false });
+      let query = adminClient.from('campaigns').select('*, task_types(name), profiles(full_name)').order('created_at', { ascending: false });
       if (profile.role === 'advertiser') query = query.eq('advertiser_id', profile.id);
       const { data, error } = await query;
       if (error) throw error;
