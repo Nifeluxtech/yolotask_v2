@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — YOLOTASK Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="dashboard-shell" id="shell">
+    <aside id="sidebar-root"></aside>
+    <div>
+      <header class="topbar">
+        <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
+        <h3 style="margin:0">Settings</h3>
+        <span></span>
+      </header>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Platform configuration</div>
+          <h1>Settings</h1>
+          <p class="muted">Every value here takes effect immediately — new campaigns, check-ins, referrals, and withdrawal requests all read these live.</p>
+        </div>
+        <section class="card panel">
+          <div class="list" id="settings-list"><p class="muted">Loading…</p></div>
+        </section>
+
+        <section class="card panel" style="margin-top:18px">
+          <div class="panel-head"><h3>Announce to the platform</h3></div>
+          <form id="announcement-form" class="form-grid">
+            <label>Title<input name="title" required></label>
+            <label>Audience<select name="audience"><option value="all">Everyone</option><option value="earners">Earners</option><option value="advertisers">Advertisers</option></select></label>
+            <label class="form-field-full">Message<textarea name="message" rows="3" required></textarea></label>
+            <div class="form-actions form-field-full"><button class="btn btn-primary" type="submit">Publish announcement</button></div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/admin/settings.js"></script>
+</body>
+</html>

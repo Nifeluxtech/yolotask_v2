@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Withdrawals — YOLOTASK Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="dashboard-shell" id="shell">
+    <aside id="sidebar-root"></aside>
+    <div>
+      <header class="topbar">
+        <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
+        <h3 style="margin:0">Withdrawals</h3>
+        <span></span>
+      </header>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Payouts</div>
+          <h1>Withdrawals</h1>
+          <p class="muted">Review requests before processing payment outside the platform.</p>
+        </div>
+        <section class="card panel">
+          <div class="panel-head"><h3>Pending &amp; processing</h3><span class="badge" id="withdrawal-count">0</span></div>
+          <div class="list" id="withdrawal-list"><p class="muted">Loading…</p></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/admin/withdrawals.js"></script>
+</body>
+</html>
