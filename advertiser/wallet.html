@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Overview — YOLOTASK Advertiser</title>
+<title>Wallet — YOLOTASK Advertiser</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,36 +18,32 @@
     <div>
       <header class="topbar">
         <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
-        <h3 style="margin:0">Overview</h3>
+        <h3 style="margin:0">Wallet</h3>
         <span></span>
       </header>
       <main class="content">
         <div class="page-title">
-          <div class="section-kicker">Advertiser dashboard</div>
-          <h1 id="greeting">Welcome back</h1>
-          <p class="muted">Here's how your campaigns are performing.</p>
+          <div class="section-kicker">Financial centre</div>
+          <h1>Wallet</h1>
+          <p class="muted">All balance changes are recorded in a server-controlled, immutable ledger.</p>
         </div>
 
         <div class="metric-grid" id="metrics">
-          <div class="metric"><span class="metric-label">Wallet balance</span><strong class="metric-value">—</strong></div>
-          <div class="metric"><span class="metric-label">Active campaigns</span><strong class="metric-value">—</strong></div>
-          <div class="metric"><span class="metric-label">Pending review</span><strong class="metric-value">—</strong></div>
-          <div class="metric"><span class="metric-label">Workers reached</span><strong class="metric-value">—</strong></div>
+          <div class="metric"><span class="metric-label">Available balance</span><strong class="metric-value">—</strong><span class="metric-meta">Ready to fund campaigns</span></div>
+          <div class="metric"><span class="metric-label">Locked balance</span><strong class="metric-value">—</strong><span class="metric-meta">Reserved for active campaigns</span></div>
         </div>
 
-        <section class="card panel" style="margin-top:20px">
+        <section class="card panel" style="margin-top:18px">
           <div class="panel-head">
-            <h3>Recent campaigns</h3>
-            <a class="btn btn-primary btn-small" href="/advertiser/campaigns.html">+ New campaign</a>
+            <h3>Transaction history</h3>
+            <button type="button" class="btn btn-primary btn-small" id="fund-btn">Fund wallet</button>
           </div>
-          <div class="list" id="recent-campaigns">
-            <p class="muted">Loading…</p>
-          </div>
+          <div class="list" id="transaction-list"><p class="muted">Loading…</p></div>
         </section>
       </main>
     </div>
   </div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script type="module" src="/src/pages/advertiser/overview.js"></script>
+  <script type="module" src="/src/pages/advertiser/wallet.js"></script>
 </body>
 </html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campaigns — YOLOTASK Advertiser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="dashboard-shell" id="shell">
+    <aside id="sidebar-root"></aside>
+    <div>
+      <header class="topbar">
+        <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
+        <h3 style="margin:0">Campaigns</h3>
+        <span></span>
+      </header>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Promotion studio</div>
+          <h1>Campaigns</h1>
+          <p class="muted">Build, submit, and track campaigns. All campaigns pass through moderation before going live.</p>
+        </div>
+
+        <div class="toolbar">
+          <div class="nav-actions" id="filter-buttons" style="display:flex;gap:8px">
+            <button type="button" class="btn btn-primary btn-small" data-filter="all">All campaigns</button>
+            <button type="button" class="btn btn-secondary btn-small" data-filter="live">Live</button>
+            <button type="button" class="btn btn-secondary btn-small" data-filter="draft">Drafts</button>
+          </div>
+          <button type="button" class="btn btn-primary" id="new-campaign-btn">+ New campaign</button>
+        </div>
+
+        <section class="card panel">
+          <div class="panel-head">
+            <h3>Your campaigns</h3>
+            <span class="badge" id="campaign-count">0 campaigns</span>
+          </div>
+          <div class="list" id="campaign-list"><p class="muted">Loading…</p></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/advertiser/campaigns.js"></script>
+</body>
+</html>

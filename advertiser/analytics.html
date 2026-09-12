@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Overview — YOLOTASK Advertiser</title>
+<title>Analytics — YOLOTASK Advertiser</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,36 +18,26 @@
     <div>
       <header class="topbar">
         <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
-        <h3 style="margin:0">Overview</h3>
+        <h3 style="margin:0">Analytics</h3>
         <span></span>
       </header>
       <main class="content">
         <div class="page-title">
-          <div class="section-kicker">Advertiser dashboard</div>
-          <h1 id="greeting">Welcome back</h1>
-          <p class="muted">Here's how your campaigns are performing.</p>
+          <div class="section-kicker">Performance</div>
+          <h1>Campaign analytics</h1>
+          <p class="muted">Reach, completion, and approval across all your campaigns.</p>
         </div>
-
         <div class="metric-grid" id="metrics">
-          <div class="metric"><span class="metric-label">Wallet balance</span><strong class="metric-value">—</strong></div>
-          <div class="metric"><span class="metric-label">Active campaigns</span><strong class="metric-value">—</strong></div>
-          <div class="metric"><span class="metric-label">Pending review</span><strong class="metric-value">—</strong></div>
           <div class="metric"><span class="metric-label">Workers reached</span><strong class="metric-value">—</strong></div>
+          <div class="metric"><span class="metric-label">Completion rate</span><strong class="metric-value">—</strong></div>
+          <div class="metric"><span class="metric-label">Approval rate</span><strong class="metric-value">—</strong></div>
+          <div class="metric"><span class="metric-label">Campaigns</span><strong class="metric-value">—</strong></div>
         </div>
-
-        <section class="card panel" style="margin-top:20px">
-          <div class="panel-head">
-            <h3>Recent campaigns</h3>
-            <a class="btn btn-primary btn-small" href="/advertiser/campaigns.html">+ New campaign</a>
-          </div>
-          <div class="list" id="recent-campaigns">
-            <p class="muted">Loading…</p>
-          </div>
-        </section>
+        <section class="card panel" style="margin-top:18px" id="analytics-note"></section>
       </main>
     </div>
   </div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script type="module" src="/src/pages/advertiser/overview.js"></script>
+  <script type="module" src="/src/pages/advertiser/analytics.js"></script>
 </body>
 </html>
