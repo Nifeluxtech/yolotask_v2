@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Referrals — YOLOTASK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="dashboard-shell" id="shell">
+    <aside id="sidebar-root"></aside>
+    <div>
+      <header class="topbar">
+        <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
+        <h3 style="margin:0">Referrals</h3>
+        <span></span>
+      </header>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Grow together</div>
+          <h1>Referrals</h1>
+          <p class="muted">Invite other earners. Your reward is credited only after a referred earner activates.</p>
+        </div>
+        <section class="card panel" style="background:var(--ink);color:#fff">
+          <div class="section-kicker" style="color:#9FCBB7">Your referral link</div>
+          <p style="color:#B9CBC1">Share this link with someone who wants to earn from digital promotion.</p>
+          <div style="display:flex;gap:9px;max-width:520px;flex-wrap:wrap">
+            <input id="referral-link" readonly value="Loading…" style="flex:1;min-width:200px">
+            <button type="button" class="btn btn-primary" id="copy-btn">Copy</button>
+          </div>
+        </section>
+        <div class="dashboard-grid cols-2" style="margin-top:18px">
+          <section class="card panel">
+            <div class="metric-grid" id="metrics">
+              <div class="metric"><span class="metric-label">Total referrals</span><strong class="metric-value">0</strong></div>
+              <div class="metric"><span class="metric-label">Activated</span><strong class="metric-value">0</strong></div>
+            </div>
+          </section>
+          <section class="card panel">
+            <div class="panel-head"><h3>History</h3></div>
+            <div class="list" id="referral-list"><p class="muted">Loading…</p></div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/earner/referrals.js"></script>
+</body>
+</html>

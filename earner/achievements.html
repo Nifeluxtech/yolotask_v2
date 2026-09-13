@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Overview — YOLOTASK</title>
+<title>Achievements — YOLOTASK</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,6 +11,11 @@
 <link rel="stylesheet" href="/src/styles/base.css">
 <link rel="stylesheet" href="/src/styles/components.css">
 <link rel="stylesheet" href="/src/styles/layout.css">
+<style>
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.feature-card{padding:20px}
+.icon-box{width:40px;height:40px;border-radius:10px;background:var(--green-tint);color:var(--green-dark);display:grid;place-items:center;font-family:var(--font-display);font-weight:600;margin-bottom:12px}
+</style>
 </head>
 <body>
   <div class="dashboard-shell" id="shell">
@@ -18,15 +23,20 @@
     <div>
       <header class="topbar">
         <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
-        <h3 style="margin:0">Overview</h3>
+        <h3 style="margin:0">Achievements</h3>
         <span></span>
       </header>
-      <main class="content" id="main-content">
-        <p class="muted">Loading…</p>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Progress system</div>
+          <h1>Achievements</h1>
+          <p class="muted">Earn XP and unlock milestones through consistent, approved activity.</p>
+        </div>
+        <div class="feature-grid" id="achievement-grid"><p class="muted">Loading…</p></div>
       </main>
     </div>
   </div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script type="module" src="/src/pages/earner/overview.js"></script>
+  <script type="module" src="/src/pages/earner/achievements.js"></script>
 </body>
 </html>

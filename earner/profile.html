@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile — YOLOTASK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/layout.css">
+</head>
+<body>
+  <div class="dashboard-shell" id="shell">
+    <aside id="sidebar-root"></aside>
+    <div>
+      <header class="topbar">
+        <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
+        <h3 style="margin:0">Profile</h3>
+        <span></span>
+      </header>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Your identity</div>
+          <h1>Profile</h1>
+          <p class="muted">Keep your details and interests current so targeting stays relevant.</p>
+        </div>
+        <section class="card panel">
+          <form id="profile-form" class="form-grid">
+            <label>Full name<input name="full_name" required></label>
+            <label>Email<input type="email" disabled></label>
+            <label>Gender
+              <select name="gender">
+                <option value="prefer_not_to_say">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </label>
+            <label>Reputation<input disabled></label>
+            <div class="form-field-full">
+              <label>Interests <span class="muted">(choose at least 3)</span></label>
+              <div class="interest-grid" id="interest-grid"><p class="muted">Loading…</p></div>
+            </div>
+            <div class="form-actions form-field-full"><button class="btn btn-primary" type="submit">Save profile</button></div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/src/pages/earner/profile.js"></script>
+</body>
+</html>

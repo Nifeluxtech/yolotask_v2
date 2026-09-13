@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Overview — YOLOTASK</title>
+<title>Notifications — YOLOTASK</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,15 +18,22 @@
     <div>
       <header class="topbar">
         <button type="button" class="mobile-menu" aria-label="Menu">&#9776;</button>
-        <h3 style="margin:0">Overview</h3>
+        <h3 style="margin:0">Notifications</h3>
         <span></span>
       </header>
-      <main class="content" id="main-content">
-        <p class="muted">Loading…</p>
+      <main class="content">
+        <div class="page-title">
+          <div class="section-kicker">Stay informed</div>
+          <h1>Notifications</h1>
+          <p class="muted">Wallet, task, campaign, referral, and security updates appear here.</p>
+        </div>
+        <section class="card panel">
+          <div class="list" id="notification-list"><p class="muted">Loading…</p></div>
+        </section>
       </main>
     </div>
   </div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script type="module" src="/src/pages/earner/overview.js"></script>
+  <script type="module" src="/src/pages/earner/notifications.js"></script>
 </body>
 </html>
