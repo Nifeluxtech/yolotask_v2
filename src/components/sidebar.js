@@ -21,6 +21,7 @@ const NAV_BY_ROLE = {
     { id: 'reviews', label: 'Review queue', href: '/advertiser/reviews.html', icon: '\u2713' },
     { id: 'wallet', label: 'Wallet', href: '/advertiser/wallet.html', icon: '\u20a6' },
     { id: 'analytics', label: 'Analytics', href: '/advertiser/analytics.html', icon: '\u25c8' },
+    { id: 'announcements', label: 'Announcements', href: '/advertiser/announcements.html', icon: '\u2690' },
     { id: 'support', label: 'Support', href: '/advertiser/support.html', icon: '?' }
   ],
   admin: [

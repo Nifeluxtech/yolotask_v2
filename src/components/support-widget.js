@@ -22,7 +22,7 @@ function ticketRow(t) {
   </div>`;
 }
 
-async function openThread(ticketId) {
+export async function openThread(ticketId) {
   const modal = openModal('Ticket', '<p class="muted">Loading…</p>');
   try {
     const result = await apiRequest(`community?action=support-thread&ticket_id=${encodeURIComponent(ticketId)}`);
