@@ -1,0 +1,3 @@
+deployment:
+  tasks:
+    - /bin/bash scripts/deploy/cpanel-release.sh

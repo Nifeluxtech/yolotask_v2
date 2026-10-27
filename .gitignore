@@ -1,0 +1,20 @@
+# Private runtime data and secrets
+/config/*.local.php
+/config/*production*.php
+/config/*development*.php
+/storage/**
+!/storage/.gitkeep
+/runtime/**
+*.log
+*.dump
+*.sql.gz
+*.bak
+.env
+.env.*
+!.env.example
+
+# Local editor/tool files
+.DS_Store
+.idea/
+.vscode/
+.phpunit.cache/
