@@ -1,3 +1,3 @@
 <?php
-// TODO: Implement in the approved YOLOTASK V2 roadmap phase.
-// This placeholder is not a working route or business service.
+declare(strict_types=1);
+require YOLOTASK_APP_ROOT . '/shared/routes/auth-login.php';

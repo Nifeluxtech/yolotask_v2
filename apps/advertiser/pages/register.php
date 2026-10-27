@@ -1,3 +1,12 @@
 <?php
-// TODO: Implement in the approved YOLOTASK V2 roadmap phase.
-// This placeholder is not a working route or business service.
+$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK V2');
+$nameValue = is_string($_POST['display_name'] ?? null) ? $_POST['display_name'] : '';
+$emailValue = is_string($_POST['email'] ?? null) ? $_POST['email'] : '';
+?>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#102b46"><title>Create advertiser account · <?= h($appName) ?></title><link rel="stylesheet" href="assets/css/app.css"><link rel="stylesheet" href="assets/css/auth.css"></head>
+<body><a class="skip-link" href="#auth-form">Skip to form</a><header class="topbar"><a class="brand" href="index.php"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a><span class="role-pill">Advertiser</span></header>
+<main id="auth-form" class="auth-wrap"><section class="auth-card"><p class="eyebrow">ADVERTISER ACCOUNT</p><h1>Create your account</h1><p class="auth-intro">Register to manage campaigns. Reviewer and admin accounts are created by authorized staff only.</p>
+<?php if (isset($error) && is_string($error)): ?><p class="form-message error" role="alert"><?= h($error) ?></p><?php endif; ?>
+<form method="post" action="register.php" novalidate><input type="hidden" name="_csrf" value="<?= h($csrfToken) ?>"><label for="display_name">Your name or business name</label><input id="display_name" name="display_name" type="text" maxlength="80" autocomplete="name" required value="<?= h($nameValue) ?>"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="254" inputmode="email" autocomplete="email" required value="<?= h($emailValue) ?>"><label for="password">Password</label><input id="password" name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required><p class="field-hint">Use at least 12 characters. Avoid reusing another site's password.</p><label for="password_confirmation">Confirm password</label><input id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="72" autocomplete="new-password" required><button class="auth-submit" type="submit">Create advertiser account</button></form>
+<p class="auth-switch">Already registered? <a href="login.php">Sign in</a></p><p class="auth-disclaimer">This starter does not yet send email-verification messages. Do not use it for public production registration.</p></section></main></body></html>

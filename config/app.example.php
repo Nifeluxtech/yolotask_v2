@@ -4,6 +4,8 @@ return [
     'environment' => 'development',
     'debug' => false,
     'app_name' => 'YOLOTASK V2',
+    // Set a private random value of at least 32 characters outside the repository.
+    'security_key' => '',
     'base_urls' => [
         'main' => 'https://example.test',
         'earner' => 'https://earner.example.test',
@@ -12,7 +14,7 @@ return [
         'admin' => 'https://admin.example.test',
     ],
     'session' => [
-        'secure' => true,
+        'secure' => false, // Set true on every HTTPS staging/production host.
         'httponly' => true,
         'samesite' => 'Lax',
     ],
