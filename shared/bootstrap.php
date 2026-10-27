@@ -21,6 +21,9 @@ if (is_file($appConfigFile)) {
 if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
     $role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main';
     session_name('YT_' . strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $role)) . '_SESSION');
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.use_trans_sid', '0');
     $session = is_array($config['session'] ?? null) ? $config['session'] : [];
     session_set_cookie_params([
         'lifetime' => 0,

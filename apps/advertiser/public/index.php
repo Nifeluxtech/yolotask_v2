@@ -26,7 +26,7 @@ if (YOLOTASK_APP_ROLE === 'main') $links = ['Home'=>'#home','How it works'=>'#ho
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="topbar">
     <a class="brand" href="./" aria-label="<?= h($appName) ?> home"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
-    <span class="role-pill"><?= h($roleTitle) ?></span>
+    <a class="role-pill" href="login.php" style="text-decoration:none">Advertiser sign in</a>
   </header>
   <main id="main-content" class="page-shell">
     <section class="welcome-card" id="dashboard" aria-labelledby="welcome-title">

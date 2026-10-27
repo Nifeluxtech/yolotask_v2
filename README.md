@@ -1,38 +1,29 @@
 # YOLOTASK V2 — cPanel Starter Package
 
-This archive contains the planned monorepo structure and a runnable, mobile-first PHP application shell for the new YOLOTASK repository. It is intended to be extracted into a **new private GitHub repository** and opened in GitHub Codespaces.
+This repository contains the planned monorepo structure and a mobile-first PHP application shell for YOLOTASK V2. It is intended for a new private GitHub repository and development in Codespaces.
 
-## Important status
+## Current status
 
-This is a **starter package**, not the complete YOLOTASK marketplace and not a production payment release. The front controllers, mobile-first shell, configuration loading, basic HTTP helpers, CSRF helper, and cPanel release script are included. The feature-specific PHP pages, business services, SQL migrations, provider integrations, and automated tests are clearly marked placeholders. Placeholder SQL files are not executable migrations. Live payments and real user data must not be enabled with this package as-is.
+The authentication foundation is partially implemented for earner and advertiser accounts: registration/login forms, CSRF checks, password hashing, role-bound sign-in, session rotation/revocation, HMAC-based login throttling, and the first users/security migration. The other marketplace features, later migrations, and payment integrations remain unimplemented. This is **not** the complete YOLOTASK marketplace and is not ready for production user or financial data.
 
-Before a production launch, implement and test the roadmap phases, supply private environment configuration, confirm the cPanel document roots, review all unresolved product decisions, implement the Afrstar integration from its verified API contract, and run the migration/reconciliation and backup-restore drills.
+Before a production launch, complete email verification and recovery, registration abuse protections, admin/reviewer provisioning, database integration tests and migration tooling, all marketplace phases, provider integrations based on verified contracts, cPanel host checks, migration reconciliation, and backup/restore drills.
 
 ## Quick start
 
-1. Create a new **private** empty GitHub repository for YOLOTASK V2. Do not import this into the existing JavaScript/Vercel V1 repository.
-2. Upload this archive and follow [`CODESPACES-IMPORT.md`](CODESPACES-IMPORT.md) to extract it on a feature branch in Codespaces.
-3. Review the extracted tree and `.gitignore`, commit it, and open a pull request.
-4. Follow [`docs/cpanel-setup.md`](docs/cpanel-setup.md) for staging prerequisites. Do not point production domains at this starter until the feature modules and migrations are implemented and verified.
+1. Keep the V2 repository separate from the existing JavaScript/Vercel V1 repo.
+2. Review `SCAFFOLD-STATUS.md` and `docs/authentication-and-authorization.md`.
+3. Run `php tests/smoke/auth-policy.php` from the repository root.
+4. Apply `database/migrations/0001_users_sessions_security.sql` to a fresh staging DB only, after checking engine compatibility. Later SQL files remain placeholders.
+5. Follow `docs/cpanel-setup.md` for staging prerequisites. Do not point production domains at the starter.
 
 ## Stack and boundaries
 
-- Plain PHP; no Composer runtime dependency in the starter.
-- One private monorepo, separate public roots for the main site and each role app.
-- Shared source, config, cron, migrations, and runtime storage remain outside public roots.
-- Mobile-first responsive shell with accessible navigation and touch-friendly controls.
-- cPanel deployment is manual and release-based. `.cpanel.yml` invokes a script that copies a clean Git commit into a versioned private release directory and activates a `current` symlink. Verify that the host permits symlinks and configure every virtual host before using it.
+- Plain PHP with PDO; no Composer runtime dependency in the starter.
+- One private monorepo, separate public roots for the main site and role apps.
+- Shared source, configuration, migrations, cron scripts, and runtime storage remain outside public roots.
+- Mobile-first forms with viewport metadata, touch-sized controls, labels, keyboard focus, and responsive layouts.
+- cPanel deployment is manual and release-based. The deployment script publishes a clean commit to a private release directory and activates a `current` symlink, subject to host support.
 
-## Local smoke check
+## Local shell check
 
-From the repository root, run a PHP development server for the main app:
-
-```sh
-php -S 127.0.0.1:8080 -t apps/main/public
-```
-
-Then open `http://127.0.0.1:8080`. The role apps can be served separately by setting their own document roots to `apps/<role>/public`. The shell runs without database credentials; database-backed behavior is not implemented yet.
-
-## Mobile standards in the starter
-
-The shell includes a viewport declaration, semantic landmarks, responsive layouts, large touch targets, visible keyboard focus, reduced-motion support, and a compact mobile bottom navigation. Test at narrow phone widths and with keyboard-only navigation before feature work is merged.
+From the repository root, run `php -S 127.0.0.1:8080 -t apps/earner/public` and open `http://127.0.0.1:8080`. Use `register.php` and `login.php` to view the forms. GET forms work without DB credentials; POST registration/login requires a staging database, migration 0001, and a private security key. No real users or payment activity should be used.
