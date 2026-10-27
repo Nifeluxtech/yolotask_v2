@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if ! command -v git >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
+  echo "ERROR: git and tar are required by the cPanel release task." >&2
+  exit 1
+fi
+if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
+  echo "ERROR: Refusing deployment from a dirty working tree." >&2
+  exit 1
+fi
+if [[ -n "$(git -C "$REPO_ROOT" ls-files --others --exclude-standard)" ]]; then
+  echo "ERROR: Refusing deployment with untracked non-ignored files." >&2
+  exit 1
+fi
+COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+BASE="${YOLOTASK_DEPLOY_BASE:-$HOME/yolotask-v2-live}"
+case "$BASE" in
+  "$HOME"|"$HOME/public_html"|"$REPO_ROOT"|"/")
+    echo "ERROR: Unsafe deployment base path: $BASE" >&2; exit 1;;
+esac
+RELEASES="$BASE/releases"
+RELEASE="$RELEASES/$COMMIT"
+mkdir -p "$RELEASES" "$BASE/config-private" "$BASE/runtime/proofs" "$BASE/runtime/logs" "$BASE/runtime/cache" "$BASE/runtime/exports" "$BASE/runtime/backups"
+chmod 700 "$BASE/config-private" "$BASE/runtime" "$BASE/runtime/proofs" "$BASE/runtime/logs" "$BASE/runtime/cache" "$BASE/runtime/exports" "$BASE/runtime/backups" 2>/dev/null || true
+if [[ ! -d "$RELEASE" ]]; then
+  mkdir -p "$RELEASE"
+  tar -C "$REPO_ROOT" --exclude='./.git' --exclude='./storage' --exclude='./runtime' -cf - . | tar -C "$RELEASE" -xf -
+fi
+if [[ ! -f "$RELEASE/apps/main/public/index.php" || ! -f "$RELEASE/apps/earner/public/index.php" ]]; then
+  echo "ERROR: Expected public front controllers are missing from the release." >&2
+  exit 1
+fi
+TEMP_LINK="$BASE/current.next"
+rm -f "$TEMP_LINK"
+ln -s "$RELEASE" "$TEMP_LINK"
+if [[ -e "$BASE/current" && ! -L "$BASE/current" ]]; then
+  echo "ERROR: $BASE/current exists and is not a symlink; refusing to replace it." >&2
+  rm -f "$TEMP_LINK"
+  exit 1
+fi
+mv -Tf "$TEMP_LINK" "$BASE/current"
+echo "Published YOLOTASK V2 scaffold commit $COMMIT to $BASE/current"
+echo "This starter has no live payments or feature-complete marketplace. No database migrations were run."
