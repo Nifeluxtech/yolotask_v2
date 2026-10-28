@@ -5,51 +5,36 @@ define('YOLOTASK_APP_ROLE', 'main');
 define('YOLOTASK_APP_ROOT', dirname(__DIR__, 3));
 require_once YOLOTASK_APP_ROOT . '/shared/bootstrap.php';
 
-$roleTitle = 'YOLOTASK';
-$subtitle = 'A task and promotion marketplace';
-$description = 'Explore how earners and advertisers use YOLOTASK.';
 $appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK V2');
-$links = ['Dashboard' => '#dashboard', 'Tasks' => '#tasks', 'Wallet' => '#wallet', 'Profile' => '#profile'];
-if (YOLOTASK_APP_ROLE === 'main') $links = ['Home'=>'#home','How it works'=>'#how','Sign in'=>'#login'];
-?>
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#102b46">
-  <meta name="description" content="<?= h($subtitle) ?>">
-  <title><?= h($roleTitle) ?> · <?= h($appName) ?></title>
-  <link rel="stylesheet" href="assets/css/app.css">
-</head>
-<body>
-  <a class="skip-link" href="#main-content">Skip to content</a>
-  <header class="topbar">
-    <a class="brand" href="./" aria-label="<?= h($appName) ?> home"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
-    <span class="role-pill"><?= h($roleTitle) ?></span>
-  </header>
-  <main id="main-content" class="page-shell">
-    <section class="welcome-card" id="dashboard" aria-labelledby="welcome-title">
-      <p class="eyebrow">MOBILE-FIRST STARTER</p>
-      <h1 id="welcome-title"><?= h($subtitle) ?></h1>
-      <p class="lead"><?= h($description) ?></p>
-      <div class="status-note" role="status"><strong>Setup stage</strong><span>This responsive app shell is live. Product features and database migrations are still under development.</span></div>
-      <a class="primary-button" href="#next-steps">View next steps</a>
-    </section>
-    <section class="content-grid" aria-label="Project status">
-      <article class="info-card"><span class="icon-badge" aria-hidden="true">01</span><h2>Private by design</h2><p>Configuration, shared PHP source, migrations, cron scripts, and uploaded files belong outside public document roots.</p></article>
-      <article class="info-card"><span class="icon-badge" aria-hidden="true">02</span><h2>Financial features disabled</h2><p>No payment, wallet, withdrawal, or balance-changing operation is implemented in this package.</p></article>
-      <article class="info-card"><span class="icon-badge" aria-hidden="true">03</span><h2>Next implementation phase</h2><p>Approve V1 feature parity and product decisions before enabling authentication, ledger, payments, or migration.</p></article>
-    </section>
-    <section id="next-steps" class="next-steps">
-      <p class="eyebrow">REPOSITORY STATUS</p><h2>Ready for Codespaces review</h2>
-      <p>Use the included import guide, create a private feature branch, and review the scaffold before any cPanel staging deployment.</p>
-      <a class="text-link" href="https://github.com">Open GitHub</a>
-    </section>
-  </main>
-  <nav class="mobile-nav" aria-label="Primary navigation">
-    <?php foreach ($links as $label => $href): ?><a href="<?= h($href) ?>"><span class="nav-dot" aria-hidden="true"></span><span><?= h($label) ?></span></a><?php endforeach; ?>
-  </nav>
-  <footer class="site-footer"><span>YOLOTASK V2 · Starter scaffold</span><span>Not for live financial use</span></footer>
-</body>
-</html>
+$siteHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? 'staging.yolotask.com.ng'));
+$siteHost = preg_replace('/:\\d+$/', '', $siteHost) ?? $siteHost;
+$siteHost = preg_replace('/^www\\./', '', $siteHost) ?? $siteHost;
+if (!in_array($siteHost, ['staging.yolotask.com.ng', 'yolotask.com.ng'], true)) $siteHost = 'staging.yolotask.com.ng';
+$isStaging = $siteHost === 'staging.yolotask.com.ng';
+$rootDomain = 'yolotask.com.ng';
+$earnerHost = ($isStaging ? 'earner-staging.' : 'earner.') . $rootDomain;
+$advertiserHost = ($isStaging ? 'advertiser-staging.' : 'advertiser.') . $rootDomain;
+$earnerUrl = 'https://' . $earnerHost;
+$advertiserUrl = 'https://' . $advertiserHost;
+$roleTitle = 'YOLOTASK';
+$roleSlug = 'main';
+$subtitle = 'A clearer way to earn, promote, and grow online.';
+$description = 'YOLOTASK is being rebuilt on a fresh, role-separated foundation. Start with a secure staging account while we verify the core experience before enabling marketplace activity.';
+$heroChips = ['MOBILE-FIRST EXPERIENCE', 'ROLE-BASED PORTALS', 'V2 STAGING'];
+$statusMessage = 'Earner and advertiser account creation and sign-in are available for staging tests. Tasks, campaigns, payments, and balances are not active.';
+$availabilityTitle = 'What you can test today';
+$availabilityBody = 'The authentication foundation is live on the earner and advertiser staging subdomains. This is not yet a live marketplace and no real task or financial activity can be completed.';
+$headerAction = ['url' => $earnerUrl . '/login.php', 'label' => 'Earner sign in'];
+$primaryAction = ['url' => $earnerUrl . '/register.php', 'label' => 'Join as an earner'];
+$secondaryAction = ['url' => $advertiserUrl . '/register.php', 'label' => 'Advertise with us'];
+$navItems = [
+    ['label' => 'Overview', 'url' => '#overview'],
+    ['label' => 'What we value', 'url' => '#value'],
+    ['label' => 'Role access', 'url' => '#access'],
+];
+$features = [
+    ['icon' => '01', 'tag' => 'EARNERS', 'title' => 'Find work that fits your time', 'description' => 'The earner portal is the starting point for account creation and secure sign-in. Task discovery will follow after the core tests pass.'],
+    ['icon' => '02', 'tag' => 'ADVERTISERS', 'title' => 'Prepare to grow with confidence', 'description' => 'Advertisers have a separate portal for registration and sign-in. Campaign creation and funding remain disabled in this staging build.'],
+    ['icon' => '03', 'tag' => 'SAFETY FIRST', 'title' => 'Build trust into the foundation', 'description' => 'Role boundaries, CSRF protection, session rotation, throttling, and a fresh V2 database are being verified before features expand.'],
+];
+require YOLOTASK_APP_ROOT . '/shared/views/layouts/public.php';
