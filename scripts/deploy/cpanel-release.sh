@@ -28,6 +28,11 @@ if [[ ! -d "$RELEASE" ]]; then
   mkdir -p "$RELEASE"
   tar -C "$REPO_ROOT" --exclude='./.git' --exclude='./storage' --exclude='./runtime' -cf - . | tar -C "$RELEASE" -xf -
 fi
+# A restrictive hosting umask can create this directory as 0700. The public
+# app document roots live below it, so make the release root traversable by
+# the web server. Private configuration and runtime data remain outside it.
+chmod 755 "$RELEASE"
+
 if [[ ! -f "$RELEASE/apps/main/public/index.php" || ! -f "$RELEASE/apps/earner/public/index.php" ]]; then
   echo "ERROR: Expected public front controllers are missing from the release." >&2
   exit 1
