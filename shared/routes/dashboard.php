@@ -3,39 +3,17 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
-use YoloTask\Security\Auth;
-use YoloTask\Security\Csrf;
 
-$role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : '';
-if (!in_array($role, ['earner', 'advertiser'], true)) {
-    http_response_code(404);
-    require YOLOTASK_APP_ROOT . '/shared/views/errors/404.php';
-    exit;
-}
-
-header('Cache-Control: no-store, private');
-header('X-Frame-Options: DENY');
-header('Referrer-Policy: same-origin');
+$role = yolotask_role();
+if (!in_array($role, ['earner', 'advertiser', 'reviewer', 'admin'], true)) yolotask_error_page(404);
+yolotask_private_headers();
 
 try {
     $pdo = Database::connection();
-    $user = Auth::currentUser($pdo);
+    $user = yolotask_require_user($pdo);
 } catch (Throwable $e) {
     Logger::error('dashboard.session_lookup_failed', ['exception' => get_class($e)]);
-    http_response_code(500);
-    require YOLOTASK_APP_ROOT . '/shared/views/errors/500.php';
-    exit;
-}
-
-if (!is_array($user)) {
-    $_SESSION['_flash'] = 'Please sign in to continue.';
-    header('Location: login.php', true, 303);
-    exit;
-}
-if ((string) ($user['role'] ?? '') !== $role) {
-    http_response_code(403);
-    require YOLOTASK_APP_ROOT . '/shared/views/errors/403.php';
-    exit;
+    yolotask_error_page(500);
 }
 
 $userId = (int) $user['id'];
@@ -72,6 +50,18 @@ $eventLabels = [
     'auth.registered' => 'Account created',
     'auth.login' => 'Signed in',
     'auth.logout' => 'Signed out',
+    'auth.email_verified' => 'Email confirmed',
+    'auth.password_reset_requested' => 'Password reset requested',
+    'auth.password_reset' => 'Password reset',
+    'auth.invite_accepted' => 'Account activated',
+    'auth.device_signed_out' => 'Device signed out',
+    'auth.other_devices_signed_out' => 'Other devices signed out',
+    'account.profile_updated' => 'Profile updated',
+    'account.password_changed' => 'Password changed',
+    'account.closed' => 'Account closed',
+    'admin.user_suspended' => 'Suspended a user',
+    'admin.user_restored' => 'Restored a user',
+    'admin.staff_invited' => 'Invited staff',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -79,6 +69,7 @@ $hour = (int) (new DateTimeImmutable('now', $tz))->format('G');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
 $verified = !empty($profile['email_verified_at']);
 $isAdvertiser = $role === 'advertiser';
+$isStaff = in_array($role, ['reviewer', 'admin'], true);
 
 $icons = [
     'shield' => '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/>',
@@ -95,7 +86,19 @@ $stats = [
     ['label' => 'Active sessions', 'value' => (string) $activeSessions, 'icon' => 'device', 'tone' => $activeSessions > 1 ? 'stat-warning' : '', 'note' => $activeSessions > 1 ? 'Signed in on more than one device' : 'This device only'],
 ];
 
-$tips = $isAdvertiser
+$tips = $role === 'admin'
+    ? [
+        ['title' => 'Least privilege', 'body' => 'Invite reviewers for proof checks and keep admin access to the few people who run the platform.'],
+        ['title' => 'Every action is logged', 'body' => 'Suspensions, restorations and invitations are recorded against your account.'],
+        ['title' => 'Protect your account', 'body' => 'Use a unique password and sign out on shared devices. YOLOTASK will never ask for your password.'],
+    ]
+    : ($role === 'reviewer'
+    ? [
+        ['title' => 'Judge the proof, not the person', 'body' => 'Approve work that matches the instructions exactly and reject only with a clear reason.'],
+        ['title' => 'Stay consistent', 'body' => 'Apply the same standard to every submission so earners and advertisers can trust each decision.'],
+        ['title' => 'Protect your account', 'body' => 'Use a unique password and sign out on shared devices. YOLOTASK will never ask for your password.'],
+    ]
+    : ($isAdvertiser
     ? [
         ['title' => 'Know your audience', 'body' => 'Campaigns perform best when the task is simple, the instructions are clear and the proof is easy to check.'],
         ['title' => 'Reward fairly', 'body' => 'A fair reward per action attracts careful earners and keeps approval rates high.'],
@@ -105,16 +108,47 @@ $tips = $isAdvertiser
         ['title' => 'Follow instructions exactly', 'body' => 'Advertisers approve proofs that match their instructions. Careful work keeps your approval rate high.'],
         ['title' => 'One person, one account', 'body' => 'Duplicate accounts, bots and fake proofs lead to suspension and loss of earnings.'],
         ['title' => 'Protect your account', 'body' => 'Use a unique password and sign out on shared devices. YOLOTASK will never ask for your password.'],
-    ];
+    ]));
+
+$adminCounts = null;
+$platformActivity = [];
+if ($role === 'admin') {
+    try {
+        $adminCounts = \YoloTask\Admin\Users::counts($pdo);
+        $platformActivity = $pdo->query('SELECT a.event_key, a.created_at, u.display_name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.id DESC LIMIT 8')->fetchAll() ?: [];
+        $stats = [
+            ['label' => 'Earners', 'value' => number_format($adminCounts['earner']), 'icon' => 'shield', 'tone' => '', 'note' => number_format($adminCounts['new_7d']) . ' new accounts this week'],
+            ['label' => 'Advertisers', 'value' => number_format($adminCounts['advertiser']), 'icon' => 'mail', 'tone' => '', 'note' => 'Excluding closed accounts'],
+            ['label' => 'Unverified', 'value' => number_format($adminCounts['unverified']), 'icon' => 'mail', 'tone' => 'stat-warning', 'note' => 'Email not confirmed'],
+            ['label' => 'Suspended', 'value' => number_format($adminCounts['suspended']), 'icon' => 'device', 'tone' => $adminCounts['suspended'] > 0 ? 'stat-danger' : '', 'note' => 'Blocked from signing in'],
+        ];
+    } catch (Throwable $e) {
+        Logger::error('dashboard.admin_stats_failed', ['exception' => get_class($e)]);
+    }
+}
 
 ob_start();
 ?>
+<?php if (!$isStaff && !$verified): ?>
+<section class="card verify-banner" role="status">
+  <span class="verify-icon"><?= $svg('mail') ?></span>
+  <div><strong>Confirm your email</strong><p class="text-sm text-faint">Enter the code we sent to <?= h((string) $user['email']) ?> to unlock earning, funding and withdrawals.</p></div>
+  <a class="btn btn-primary btn-sm" href="verify.php">Confirm now</a>
+</section>
+<?php endif; ?>
 <section class="card card-glow dash-hero" aria-labelledby="dash-greeting">
   <p class="text-xs fw-bold text-primary"><?= h(strtoupper($role)) ?> DASHBOARD</p>
   <h2 id="dash-greeting"><?= h($greeting . ($firstName !== '' ? ', ' . $firstName : '')) ?></h2>
-  <p class="text-faint"><?= $isAdvertiser
-      ? 'Here is an overview of your advertiser account and its security.'
-      : 'Here is an overview of your earner account and its security.' ?></p>
+  <p class="text-faint"><?= h(match ($role) {
+      'admin' => 'Here is how the YOLOTASK community looks today.',
+      'reviewer' => 'Here is an overview of your reviewer account and its security.',
+      'advertiser' => 'Here is an overview of your advertiser account and its security.',
+      default => 'Here is an overview of your earner account and its security.',
+  }) ?></p>
+  <div class="hero-actions">
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="users.php#invite">Invite staff</a>
+    <?php else: ?><a class="btn btn-secondary btn-sm" href="account.php">Account settings</a><?php endif; ?>
+  </div>
 </section>
 
 <section class="grid grid-4 dash-stats" aria-label="Account overview">
@@ -130,7 +164,8 @@ ob_start();
 
 <div class="grid grid-2 dash-panels">
   <section class="card" id="activity" aria-labelledby="activity-title">
-    <div class="card-header"><h3 id="activity-title">Recent activity</h3><span class="badge badge-info">Security</span></div>
+    <div class="card-header"><h3 id="activity-title"><?= $role === 'admin' ? 'Platform activity' : 'Recent activity' ?></h3><span class="badge badge-info"><?= $role === 'admin' ? 'Audit' : 'Security' ?></span></div>
+    <?php if ($role === 'admin'): $activity = $platformActivity; endif; ?>
     <?php if ($activity === []): ?>
       <div class="empty-state"><p class="text-faint">No account activity recorded yet.</p></div>
     <?php else: ?>
@@ -139,7 +174,7 @@ ob_start();
           <thead><tr><th scope="col">Event</th><th scope="col">When (WAT)</th></tr></thead>
           <tbody>
           <?php foreach ($activity as $event): ?>
-            <tr><td><?= h($eventLabels[(string) $event['event_key']] ?? 'Account update') ?></td><td><?= h($fmt((string) $event['created_at'], 'j M Y, g:i A')) ?></td></tr>
+            <tr><td><?= h($eventLabels[(string) $event['event_key']] ?? 'Account update') ?><?php if ($role === 'admin' && !empty($event['display_name'])): ?><br><span class="text-xs text-faint"><?= h((string) $event['display_name']) ?></span><?php endif; ?></td><td><?= h($fmt((string) $event['created_at'], 'j M Y, g:i A')) ?></td></tr>
           <?php endforeach; ?>
           </tbody>
         </table>
@@ -148,7 +183,7 @@ ob_start();
   </section>
 
   <section class="card" id="guide" aria-labelledby="guide-title">
-    <div class="card-header"><h3 id="guide-title"><?= $isAdvertiser ? 'Advertiser essentials' : 'Earner essentials' ?></h3></div>
+    <div class="card-header"><h3 id="guide-title"><?= h(yolotask_role_title() . ' essentials') ?></h3></div>
     <ul class="stack dash-tips">
       <?php foreach ($tips as $tip): ?>
         <li><strong><?= h($tip['title']) ?></strong><p class="text-sm text-faint"><?= h($tip['body']) ?></p></li>
@@ -157,19 +192,4 @@ ob_start();
   </section>
 </div>
 <?php
-$contentHtml = (string) ob_get_clean();
-
-$flash = is_string($_SESSION['_flash'] ?? null) ? $_SESSION['_flash'] : null;
-unset($_SESSION['_flash']);
-$flashType = 'success';
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
-$roleTitle = $isAdvertiser ? 'Advertiser' : 'Earner';
-$pageTitle = 'Dashboard';
-$userDisplayName = (string) ($user['display_name'] ?? '');
-$logoutCsrfToken = Csrf::token();
-$navItems = [
-    ['label' => 'Home', 'url' => 'dashboard.php', 'icon' => 'home'],
-    ['label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'shield'],
-    ['label' => 'Guide', 'url' => 'dashboard.php#guide', 'icon' => $isAdvertiser ? 'megaphone' : 'tasks'],
-];
-require YOLOTASK_APP_ROOT . '/shared/views/layouts/authenticated.php';
+yolotask_render_app($user, 'Dashboard', (string) ob_get_clean(), 'home');
