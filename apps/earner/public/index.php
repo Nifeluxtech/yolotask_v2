@@ -23,29 +23,27 @@ if (isset($_SESSION['user_id'])) {
         Logger::error('auth.session_lookup_failed', ['exception' => get_class($e)]);
     }
 }
+$dashboardUrl = $signedInUser !== null ? 'dashboard.php' : null;
 
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK V2');
+$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
+$legalBaseUrl = yolotask_portal_url('main');
 $roleTitle = 'Earner';
 $roleSlug = 'earner';
-$subtitle = 'Your time can take you further.';
-$description = 'Create a YOLOTASK earner account and get ready for a more organized way to discover digital tasks. This staging build is focused on making account access reliable first.';
-$heroChips = ['EARNER PORTAL', 'SECURE SIGN-IN', 'MOBILE READY'];
-$statusMessage = $signedInUser !== null
-    ? 'You are signed in. Task claiming, submissions, wallet balances, and withdrawals remain disabled in this staging build.'
-    : 'Sign-up and sign-in are open for staging verification. Task claiming, submissions, wallet balances, and withdrawals are not enabled.';
-$availabilityTitle = 'Earner staging access';
-$availabilityBody = 'You can test account creation, validation, sign-in, session rotation, and sign-out here. Task listings and every wallet or payment action remain unavailable.';
+$subtitle = 'Turn spare minutes into real earnings.';
+$description = 'Complete simple digital tasks for brands and businesses, submit your proof, and get paid once it is approved. No investment, no deposits — just verified work.';
+$heroChips = ['Verified tasks', 'Fast reviews', 'Mobile first'];
 $headerAction = ['url' => 'login.php', 'label' => 'Sign in'];
-$primaryAction = ['url' => 'register.php', 'label' => 'Create an account'];
-$secondaryAction = ['url' => 'login.php', 'label' => 'I already have an account'];
+$primaryAction = ['url' => 'register.php', 'label' => 'Start earning'];
+$secondaryAction = ['url' => 'login.php', 'label' => 'I have an account'];
 $navItems = [
-    ['label' => 'Overview', 'url' => '#overview'],
-    ['label' => 'Your benefits', 'url' => '#value'],
-    ['label' => 'Access notes', 'url' => '#access'],
+    ['label' => 'Home', 'url' => '#overview'],
+    ['label' => 'Why YOLOTASK', 'url' => '#features'],
+    ['label' => 'How it works', 'url' => '#how-it-works'],
 ];
 $features = [
-    ['icon' => '01', 'tag' => 'ACCOUNT', 'title' => 'A private account space', 'description' => 'Your account is tied to the earner role, with password hashing, CSRF-protected forms, and secure session handling.'],
-    ['icon' => '02', 'tag' => 'COMING NEXT', 'title' => 'A focused task experience', 'description' => 'Task discovery, task claims, and proof submissions will be introduced only after staging authentication checks are complete.'],
-    ['icon' => '03', 'tag' => 'NO LIVE FUNDS', 'title' => 'Financial actions stay off', 'description' => 'Wallet balances, deposits, withdrawals, and payouts are not available in this test environment.'],
+    ['icon' => '01', 'tag' => 'TASKS', 'title' => 'Tasks that fit your day', 'description' => 'Follow, like, review, sign up or share — each task shows the reward and exact instructions before you start.'],
+    ['icon' => '02', 'tag' => 'FAIR REVIEW', 'title' => 'Clear, honest approvals', 'description' => 'Every proof is checked against the advertiser\'s instructions, with an appeal route if you believe a decision is wrong.'],
+    ['icon' => '03', 'tag' => 'SECURE', 'title' => 'Your account, protected', 'description' => 'Hashed passwords, protected sessions and one-person-one-account rules keep the marketplace fair for everyone.'],
 ];
+$featuresHeading = 'Why earners choose YOLOTASK';
 require YOLOTASK_APP_ROOT . '/shared/views/layouts/public.php';
