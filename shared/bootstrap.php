@@ -37,3 +37,31 @@ if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
 
 function yolotask_config(): array { global $config; return $config; }
 function h(string $value): string { return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+
+/**
+ * Absolute base URL for a portal. Uses config base_urls when set to a real
+ * host; otherwise derives it from the current host so the same release runs
+ * unchanged on yolotask.com.ng and on the staging subdomains.
+ */
+function yolotask_portal_url(string $portal): string
+{
+    $portal = in_array($portal, ['main', 'earner', 'advertiser', 'reviewer', 'admin'], true) ? $portal : 'main';
+    $configured = yolotask_config()['base_urls'][$portal] ?? null;
+    if (is_string($configured) && $configured !== '' && !str_contains($configured, 'example.')) {
+        return rtrim($configured, '/');
+    }
+    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? 'yolotask.com.ng'));
+    $host = (string) preg_replace('/:\d+$/', '', $host);
+    $host = (string) preg_replace('/^www\./', '', $host);
+    $isStaging = (bool) preg_match('/(^|-)staging\./', $host);
+    $root = (string) preg_replace('/^(?:(?:earner|advertiser|reviewer|admin)(?:-staging)?|staging)\./', '', $host);
+    if ($root === '' || !preg_match('/^[a-z0-9.-]+$/', $root)) {
+        $root = 'yolotask.com.ng';
+    }
+    if ($portal === 'main') {
+        $prefix = $isStaging ? 'staging.' : '';
+    } else {
+        $prefix = $portal . ($isStaging ? '-staging.' : '.');
+    }
+    return 'https://' . $prefix . $root;
+}
