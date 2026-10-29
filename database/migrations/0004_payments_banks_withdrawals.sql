@@ -1,2 +1,129 @@
--- TODO: Implement the approved YOLOTASK V2 schema in the database phase.
--- This placeholder is NOT executable and must not be applied.
+-- YOLOTASK V2 Phase 3: AfrStar payments, bank accounts and withdrawals, migration 0004.
+-- Additive only. Amounts are integer kobo. AfrStar callbacks are the source
+-- of truth; every raw callback is logged before it is acted on.
+
+CREATE TABLE payment_orders (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    order_sn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    wallet_id BIGINT UNSIGNED NOT NULL,
+    provider VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'afrstar',
+    amount_kobo BIGINT UNSIGNED NOT NULL,
+    fee_kobo BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    status ENUM('created', 'pending', 'paid', 'review', 'rejected', 'expired', 'failed') NOT NULL DEFAULT 'created',
+    platform_osn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    pay_url VARCHAR(500) NULL,
+    amount_paid_kobo BIGINT UNSIGNED NULL,
+    credited_kobo BIGINT UNSIGNED NULL,
+    provider_reference VARCHAR(120) NULL,
+    provider_message VARCHAR(255) NULL,
+    ledger_transaction_id BIGINT UNSIGNED NULL,
+    paid_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_payment_orders_sn (order_sn),
+    KEY ix_payment_orders_platform (platform_osn),
+    KEY ix_payment_orders_user (user_id, id),
+    KEY ix_payment_orders_status_time (status, created_at),
+    CONSTRAINT fk_payment_orders_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_payment_orders_wallet FOREIGN KEY (wallet_id) REFERENCES wallets(id),
+    CONSTRAINT fk_payment_orders_ledger FOREIGN KEY (ledger_transaction_id) REFERENCES ledger_transactions(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE payment_callbacks (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    kind ENUM('collection', 'payout') NOT NULL,
+    order_sn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    platform_osn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    provider_status VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    signature_valid TINYINT(1) NULL,
+    outcome VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'received',
+    http_status SMALLINT UNSIGNED NULL,
+    remote_ip VARCHAR(45) NULL,
+    raw_body MEDIUMTEXT NOT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME NULL,
+    PRIMARY KEY (id),
+    KEY ix_payment_callbacks_order (kind, order_sn),
+    KEY ix_payment_callbacks_time (received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Anything that needs a person: amount mismatches, unknown orders,
+-- contradictory payout results. Never auto-credited.
+CREATE TABLE payment_reviews (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    dedupe_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    kind ENUM('amount_mismatch', 'unmatched_callback', 'payout_conflict') NOT NULL,
+    payment_order_id BIGINT UNSIGNED NULL,
+    withdrawal_id BIGINT UNSIGNED NULL,
+    callback_id BIGINT UNSIGNED NULL,
+    order_sn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    platform_osn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    expected_kobo BIGINT UNSIGNED NULL,
+    paid_kobo BIGINT UNSIGNED NULL,
+    detail VARCHAR(255) NULL,
+    status ENUM('open', 'credited', 'rejected', 'dismissed') NOT NULL DEFAULT 'open',
+    credited_kobo BIGINT UNSIGNED NULL,
+    ledger_transaction_id BIGINT UNSIGNED NULL,
+    resolved_by_user_id BIGINT UNSIGNED NULL,
+    resolution_note VARCHAR(255) NULL,
+    resolved_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_payment_reviews_dedupe (dedupe_key),
+    KEY ix_payment_reviews_status (status, created_at),
+    CONSTRAINT fk_payment_reviews_order FOREIGN KEY (payment_order_id) REFERENCES payment_orders(id),
+    CONSTRAINT fk_payment_reviews_callback FOREIGN KEY (callback_id) REFERENCES payment_callbacks(id),
+    CONSTRAINT fk_payment_reviews_resolver FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE bank_accounts (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    bank_code CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    bank_name VARCHAR(120) NOT NULL,
+    account_number CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    account_name VARCHAR(100) NOT NULL,
+    name_verified_via ENUM('none', 'paystack') NOT NULL DEFAULT 'none',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_bank_accounts_user (user_id),
+    CONSTRAINT fk_bank_accounts_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE withdrawals (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    wallet_id BIGINT UNSIGNED NOT NULL,
+    idempotency_key CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    order_sn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    amount_kobo BIGINT UNSIGNED NOT NULL,
+    fee_kobo BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    bank_code CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    bank_name VARCHAR(120) NOT NULL,
+    account_number CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    account_name VARCHAR(100) NOT NULL,
+    status ENUM('pending_review', 'processing', 'paid', 'failed', 'rejected') NOT NULL DEFAULT 'pending_review',
+    platform_osn VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    provider_reference VARCHAR(120) NULL,
+    provider_message VARCHAR(255) NULL,
+    reject_reason VARCHAR(255) NULL,
+    hold_transaction_id BIGINT UNSIGNED NULL,
+    final_transaction_id BIGINT UNSIGNED NULL,
+    reviewed_by_user_id BIGINT UNSIGNED NULL,
+    reviewed_at DATETIME NULL,
+    completed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_withdrawals_idem (user_id, idempotency_key),
+    UNIQUE KEY uq_withdrawals_order_sn (order_sn),
+    KEY ix_withdrawals_status_time (status, created_at),
+    KEY ix_withdrawals_user (user_id, id),
+    CONSTRAINT fk_withdrawals_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_withdrawals_wallet FOREIGN KEY (wallet_id) REFERENCES wallets(id),
+    CONSTRAINT fk_withdrawals_reviewer FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
