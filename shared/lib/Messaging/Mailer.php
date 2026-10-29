@@ -45,6 +45,16 @@ final class Mailer
             return file_put_contents($file, $entry, FILE_APPEND | LOCK_EX) !== false;
         }
 
+        if ($driver === 'smtp') {
+            try {
+                self::smtp($config, $from, $to, array_merge(['To: ' . $to, 'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=', 'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000', 'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . substr(strrchr($from, '@') ?: '@yolotask.com.ng', 1) . '>'], $headers), $body);
+                return true;
+            } catch (\Throwable $e) {
+                Logger::error('mail.smtp_failed', ['message' => $e->getMessage()]);
+                return false;
+            }
+        }
+
         if (!function_exists('mail')) {
             Logger::error('mail.unavailable', ['reason' => 'mail() is disabled on this host']);
             return false;
@@ -57,6 +67,51 @@ final class Mailer
         }
         if (!$ok) Logger::error('mail.send_failed', ['subject' => $subject]);
         return $ok;
+    }
+
+    /** Minimal authenticated SMTP client (implicit TLS on 465, or STARTTLS on 587). */
+    private static function smtp(array $c, string $from, string $to, array $headers, string $body): void
+    {
+        $host = (string) ($c['smtp_host'] ?? 'localhost');
+        $port = (int) ($c['smtp_port'] ?? 465);
+        $verify = (bool) ($c['smtp_verify_peer'] ?? true);
+        $ctx = stream_context_create(['ssl' => ['verify_peer' => $verify, 'verify_peer_name' => $verify, 'allow_self_signed' => !$verify]]);
+        $scheme = $port === 465 ? 'ssl://' : 'tcp://';
+        $fp = @stream_socket_client($scheme . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+        if (!$fp) throw new \RuntimeException("connect {$host}:{$port} failed: {$errstr}");
+        stream_set_timeout($fp, 20);
+        $read = static function () use ($fp): string {
+            $out = '';
+            while (($line = fgets($fp, 515)) !== false) { $out .= $line; if (strlen($line) < 4 || $line[3] === ' ') break; }
+            return $out;
+        };
+        $cmd = static function (?string $line, array $ok) use ($fp, $read): string {
+            if ($line !== null) fwrite($fp, $line . "\r\n");
+            $resp = $read();
+            if (!in_array((int) substr($resp, 0, 3), $ok, true)) throw new \RuntimeException('SMTP ' . trim($resp));
+            return $resp;
+        };
+        try {
+            $cmd(null, [220]);
+            $helo = 'yolotask.com.ng';
+            $cmd('EHLO ' . $helo, [250]);
+            if ($port !== 465) {
+                $cmd('STARTTLS', [220]);
+                if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) throw new \RuntimeException('STARTTLS failed');
+                $cmd('EHLO ' . $helo, [250]);
+            }
+            $cmd('AUTH LOGIN', [334]);
+            $cmd(base64_encode((string) ($c['smtp_user'] ?? $from)), [334]);
+            $cmd(base64_encode((string) ($c['smtp_pass'] ?? '')), [235]);
+            $cmd('MAIL FROM:<' . $from . '>', [250]);
+            $cmd('RCPT TO:<' . $to . '>', [250, 251]);
+            $cmd('DATA', [354]);
+            $data = implode("\r\n", $headers) . "\r\n\r\n" . preg_replace('/^\./m', '..', $body);
+            $cmd($data . "\r\n.", [250]);
+            fwrite($fp, "QUIT\r\n");
+        } finally {
+            fclose($fp);
+        }
     }
 
     private static function encodeName(string $name): string
