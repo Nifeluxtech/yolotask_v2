@@ -17,11 +17,15 @@ The repository remains an incomplete YOLOTASK V2 starter, not a production marke
 
 Email verification, password reset, account settings and devices, staff invitations and sign-in, admin user management, sign-up abuse controls, security emails, the migration runner and daily cleanup are implemented. See CHANGELOG.md.
 
+## Phase 3 (wallets, ledger, AfrStar payments)
+
+Wallets, the double-entry ledger, AfrStar top-ups and withdrawals, signed callbacks, the payment review queue, admin money tools, money settings and daily reconciliation are implemented and tested locally against a fake AfrStar gateway. Live AfrStar behaviour (real pay pages, callback delivery, payout timing) still has to be verified on staging. See CHANGELOG.md, docs/payments.md and hooks/README.md.
+
 ## Still incomplete or requiring review
 
 MFA, database integration tests in CI, and a full independent security review are not yet done. The first migration has not been tested against the target cPanel MySQL/MariaDB version; apply it to staging only after review.
 
-Wallet/ledger posting, fees, payments/callbacks, reconciliation, withdrawals, campaigns/tasks, proofs/appeals, growth, virtual numbers, notifications, and admin/reviewer features remain unimplemented. Migration files after 0001 and feature-area PHP files remain explicit placeholders.
+Campaigns/tasks, proofs/appeals, growth, virtual numbers, notifications, and admin/reviewer features remain unimplemented. Migration files after 0004 (and 0002_settings_catalog_interests.sql) and the remaining feature-area PHP files are explicit placeholders.
 
 Before production, resolve the roadmap's open choices (reviewer compensation, virtual-number eligibility, referral qualification, level/check-in rules, stale/hold/resubmission periods, final appeal path, Afrstar status-query/IP rules, fee treatment). Review provider API contracts, cPanel public roots, storage, cron, SSL, database and restore capabilities. The primary domain may be fixed to `public_html`; confirm the apex mapping with the host.
 
