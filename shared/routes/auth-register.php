@@ -35,12 +35,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Throttle::hit($pdo, 'register_ip', Crypto::clientIp());
                     $userId = Auth::register($pdo, $name, $email, $password, $role);
                     Auth::signInNewAccount($pdo, $userId);
-                    $sent = EmailVerification::send($pdo, ['id' => $userId, 'display_name' => trim($name), 'email' => strtolower(trim($email))], yolotask_portal_url($role));
+                    try {
+                        $sent = EmailVerification::send($pdo, ['id' => $userId, 'display_name' => trim($name), 'email' => strtolower(trim($email))], yolotask_portal_url($role));
+                    } catch (Throwable $mailError) {
+                        Logger::error('auth.verification_send_failed', ['exception' => get_class($mailError), 'message' => $mailError->getMessage(), 'at' => basename($mailError->getFile()) . ':' . $mailError->getLine()]);
+                        $sent = false;
+                    }
                     yolotask_flash($sent ? 'Account created. We sent a code to your email.' : 'Account created. Request a new code below to confirm your email.', $sent ? 'success' : 'warning');
                     yolotask_redirect('verify.php');
                 }
             } catch (Throwable $e) {
-                Logger::error('auth.registration_failed', ['exception' => get_class($e)]);
+                Logger::error('auth.registration_failed', ['exception' => get_class($e), 'message' => $e->getMessage(), 'at' => basename($e->getFile()) . ':' . $e->getLine()]);
                 $error = str_contains($e->getMessage(), 'account could not be created') ? $e->getMessage() : 'We could not create the account. Check the details and try again.';
             }
         }
