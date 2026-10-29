@@ -37,6 +37,17 @@ if [[ ! -f "$RELEASE/apps/main/public/index.php" || ! -f "$RELEASE/apps/earner/p
   echo "ERROR: Expected public front controllers are missing from the release." >&2
   exit 1
 fi
+# Apply pending database migrations before switching traffic to the release.
+PHP_BIN="$(command -v php || true)"
+for candidate in /usr/local/bin/php /opt/cpanel/ea-php84/root/usr/bin/php /opt/cpanel/ea-php83/root/usr/bin/php /opt/cpanel/ea-php82/root/usr/bin/php; do
+  if [[ -z "$PHP_BIN" && -x "$candidate" ]]; then PHP_BIN="$candidate"; fi
+done
+if [[ -n "$PHP_BIN" && -f "$RELEASE/scripts/migrate.php" ]]; then
+  "$PHP_BIN" "$RELEASE/scripts/migrate.php" --config-dir="$BASE/config-private"
+else
+  echo "WARNING: php CLI not found; database migrations were not run." >&2
+fi
+
 TEMP_LINK="$BASE/current.next"
 rm -f "$TEMP_LINK"
 ln -s "$RELEASE" "$TEMP_LINK"
@@ -47,4 +58,4 @@ if [[ -e "$BASE/current" && ! -L "$BASE/current" ]]; then
 fi
 mv -Tf "$TEMP_LINK" "$BASE/current"
 echo "Published YOLOTASK V2 scaffold commit $COMMIT to $BASE/current"
-echo "This starter has no live payments or feature-complete marketplace. No database migrations were run."
+echo "Database migrations are applied by scripts/migrate.php during each release."
