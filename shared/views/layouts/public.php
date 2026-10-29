@@ -1,119 +1,219 @@
 <?php
+
 declare(strict_types=1);
 
-$appName = is_string($appName ?? null) ? $appName : 'YOLOTASK V2';
-$roleTitle = is_string($roleTitle ?? null) ? $roleTitle : 'YOLOTASK';
-$roleSlug = is_string($roleSlug ?? null) ? $roleSlug : 'main';
-$subtitle = is_string($subtitle ?? null) ? $subtitle : 'A marketplace for clear, verifiable work.';
-$description = is_string($description ?? null) ? $description : '';
-$heroChips = is_array($heroChips ?? null) ? $heroChips : [];
-$features = is_array($features ?? null) ? $features : [];
-$navItems = is_array($navItems ?? null) ? $navItems : [];
-$headerAction = is_array($headerAction ?? null) ? $headerAction : null;
-$primaryAction = is_array($primaryAction ?? null) ? $primaryAction : null;
-$secondaryAction = is_array($secondaryAction ?? null) ? $secondaryAction : null;
-$signedInUser = is_array($signedInUser ?? null) ? $signedInUser : null;
-$logoutCsrfToken = is_string($logoutCsrfToken ?? null) ? $logoutCsrfToken : '';
-$statusMessage = is_string($statusMessage ?? null) ? $statusMessage : 'This staging build is for testing only. Marketplace and financial activity are disabled.';
-$availabilityTitle = is_string($availabilityTitle ?? null) ? $availabilityTitle : 'What is available in this build';
-$availabilityBody = is_string($availabilityBody ?? null) ? $availabilityBody : 'Authentication is available for selected roles. Marketplace workflows remain under development.';
+/**
+ * YOLOTASK V2 — Public marketing layout.
+ *
+ * Expected (all optional) variables from the including view:
+ *   $appName, $roleTitle, $roleSlug, $subtitle, $description, $heroChips,
+ *   $features, $navItems, $headerAction, $primaryAction, $secondaryAction,
+ *   $signedInUser, $logoutCsrfToken, $dashboardUrl, $legalBaseUrl
+ * Uses global helper h(string): string for escaping.
+ */
+
+$appName        = is_string($appName ?? null) && $appName !== '' ? $appName : 'YOLOTASK';
+$roleTitle      = is_string($roleTitle ?? null) && $roleTitle !== '' ? $roleTitle : '';
+$roleSlug       = is_string($roleSlug ?? null) && $roleSlug !== '' ? $roleSlug : 'platform';
+$subtitle       = is_string($subtitle ?? null) && $subtitle !== '' ? $subtitle : 'Earn on every task you complete';
+$description    = is_string($description ?? null) && $description !== '' ? $description : 'A task platform that pays you for completed work, with transparent tracking and instant wallet updates.';
+$heroChips      = array_values(array_filter(
+    is_array($heroChips ?? null) ? $heroChips : [],
+    static fn ($chip): bool => is_string($chip) && $chip !== ''
+));
+$features       = is_array($features ?? null) ? $features : [];
+$navItems       = array_values(array_filter(
+    is_array($navItems ?? null) ? $navItems : [],
+    static function ($item): bool {
+        return is_array($item)
+            && isset($item['label'], $item['url'])
+            && is_string($item['label']) && $item['label'] !== ''
+            && is_string($item['url']) && $item['url'] !== '';
+    }
+));
+$actions        = [];
+foreach (['headerAction', 'primaryAction', 'secondaryAction'] as $actionKey) {
+    $action = $$actionKey ?? null;
+    if (is_array($action)
+        && isset($action['url'], $action['label'])
+        && is_string($action['url']) && $action['url'] !== ''
+        && is_string($action['label']) && $action['label'] !== ''
+    ) {
+        $actions[$actionKey] = $action;
+    } else {
+        $actions[$actionKey] = null;
+    }
+}
+$signedInUser   = is_array($signedInUser ?? null) && isset($signedInUser['display_name'])
+    && is_string($signedInUser['display_name']) && $signedInUser['display_name'] !== ''
+        ? $signedInUser : null;
+$logoutCsrf     = is_string($logoutCsrfToken ?? null) ? $logoutCsrfToken : '';
+$dashboardUrl   = is_string($dashboardUrl ?? null) && $dashboardUrl !== '' ? $dashboardUrl : null;
+$legalBaseUrl   = is_string($legalBaseUrl ?? null) ? rtrim($legalBaseUrl, '/') : '';
+
+$heroH1    = $roleTitle !== '' ? $roleTitle . ' — ' . $subtitle : $subtitle;
+$featuresHeading = is_string($featuresHeading ?? null) && $featuresHeading !== '' ? $featuresHeading : 'Why YOLOTASK';
+$steps = is_array($steps ?? null) && $steps !== [] ? array_values($steps) : [
+    ['title' => 'Create your account', 'body' => 'Sign up in a minute with your name, email and a strong password.'],
+    ['title' => 'Complete tasks', 'body' => 'Choose a task, follow the instructions exactly and submit your proof for review.'],
+    ['title' => 'Get rewarded', 'body' => 'Approved proofs earn the reward shown on the task, recorded in your account history.'],
+];
+$legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
 ?>
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#102b46">
-  <meta name="description" content="<?= h($subtitle) ?>">
-  <title><?= h($roleTitle) ?> · <?= h($appName) ?></title>
-  <link rel="stylesheet" href="assets/css/app.css">
-  <script src="assets/js/ui.js" defer></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h($appName) ?><?= $roleTitle !== '' ? ' — ' . h($roleTitle) : '' ?></title>
+<meta name="description" content="<?= h($description) ?>">
+<meta name="theme-color" content="#0A1628">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('yolo_theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* keep default dark */ }
+})();
+</script>
+<link rel="stylesheet" href="assets/css/app.css">
+<script src="assets/js/ui.js" defer></script>
 </head>
-<body class="portal-body role-<?= h($roleSlug) ?>">
-  <a class="skip-link" href="#main-content">Skip to content</a>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="./" aria-label="<?= h($appName) ?> home"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
-      <div class="topbar-actions">
-        <span class="glass-badge badge-role"><?= h($roleTitle) ?></span>
-        <?php if ($signedInUser !== null): ?>
-          <span class="glass-chip user-chip"><?= h('Hi, ' . (string) ($signedInUser['display_name'] ?? 'there')) ?></span>
-          <form class="header-logout" method="post" action="logout.php"><input type="hidden" name="_csrf" value="<?= h($logoutCsrfToken) ?>"><button class="header-action" type="submit">Sign out</button></form>
-        <?php elseif ($headerAction !== null): ?><a class="header-action" href="<?= h((string) ($headerAction['url'] ?? '#')) ?>"><?= h((string) ($headerAction['label'] ?? 'Open')) ?></a><?php endif; ?>
-      </div>
-    </div>
-  </header>
+<body>
 
-  <main id="main-content" class="page-shell">
-    <section class="welcome-card" id="overview" aria-labelledby="welcome-title">
-      <div class="hero-orbit hero-orbit-one" aria-hidden="true"></div>
-      <div class="hero-orbit hero-orbit-two" aria-hidden="true"></div>
-      <div class="hero-content">
-        <div class="chip-row hero-chips" aria-label="Portal details">
-          <?php foreach ($heroChips as $chip): ?><span class="glass-chip"><?= h((string) $chip) ?></span><?php endforeach; ?>
-        </div>
-        <p class="eyebrow">A CLEARER WAY TO WORK ONLINE</p>
-        <h1 id="welcome-title"><?= h($subtitle) ?></h1>
-        <p class="lead"><?= h($description) ?></p>
-        <div class="hero-actions">
-          <?php if ($primaryAction !== null): ?><a class="primary-button" href="<?= h((string) ($primaryAction['url'] ?? '#')) ?>"><?= h((string) ($primaryAction['label'] ?? 'Continue')) ?><span aria-hidden="true">↗</span></a><?php endif; ?>
-          <?php if ($secondaryAction !== null): ?><a class="secondary-button" href="<?= h((string) ($secondaryAction['url'] ?? '#')) ?>"><?= h((string) ($secondaryAction['label'] ?? 'Learn more')) ?></a><?php endif; ?>
-          <button class="quiet-button" type="button" data-modal-open="availability-dialog" aria-haspopup="dialog" aria-controls="availability-dialog">What is live?</button>
-        </div>
-      </div>
-      <aside class="hero-panel glass-panel" aria-label="Release status">
-        <span class="status-indicator" aria-hidden="true"></span>
-        <p class="panel-kicker">V2 BUILD STATUS</p>
-        <p class="panel-title">A careful start, built on fresh foundations.</p>
-        <div class="panel-rule"></div>
-        <p class="panel-copy">Role-based sign-in is being validated before marketplace features are enabled.</p>
-        <div class="chip-row"><span class="glass-chip chip-mint">Secure sessions</span><span class="glass-chip">Fresh V2 data</span></div>
-      </aside>
-    </section>
+<a class="skip-link" href="#main">Skip to content</a>
 
-    <section class="status-area" aria-label="Staging notice">
-      <div class="glass-toast toast-info" role="status" aria-live="polite">
-        <span class="toast-icon" aria-hidden="true">i</span>
-        <div><strong>Staging environment</strong><p><?= h($statusMessage) ?></p></div>
-        <button class="toast-dismiss" type="button" data-toast-dismiss aria-label="Dismiss staging notice">×</button>
-      </div>
-    </section>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="index.php">
+      <span class="brand-mark" aria-hidden="true">Y</span>
+      <span><?= h($appName) ?></span>
+    </a>
 
-    <section class="section-heading" id="value" aria-labelledby="value-title">
-      <div><p class="eyebrow">DESIGNED AROUND TRUST</p><h2 id="value-title">A solid foundation before the full marketplace.</h2></div>
-      <span class="glass-badge badge-subtle">BUILDING IN STAGES</span>
-    </section>
-    <section class="content-grid" aria-label="Portal information">
-      <?php foreach ($features as $index => $feature): ?>
-        <article class="glass-card info-card">
-          <div class="card-topline"><span class="icon-badge" aria-hidden="true"><?= h((string) ($feature['icon'] ?? sprintf('%02d', $index + 1))) ?></span><span class="glass-badge badge-subtle"><?= h((string) ($feature['tag'] ?? 'IN PROGRESS')) ?></span></div>
-          <h3><?= h((string) ($feature['title'] ?? '')) ?></h3>
-          <p><?= h((string) ($feature['description'] ?? '')) ?></p>
-        </article>
+    <nav class="header-nav" aria-label="Primary">
+      <?php foreach ($navItems as $item): ?>
+        <a href="<?= h($item['url']) ?>"><?= h($item['label']) ?></a>
       <?php endforeach; ?>
+    </nav>
+
+    <div class="header-actions">
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+
+      <?php if ($signedInUser !== null): ?>
+        <?php if ($dashboardUrl !== null): ?>
+          <a class="btn btn-primary btn-sm" href="<?= h($dashboardUrl) ?>">Go to dashboard</a>
+        <?php endif; ?>
+        <form method="post" action="logout.php" class="flex">
+          <input type="hidden" name="_csrf" value="<?= h($logoutCsrf) ?>">
+          <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+        </form>
+      <?php elseif ($actions['headerAction'] !== null): ?>
+        <a class="btn btn-primary btn-sm" href="<?= h($actions['headerAction']['url']) ?>"><?= h($actions['headerAction']['label']) ?></a>
+      <?php endif; ?>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="container page">
+
+  <section class="hero" id="overview" data-role="<?= h($roleSlug) ?>">
+    <h1><?= h($heroH1) ?></h1>
+    <p class="hero-lead"><?= h($description) ?></p>
+
+    <?php if ($heroChips !== []): ?>
+      <div class="hero-chips flex flex-wrap">
+        <?php foreach ($heroChips as $chip): ?>
+          <span class="badge badge-dot"><?= h($chip) ?></span>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+
+    <div class="hero-actions flex flex-wrap">
+      <?php if ($signedInUser !== null && $dashboardUrl !== null): ?>
+        <a class="btn btn-primary btn-lg" href="<?= h($dashboardUrl) ?>">Go to dashboard</a>
+      <?php else: ?>
+        <?php if ($actions['primaryAction'] !== null): ?>
+          <a class="btn btn-primary btn-lg" href="<?= h($actions['primaryAction']['url']) ?>"><?= h($actions['primaryAction']['label']) ?></a>
+        <?php endif; ?>
+        <?php if ($actions['secondaryAction'] !== null): ?>
+          <a class="btn btn-outline btn-lg" href="<?= h($actions['secondaryAction']['url']) ?>"><?= h($actions['secondaryAction']['label']) ?></a>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  </section>
+
+  <?php if ($features !== []): ?>
+    <section id="features" aria-labelledby="features-heading">
+      <div class="page-header">
+        <h2 id="features-heading"><?= h($featuresHeading) ?></h2>
+      </div>
+      <div class="grid grid-3">
+        <?php foreach ($features as $feature):
+            $icon  = is_array($feature) && isset($feature['icon']) && is_string($feature['icon']) ? $feature['icon'] : '';
+            $tag   = is_array($feature) && isset($feature['tag']) && is_string($feature['tag']) ? $feature['tag'] : '';
+            $title = is_array($feature) && isset($feature['title']) && is_string($feature['title']) ? $feature['title'] : '';
+            $desc  = is_array($feature) && isset($feature['description']) && is_string($feature['description']) ? $feature['description'] : '';
+            if ($title === '' || $desc === '') { continue; }
+        ?>
+          <article class="card card-hover">
+            <div class="stat-icon" aria-hidden="true"><?= h($icon) ?></div>
+            <?php if ($tag !== ''): ?><span class="badge"><?= h($tag) ?></span><?php endif; ?>
+            <h3><?= h($title) ?></h3>
+            <p><?= h($desc) ?></p>
+          </article>
+        <?php endforeach; ?>
+      </div>
     </section>
+  <?php endif; ?>
 
-    <section class="next-steps glass-panel" id="access" aria-labelledby="access-title">
-      <div><p class="eyebrow">YOUR ROLE, YOUR SPACE</p><h2 id="access-title">Separate portals. A shared standard of care.</h2><p>Each YOLOTASK role has its own entry point and session boundary. Staff access is provisioned by an authorized administrator.</p></div>
-      <button class="secondary-button" type="button" data-modal-open="availability-dialog" aria-haspopup="dialog" aria-controls="availability-dialog">Review this staging build</button>
-    </section>
-  </main>
+  <section class="trust-strip" id="how-it-works" aria-labelledby="how-heading">
+    <div class="page-header">
+      <h2 id="how-heading">How it works</h2>
+    </div>
+    <ol class="grid grid-3 steps">
+      <?php foreach ($steps as $i => $step): ?>
+      <li class="card">
+        <span class="badge badge-dot">Step <?= (int) $i + 1 ?></span>
+        <h3><?= h((string) ($step['title'] ?? '')) ?></h3>
+        <p><?= h((string) ($step['body'] ?? '')) ?></p>
+      </li>
+      <?php endforeach; ?>
+    </ol>
+  </section>
 
-  <nav class="mobile-nav" aria-label="Page navigation">
-    <?php foreach ($navItems as $item): ?><a href="<?= h((string) ($item['url'] ?? '#overview')) ?>"><span class="nav-dot" aria-hidden="true"></span><span><?= h((string) ($item['label'] ?? 'Section')) ?></span></a><?php endforeach; ?>
-  </nav>
-  <footer class="site-footer">
-    <a class="footer-brand" href="./"><span class="brand-mark brand-mark-small" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
-    <p>Built for clearer work, fair review, and careful growth.</p>
-    <span class="footer-status"><span class="status-indicator" aria-hidden="true"></span>Marketplace features are not yet active</span>
-  </footer>
+</main>
 
-  <dialog class="glass-modal" id="availability-dialog" aria-labelledby="availability-title">
-    <div class="modal-head"><span class="glass-badge badge-role">STAGING NOTES</span><button class="icon-button" type="button" data-modal-close aria-label="Close dialog">×</button></div>
-    <h2 id="availability-title"><?= h($availabilityTitle) ?></h2>
-    <p><?= h($availabilityBody) ?></p>
-    <ul class="modal-list"><li>Registration and sign-in are being tested for earners and advertisers.</li><li>Reviewer and admin access remains staff-controlled.</li><li>Tasks, campaigns, balances, payments, and withdrawals are not enabled.</li></ul>
-    <button class="primary-button modal-done" type="button" data-modal-close>Understood</button>
-  </dialog>
+<footer class="site-footer">
+  <div class="container flex-between flex-wrap">
+    <div>
+      <a class="brand" href="index.php">
+        <span class="brand-mark" aria-hidden="true">Y</span>
+        <span><?= h($appName) ?></span>
+      </a>
+      <p class="text-sm">&copy; <?= date('Y') ?> YOLOTASK by Nifelux. All rights reserved.</p>
+    </div>
+    <nav class="footer-links flex" aria-label="Legal">
+      <a href="<?= h($legalUrl('terms.php')) ?>">Terms</a>
+      <a href="<?= h($legalUrl('privacy.php')) ?>">Privacy</a>
+      <a href="<?= h($legalUrl('refunds.php')) ?>">Refunds</a>
+    </nav>
+  </div>
+</footer>
+
+<nav class="bottom-nav" aria-label="Primary mobile">
+  <?php foreach ($navItems as $item): ?>
+    <a href="<?= h($item['url']) ?>"><?= h($item['label']) ?></a>
+  <?php endforeach; ?>
+  <?php if ($actions['primaryAction'] !== null): ?>
+    <a href="<?= h($actions['primaryAction']['url']) ?>"><?= h($actions['primaryAction']['label']) ?></a>
+  <?php endif; ?>
+</nav>
+
 </body>
 </html>
