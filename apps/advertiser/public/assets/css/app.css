@@ -1158,3 +1158,14 @@ body {
 .site-header { background: rgba(10, 22, 40, .9); }
 [data-theme="light"] .site-header { background: rgba(255, 255, 255, .92); }
 body.auth-page, body { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px) + 16px) !important; }
+
+/* Stat cards: icon sits in the flow so labels never collide with it */
+.stat-card { position: relative; }
+.stat-card .stat-icon { position: static; order: -1; margin-bottom: 4px; }
+.stat-card .stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-card .stat-value { overflow-wrap: anywhere; }
+.stat-card .stat-meta, .stat-card p { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .stat-card { padding: 16px; }
+  .stat-card .stat-value { font-size: clamp(1.25rem, 6vw, 1.6rem); line-height: 1.15; }
+}
