@@ -1,0 +1,64 @@
+
+/* ============================================================
+   YOLOTASK V2 — Page components (landing, auth, dashboard,
+   legal documents, errors). Appended to the design system.
+   ============================================================ */
+.skip-link { position: absolute; left: -9999px; top: var(--space-3); z-index: 300; padding: .5rem 1rem; background: var(--primary); color: #05121F; font-weight: 700; border-radius: var(--radius-sm); }
+.skip-link:focus { left: var(--space-4); }
+.eyebrow { margin: 0 0 var(--space-2); letter-spacing: .12em; }
+.page { padding-top: var(--space-6); }
+
+/* Landing hero */
+.hero { position: relative; padding: var(--space-7) 0 var(--space-6); max-width: 760px; }
+.hero h1 { font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.08; letter-spacing: -.03em; margin: 0 0 var(--space-4); background: linear-gradient(120deg, var(--text) 30%, var(--primary)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.hero-lead { font-size: var(--text-lg); color: var(--text-muted); max-width: 620px; margin: 0 0 var(--space-5); }
+.hero-chips { gap: var(--space-2); margin-bottom: var(--space-5); }
+.hero-actions { gap: var(--space-3); }
+#features, #how-it-works { padding: var(--space-6) 0; scroll-margin-top: calc(var(--header-h) + var(--space-4)); }
+#features .card h3, .steps h3 { margin: var(--space-3) 0 var(--space-2); }
+#features .card p, .steps p { margin: 0; color: var(--text-muted); }
+#features .stat-icon { width: 2.5rem; height: 2.5rem; display: grid; place-items: center; border-radius: var(--radius-md); background: var(--primary-soft); color: var(--primary); font-weight: 800; margin-bottom: var(--space-3); }
+.steps { list-style: none; padding: 0; margin: 0; }
+.site-footer { padding: var(--space-5) 0; border-top: 1px solid var(--border); margin-top: var(--space-6); color: var(--text-faint); }
+.footer-links { gap: var(--space-4); }
+.footer-links a { color: var(--text-muted); }
+.footer-links a:hover { color: var(--primary); }
+
+/* Auth */
+.auth-main { display: grid; place-items: center; min-height: calc(100vh - var(--header-h) - 160px); }
+.auth-card { width: 100%; max-width: 440px; }
+.auth-card h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-2); }
+.auth-card > p { margin-top: 0; }
+.auth-card form { margin-top: var(--space-5); }
+.auth-card .toast { position: static; width: auto; margin-top: var(--space-4); animation: none; opacity: 1; transform: none; }
+.auth-switch { margin-top: var(--space-4); }
+.auth-page { padding-bottom: var(--space-5); }
+
+/* Dashboard */
+.dash-hero { margin-bottom: var(--space-5); }
+.dash-hero h2 { margin: var(--space-2) 0; font-size: var(--text-2xl); }
+.dash-hero p { margin: 0; }
+.dash-stats { margin-bottom: var(--space-5); }
+.dash-panels .card { scroll-margin-top: calc(var(--header-h) + var(--space-4)); }
+.dash-tips { list-style: none; padding: 0; margin: 0; }
+.dash-tips p { margin: var(--space-1) 0 0; }
+.user-chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: .375rem .75rem; background: var(--primary-soft); color: var(--primary); border-radius: var(--radius-pill); font-size: var(--text-sm); font-weight: 600; max-width: 180px; }
+.user-chip svg { width: 16px; height: 16px; flex: none; }
+.user-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .user-chip { display: none; } }
+
+/* Legal documents */
+.legal-doc { max-width: 780px; margin-inline: auto; }
+.legal-doc h1 { margin-bottom: var(--space-1); }
+.legal-doc h2 { font-size: var(--text-lg); margin: var(--space-6) 0 var(--space-2); }
+.legal-doc p, .legal-doc li { color: var(--text-muted); }
+.legal-doc ul { padding-left: 1.25rem; }
+.legal-note { margin: var(--space-4) 0; border-color: var(--warning); }
+.legal-note p { margin: 0; color: var(--text); font-weight: 600; }
+
+/* Errors */
+.error-main { display: grid; place-items: center; min-height: 80vh; }
+.error-card { max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
+.error-card h1 { margin: 0; }
+.error-card p { margin: 0; }
+.error-page { padding-bottom: 0; }
