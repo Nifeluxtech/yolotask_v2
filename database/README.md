@@ -1,6 +1,6 @@
 # Database
 
-Executable migrations: `0001_users_sessions_security.sql`, `0002_account_security.sql`. Files marked "NOT executable" are placeholders for later phases and are skipped.
+Executable migrations: `0001_users_sessions_security.sql`, `0002_account_security.sql`, `0003_wallets_ledger.sql` (settings, wallets, ledger accounts/transactions/entries), `0004_payments_banks_withdrawals.sql` (payment orders, raw callbacks, payment review queue, bank accounts, withdrawals). `0002_settings_catalog_interests.sql` remains a placeholder. Files marked "NOT executable" are placeholders for later phases and are skipped.
 
 `scripts/migrate.php` applies pending migrations once each, in filename order, and records them in `schema_migrations`. The cPanel release script runs it automatically before switching traffic. A database where 0001 was applied by hand is adopted without re-running it.
 
