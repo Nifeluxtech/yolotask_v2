@@ -28,6 +28,11 @@ if (!is_array($cfg) || empty($cfg['host']) || empty($cfg['database']) || empty($
     exit(1);
 }
 $charset = (string) ($cfg['charset'] ?? 'utf8mb4');
+set_exception_handler(static function (Throwable $e): void {
+    fwrite(STDERR, 'migrate: ' . get_class($e) . ': ' . $e->getMessage() . "\n");
+    exit(1);
+});
+if (!extension_loaded('pdo_mysql')) { fwrite(STDERR, "migrate: pdo_mysql extension is not loaded in this PHP CLI.\n"); exit(1); }
 $pdo = new PDO(
     "mysql:host={$cfg['host']};dbname={$cfg['database']};charset={$charset}",
     (string) $cfg['username'],
