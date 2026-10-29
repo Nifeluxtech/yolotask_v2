@@ -38,14 +38,27 @@ if [[ ! -f "$RELEASE/apps/main/public/index.php" || ! -f "$RELEASE/apps/earner/p
   exit 1
 fi
 # Apply pending database migrations before switching traffic to the release.
-PHP_BIN="$(command -v php || true)"
-for candidate in /usr/local/bin/php /opt/cpanel/ea-php84/root/usr/bin/php /opt/cpanel/ea-php83/root/usr/bin/php /opt/cpanel/ea-php82/root/usr/bin/php; do
-  if [[ -z "$PHP_BIN" && -x "$candidate" ]]; then PHP_BIN="$candidate"; fi
+# cPanel's default CLI php can be older than the site's PHP, so prefer the
+# EasyApache 8.x binaries and require PHP 8.1+.
+PHP_BIN=""
+for candidate in /opt/cpanel/ea-php84/root/usr/bin/php /opt/cpanel/ea-php83/root/usr/bin/php /opt/cpanel/ea-php82/root/usr/bin/php /opt/cpanel/ea-php81/root/usr/bin/php /usr/local/bin/php "$(command -v php || true)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]] && "$candidate" -r 'exit(PHP_VERSION_ID >= 80100 ? 0 : 1);' >/dev/null 2>&1; then
+    PHP_BIN="$candidate"; break
+  fi
 done
-if [[ -n "$PHP_BIN" && -f "$RELEASE/scripts/migrate.php" ]]; then
-  "$PHP_BIN" "$RELEASE/scripts/migrate.php" --config-dir="$BASE/config-private"
-else
-  echo "WARNING: php CLI not found; database migrations were not run." >&2
+MIGRATE_LOG="$BASE/runtime/logs/deploy-migrate.log"
+if [[ -f "$RELEASE/scripts/migrate.php" ]]; then
+  if [[ -z "$PHP_BIN" ]]; then
+    echo "ERROR: no PHP 8.1+ CLI found for migrations." | tee -a "$MIGRATE_LOG" >&2
+    exit 1
+  fi
+  echo "[$(date -u +%FT%TZ)] $COMMIT using $PHP_BIN ($("$PHP_BIN" -r 'echo PHP_VERSION;'))" >> "$MIGRATE_LOG"
+  if ! "$PHP_BIN" "$RELEASE/scripts/migrate.php" --config-dir="$BASE/config-private" >> "$MIGRATE_LOG" 2>&1; then
+    echo "ERROR: database migration failed; see $MIGRATE_LOG. The live release was not changed." >&2
+    tail -n 20 "$MIGRATE_LOG" >&2 || true
+    exit 1
+  fi
+  tail -n 5 "$MIGRATE_LOG"
 fi
 
 TEMP_LINK="$BASE/current.next"
