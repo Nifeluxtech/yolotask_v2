@@ -82,3 +82,31 @@ function yolotask_asset(string $path): string
     $stamp = is_file($file) ? (string) filemtime($file) : '1';
     return $path . '?v=' . $stamp;
 }
+
+/** Inline SVG icons shared by headers and the bottom dock. */
+function yolotask_nav_icon(string $id): string
+{
+    static $paths = [
+        'home'      => '<path d="m3 10.5 9-7.5 9 7.5V20a1.5 1.5 0 0 1-1.5 1.5h-4.5v-6h-6v6H4.5A1.5 1.5 0 0 1 3 20z"/>',
+        'tasks'     => '<path d="M4 7l2 2 4-4M4 17l2 2 4-4M13 7h7M13 17h7"/>',
+        'wallet'    => '<path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 12h3M3 9h18"/>',
+        'user'      => '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20.5a7.5 7.5 0 0 1 14 0"/>',
+        'user-plus' => '<path d="M10 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 20.5a7.5 7.5 0 0 1 13 0M19 8v6M16 11h6"/>',
+        'chart'     => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+        'megaphone' => '<path d="m3 11 14-6v14L3 13zM7 12v6a2 2 0 0 0 4 0M19 9a3 3 0 0 1 0 6"/>',
+        'bell'      => '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6M10 20a2 2 0 0 0 4 0"/>',
+        'inbox'     => '<path d="M3 13h5l1.5 2.5h5L16 13h5M4 6h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/>',
+        'shield'    => '<path d="M12 3 4.5 6v6c0 4.5 3 7.5 7.5 9 4.5-1.5 7.5-4.5 7.5-9V6zM9 12l2 2 4-4"/>',
+        'sparkle'   => '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+        'doc'       => '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M9 13h6M9 17h6"/>',
+        'refund'    => '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v10M9.5 9.5c0-1 1.1-1.5 2.5-1.5s2.5.6 2.5 1.7c0 2.6-5 1.4-5 4 0 1.1 1.1 1.8 2.5 1.8s2.5-.5 2.5-1.5"/>',
+        'login'     => '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>',
+        'logout'    => '<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3M16 17l5-5-5-5M21 12H9"/>',
+        'rocket'    => '<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2M14 4c3.5-1 6-.5 6-.5s.5 2.5-.5 6L13 16l-5-5zM9 11H5l3-4h4M13 15v4l4-3v-4"/>',
+    ];
+
+    $path = $paths[$id] ?? $paths['home'];
+
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        . 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $path . '</svg>';
+}
