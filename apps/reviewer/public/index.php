@@ -13,9 +13,9 @@ $roleSlug = 'reviewer';
 $subtitle = 'Fair decisions keep YOLOTASK trusted.';
 $description = 'The reviewer workspace is for authorised YOLOTASK staff who check submitted proofs and resolve escalations.';
 $heroChips = ['Authorised staff only', 'Audited actions'];
-$headerAction = null;
-$primaryAction = ['url' => yolotask_portal_url('main'), 'label' => 'Visit YOLOTASK'];
-$secondaryAction = null;
+$headerAction = ['url' => 'login.php', 'label' => 'Sign in'];
+$primaryAction = ['url' => 'login.php', 'label' => 'Staff sign in'];
+$secondaryAction = ['url' => yolotask_portal_url('main'), 'label' => 'Visit YOLOTASK'];
 $navItems = [
     ['label' => 'Home', 'url' => '#overview'],
     ['label' => 'Principles', 'url' => '#features'],
