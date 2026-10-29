@@ -45,7 +45,16 @@ final class Mailer
             return file_put_contents($file, $entry, FILE_APPEND | LOCK_EX) !== false;
         }
 
-        $ok = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers), '-f' . $from);
+        if (!function_exists('mail')) {
+            Logger::error('mail.unavailable', ['reason' => 'mail() is disabled on this host']);
+            return false;
+        }
+        try {
+            $ok = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers), '-f' . $from);
+        } catch (\Throwable $e) {
+            Logger::error('mail.send_error', ['exception' => get_class($e), 'message' => $e->getMessage()]);
+            return false;
+        }
         if (!$ok) Logger::error('mail.send_failed', ['subject' => $subject]);
         return $ok;
     }
