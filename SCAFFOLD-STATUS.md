@@ -13,9 +13,13 @@ The repository remains an incomplete YOLOTASK V2 starter, not a production marke
 - Initial `0001_users_sessions_security.sql` schema and a policy smoke test.
 - Mobile-first registration and sign-in forms for earner and advertiser apps.
 
+## Phase 2 (accounts and security)
+
+Email verification, password reset, account settings and devices, staff invitations and sign-in, admin user management, sign-up abuse controls, security emails, the migration runner and daily cleanup are implemented. See CHANGELOG.md.
+
 ## Still incomplete or requiring review
 
-Email verification, password-reset delivery and use, account recovery, registration abuse controls, MFA, staff account provisioning, protected product dashboards, database integration tests, session cleanup, and a full security review are not implemented. The first migration has not been tested against the target cPanel MySQL/MariaDB version; apply it to staging only after review.
+MFA, database integration tests in CI, and a full independent security review are not yet done. The first migration has not been tested against the target cPanel MySQL/MariaDB version; apply it to staging only after review.
 
 Wallet/ledger posting, fees, payments/callbacks, reconciliation, withdrawals, campaigns/tasks, proofs/appeals, growth, virtual numbers, notifications, and admin/reviewer features remain unimplemented. Migration files after 0001 and feature-area PHP files remain explicit placeholders.
 
