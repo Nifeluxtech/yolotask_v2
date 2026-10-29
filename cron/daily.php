@@ -4,11 +4,14 @@ declare(strict_types=1);
 /**
  * Daily housekeeping. cPanel cron:
  *   15 2 * * * /usr/local/bin/php $HOME/yolotask-v2-live/current/cron/daily.php >/dev/null 2>&1
- * Removes expired sessions, used or expired codes and links, and old throttle rows.
+ * Removes expired sessions, used or expired codes and links, and old throttle rows,
+ * expires stale unpaid AfrStar top-up orders (no money moves) and runs the
+ * wallet/ledger reconciliation, logging any mismatch. Exit code 2 = mismatch.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 define('YOLOTASK_APP_ROLE', 'cron');
 define('YOLOTASK_APP_ROOT', dirname(__DIR__));
+define('YOLOTASK_NO_SESSION', true);
 require YOLOTASK_APP_ROOT . '/shared/bootstrap.php';
 
 $jobs = [
@@ -27,5 +30,25 @@ try {
 } catch (Throwable $e) {
     \YoloTask\Core\Logger::error('cron.daily_failed', ['exception' => get_class($e)]);
     fwrite(STDERR, "cleanup failed\n");
+    exit(1);
+}
+
+// Phase 3: money housekeeping and reconciliation.
+try {
+    $expired = \YoloTask\Payments\PaymentOrders::expireStale($pdo);
+    fwrite(STDOUT, "payments: stale top-up orders expired: {$expired}\n");
+    $problems = \YoloTask\Money\Ledger::reconcile($pdo);
+    if ($problems === []) {
+        fwrite(STDOUT, "reconciliation: OK (ledger balanced, wallet caches match entries)\n");
+    } else {
+        foreach ($problems as $problem) {
+            fwrite(STDOUT, "reconciliation: MISMATCH: {$problem}\n");
+            \YoloTask\Core\Logger::error('cron.reconciliation_mismatch', ['problem' => $problem]);
+        }
+        exit(2);
+    }
+} catch (Throwable $e) {
+    \YoloTask\Core\Logger::error('cron.daily_money_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
+    fwrite(STDERR, "money housekeeping failed: " . get_class($e) . "\n");
     exit(1);
 }
