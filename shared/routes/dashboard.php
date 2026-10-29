@@ -62,6 +62,17 @@ $eventLabels = [
     'admin.user_suspended' => 'Suspended a user',
     'admin.user_restored' => 'Restored a user',
     'admin.staff_invited' => 'Invited staff',
+    'wallet.topup_started' => 'Top-up started',
+    'wallet.withdrawal_requested' => 'Withdrawal requested',
+    'wallet.bank_account_added' => 'Bank account added',
+    'wallet.bank_account_changed' => 'Bank account changed',
+    'admin.withdrawal_approved' => 'Approved a withdrawal',
+    'admin.withdrawal_rejected' => 'Rejected a withdrawal',
+    'admin.wallet_credited' => 'Credited a wallet',
+    'admin.wallet_debited' => 'Debited a wallet',
+    'admin.payment_review_credited' => 'Credited a reviewed payment',
+    'admin.payment_review_rejected' => 'Closed a payment review',
+    'admin.settings_updated' => 'Updated money settings',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -76,15 +87,28 @@ $icons = [
     'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
     'calendar' => '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
     'device' => '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+    'wallet' => '<path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 12h3M3 9h18"/>',
 ];
 $svg = static fn (string $name): string => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($icons[$name] ?? '') . '</svg>';
 
+$walletRow = null;
+if (in_array($role, ['earner', 'advertiser'], true)) {
+    try {
+        $walletRow = \YoloTask\Money\Wallet::forUser($pdo, $userId);
+    } catch (Throwable $e) {
+        Logger::error('dashboard.wallet_failed', ['exception' => get_class($e)]);
+    }
+}
 $stats = [
     ['label' => 'Account status', 'value' => ucfirst((string) ($user['status'] ?? 'active')), 'icon' => 'shield', 'tone' => 'stat-success', 'note' => ucfirst($role) . ' account'],
     ['label' => 'Email', 'value' => $verified ? 'Verified' : 'Unverified', 'icon' => 'mail', 'tone' => $verified ? 'stat-success' : 'stat-warning', 'note' => (string) ($user['email'] ?? '')],
     ['label' => 'Member since', 'value' => $fmt($profile['created_at'] ?? null), 'icon' => 'calendar', 'tone' => '', 'note' => 'Last sign-in ' . $fmt($profile['last_login_at'] ?? null, 'j M, g:i A')],
     ['label' => 'Active sessions', 'value' => (string) $activeSessions, 'icon' => 'device', 'tone' => $activeSessions > 1 ? 'stat-warning' : '', 'note' => $activeSessions > 1 ? 'Signed in on more than one device' : 'This device only'],
 ];
+if ($walletRow !== null) {
+    $stats[0] = ['label' => 'Wallet balance', 'value' => \YoloTask\Money\Money::format($walletRow['available_kobo']), 'icon' => 'wallet', 'tone' => 'stat-success',
+        'note' => $walletRow['held_kobo'] > 0 ? \YoloTask\Money\Money::format($walletRow['held_kobo']) . ' on hold' : ($role === 'earner' ? 'Available to withdraw' : 'Available for campaigns')];
+}
 
 $tips = $role === 'admin'
     ? [
@@ -110,11 +134,18 @@ $tips = $role === 'admin'
         ['title' => 'Protect your account', 'body' => 'Use a unique password and sign out on shared devices. YOLOTASK will never ask for your password.'],
     ]));
 
+$adminMoney = ['withdrawals' => 0, 'reviews' => 0];
 $adminCounts = null;
 $platformActivity = [];
 if ($role === 'admin') {
     try {
         $adminCounts = \YoloTask\Admin\Users::counts($pdo);
+        try {
+            $adminMoney['withdrawals'] = \YoloTask\Payments\Withdrawals::counts($pdo)['pending_review'];
+            $adminMoney['reviews'] = \YoloTask\Payments\PaymentReview::openCount($pdo);
+        } catch (Throwable $e) {
+            Logger::error('dashboard.admin_money_failed', ['exception' => get_class($e)]);
+        }
         $platformActivity = $pdo->query('SELECT a.event_key, a.created_at, u.display_name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.id DESC LIMIT 8')->fetchAll() ?: [];
         $stats = [
             ['label' => 'Earners', 'value' => number_format($adminCounts['earner']), 'icon' => 'shield', 'tone' => '', 'note' => number_format($adminCounts['new_7d']) . ' new accounts this week'],
@@ -146,7 +177,9 @@ ob_start();
       default => 'Here is an overview of your earner account and its security.',
   }) ?></p>
   <div class="hero-actions">
-    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="users.php#invite">Invite staff</a>
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a>
+    <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a>
+    <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="topup.php">Top up wallet</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a>
     <?php else: ?><a class="btn btn-secondary btn-sm" href="account.php">Account settings</a><?php endif; ?>
   </div>
 </section>
