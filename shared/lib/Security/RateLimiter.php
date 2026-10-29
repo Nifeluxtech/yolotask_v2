@@ -26,10 +26,7 @@ final class RateLimiter
 
     private static function keys(string $email): array
     {
-        $config = function_exists('yolotask_config') ? yolotask_config() : [];
-        $keyValue = $config['security_key'] ?? null;
-        $key = (string) ($keyValue ?: (getenv('YOLOTASK_SECURITY_KEY') ?: ''));
-        if (strlen($key) < 32) throw new RuntimeException('Set a private YOLOTASK_SECURITY_KEY of at least 32 characters.');
+        $key = Crypto::key();
         $emailHash = hash_hmac('sha256', strtolower(trim($email)), $key);
         $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
         $ipHash = hash_hmac('sha256', $ip, $key);

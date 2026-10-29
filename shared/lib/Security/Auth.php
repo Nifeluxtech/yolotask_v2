@@ -77,6 +77,9 @@ final class Auth
                 $update = $pdo->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
                 $update->execute(['hash' => password_hash($password, PASSWORD_DEFAULT), 'id' => (int) $user['id']]);
             }
+            $label = Devices::label((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+            $hadSessions = (int) $pdo->query('SELECT COUNT(*) FROM user_sessions WHERE user_id = ' . (int) $user['id'])->fetchColumn() > 0;
+            $newDevice = $hadSessions && Devices::isNew($pdo, (int) $user['id'], $label);
             Session::authenticate($pdo, (int) $user['id']);
             $update = $pdo->prepare('UPDATE users SET last_login_at = UTC_TIMESTAMP() WHERE id = :id');
             $update->execute(['id' => (int) $user['id']]);
@@ -86,7 +89,20 @@ final class Auth
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
+        if ($newDevice) {
+            $when = (new \DateTimeImmutable('now', new \DateTimeZone('Africa/Lagos')))->format('j M Y, g:i A') . ' WAT';
+            \YoloTask\Messaging\Mailer::send((string) $user['email'], 'New sign-in to your YOLOTASK account', 'New sign-in detected',
+                ["Your YOLOTASK account was just signed in from {$label} on {$when}."],
+                null, null, "If this was you, there's nothing to do. If not, reset your password now and sign out other devices from your account settings.");
+        }
         return true;
+    }
+
+    /** Start a session straight after sign-up so the user can verify their email. */
+    public static function signInNewAccount(PDO $pdo, int $userId): void
+    {
+        Session::authenticate($pdo, $userId);
+        $pdo->prepare('UPDATE users SET last_login_at = UTC_TIMESTAMP() WHERE id = :id')->execute(['id' => $userId]);
     }
 
     public static function currentUser(PDO $pdo): ?array
@@ -94,12 +110,15 @@ final class Auth
         $userId = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT);
         $sessionHash = $_SESSION['session_hash'] ?? null;
         if (!$userId || !is_string($sessionHash) || !preg_match('/^[a-f0-9]{64}$/', $sessionHash)) return null;
-        $stmt = $pdo->prepare('SELECT u.id, u.display_name, u.email, u.role, u.status FROM users u INNER JOIN user_sessions s ON s.user_id = u.id WHERE u.id = :user_id AND s.session_hash = :session_hash AND s.revoked_at IS NULL AND s.expires_at > UTC_TIMESTAMP() AND u.status = \'active\' LIMIT 1');
+        $stmt = $pdo->prepare('SELECT u.id, u.display_name, u.email, u.phone, u.role, u.status, u.email_verified_at, u.created_at, u.last_login_at, s.id AS session_id, s.last_seen_at FROM users u INNER JOIN user_sessions s ON s.user_id = u.id WHERE u.id = :user_id AND s.session_hash = :session_hash AND s.revoked_at IS NULL AND s.expires_at > UTC_TIMESTAMP() AND u.status = \'active\' LIMIT 1');
         $stmt->execute(['user_id' => $userId, 'session_hash' => $sessionHash]);
         $user = $stmt->fetch();
         if (!is_array($user)) {
             $_SESSION = [];
             return null;
+        }
+        if ($user['last_seen_at'] === null || strtotime((string) $user['last_seen_at'] . ' UTC') < time() - 300) {
+            $pdo->prepare('UPDATE user_sessions SET last_seen_at = UTC_TIMESTAMP() WHERE id = :id')->execute(['id' => (int) $user['session_id']]);
         }
         return $user;
     }

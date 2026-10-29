@@ -13,10 +13,11 @@ final class Session
         if (!session_regenerate_id(true)) throw new RuntimeException('Could not rotate the session ID.');
         $sessionHash = hash('sha256', session_id());
         $expiresAt = gmdate('Y-m-d H:i:s', time() + 43200);
+        $ua = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
         $ipHash = self::privacyHash((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
-        $agentHash = self::privacyHash((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
-        $stmt = $pdo->prepare('INSERT INTO user_sessions (user_id, session_hash, expires_at, ip_hash, user_agent_hash) VALUES (:user_id, :session_hash, :expires_at, :ip_hash, :agent_hash)');
-        $stmt->execute(['user_id' => $userId, 'session_hash' => $sessionHash, 'expires_at' => $expiresAt, 'ip_hash' => $ipHash, 'agent_hash' => $agentHash]);
+        $agentHash = self::privacyHash($ua);
+        $stmt = $pdo->prepare('INSERT INTO user_sessions (user_id, session_hash, expires_at, ip_hash, user_agent_hash, device_label, last_seen_at) VALUES (:user_id, :session_hash, :expires_at, :ip_hash, :agent_hash, :label, UTC_TIMESTAMP())');
+        $stmt->execute(['user_id' => $userId, 'session_hash' => $sessionHash, 'expires_at' => $expiresAt, 'ip_hash' => $ipHash, 'agent_hash' => $agentHash, 'label' => Devices::label($ua)]);
         $_SESSION = ['user_id' => $userId, 'session_hash' => $sessionHash, '_csrf' => bin2hex(random_bytes(32))];
     }
 
@@ -43,10 +44,6 @@ final class Session
     private static function privacyHash(string $value): ?string
     {
         if ($value === '') return null;
-        $config = function_exists('yolotask_config') ? yolotask_config() : [];
-        $keyValue = $config['security_key'] ?? null;
-        $key = (string) ($keyValue ?: (getenv('YOLOTASK_SECURITY_KEY') ?: ''));
-        if (strlen($key) < 32) throw new RuntimeException('Set a private YOLOTASK_SECURITY_KEY of at least 32 characters.');
-        return hash_hmac('sha256', $value, $key);
+        return Crypto::hmac($value);
     }
 }
