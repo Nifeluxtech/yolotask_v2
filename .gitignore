@@ -18,3 +18,5 @@
 .idea/
 .vscode/
 .phpunit.cache/
+# cPanel PHP writes error_log files into the working directory
+error_log
