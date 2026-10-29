@@ -65,3 +65,20 @@ function yolotask_portal_url(string $portal): string
     }
     return 'https://' . $prefix . $root;
 }
+
+/** Public brand name: always "YOLOTASK", whatever internal version label config carries. */
+function yolotask_brand_name(?string $name = null): string
+{
+    $name = trim((string) ($name ?? (yolotask_config()['app_name'] ?? 'YOLOTASK')));
+    $name = trim((string) preg_replace('/\s*v\d+$/i', '', $name));
+    return $name !== '' ? $name : 'YOLOTASK';
+}
+
+/** Portal asset URL with a file-modified stamp so phones never keep a stale stylesheet. */
+function yolotask_asset(string $path): string
+{
+    $path = ltrim($path, '/');
+    $file = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/') . '/' . $path;
+    $stamp = is_file($file) ? (string) filemtime($file) : '1';
+    return $path . '?v=' . $stamp;
+}
