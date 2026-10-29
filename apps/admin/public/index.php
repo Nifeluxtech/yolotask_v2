@@ -13,9 +13,9 @@ $roleSlug = 'admin';
 $subtitle = 'Strong operations, strong guardrails.';
 $description = 'The admin workspace is restricted to authorised YOLOTASK operators. Accounts are created by invitation only.';
 $heroChips = ['Authorised staff only', 'Audited actions'];
-$headerAction = null;
-$primaryAction = ['url' => yolotask_portal_url('main'), 'label' => 'Visit YOLOTASK'];
-$secondaryAction = null;
+$headerAction = ['url' => 'login.php', 'label' => 'Sign in'];
+$primaryAction = ['url' => 'login.php', 'label' => 'Staff sign in'];
+$secondaryAction = ['url' => yolotask_portal_url('main'), 'label' => 'Visit YOLOTASK'];
 $navItems = [
     ['label' => 'Home', 'url' => '#overview'],
     ['label' => 'Principles', 'url' => '#features'],
