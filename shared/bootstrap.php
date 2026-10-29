@@ -110,3 +110,111 @@ function yolotask_nav_icon(string $id): string
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
         . 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $path . '</svg>';
 }
+
+/** The portal this request belongs to (earner, advertiser, reviewer, admin or main). */
+function yolotask_role(): string
+{
+    return defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main';
+}
+
+function yolotask_role_title(?string $role = null): string
+{
+    return ['earner' => 'Earner', 'advertiser' => 'Advertiser', 'reviewer' => 'Reviewer', 'admin' => 'Admin'][$role ?? yolotask_role()] ?? 'YOLOTASK';
+}
+
+/** Read and clear a one-time flash message: [message, type]. */
+function yolotask_flash_take(): array
+{
+    $msg = is_string($_SESSION['_flash'] ?? null) ? $_SESSION['_flash'] : null;
+    $type = in_array($_SESSION['_flash_type'] ?? null, ['success', 'error', 'warning'], true) ? $_SESSION['_flash_type'] : 'success';
+    unset($_SESSION['_flash'], $_SESSION['_flash_type']);
+    return [$msg, $type];
+}
+
+function yolotask_flash(string $message, string $type = 'success'): void
+{
+    $_SESSION['_flash'] = $message;
+    $_SESSION['_flash_type'] = $type;
+}
+
+function yolotask_redirect(string $to): never
+{
+    header('Location: ' . $to, true, 303);
+    exit;
+}
+
+function yolotask_error_page(int $code): never
+{
+    http_response_code($code);
+    require YOLOTASK_APP_ROOT . '/shared/views/errors/' . (in_array($code, [403, 404, 500], true) ? $code : 500) . '.php';
+    exit;
+}
+
+/** Private, uncacheable response headers for signed-in pages. */
+function yolotask_private_headers(): void
+{
+    header('Cache-Control: no-store, private');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: same-origin');
+    header('X-Content-Type-Options: nosniff');
+}
+
+/** Signed-in user for this portal, or redirect to sign in / 403. */
+function yolotask_require_user(PDO $pdo): array
+{
+    $user = \YoloTask\Security\Auth::currentUser($pdo);
+    if (!is_array($user)) {
+        yolotask_flash('Please sign in to continue.', 'warning');
+        yolotask_redirect('login.php');
+    }
+    if ((string) $user['role'] !== yolotask_role()) yolotask_error_page(403);
+    return $user;
+}
+
+/** Bottom-dock / header navigation for signed-in portals. */
+function yolotask_portal_nav(string $active): array
+{
+    $role = yolotask_role();
+    $items = [['key' => 'home', 'label' => 'Home', 'url' => 'dashboard.php', 'icon' => 'home']];
+    if ($role === 'admin') $items[] = ['key' => 'users', 'label' => 'Users', 'url' => 'users.php', 'icon' => 'user-plus'];
+    if ($role === 'reviewer') $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'inbox'];
+    if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'chart'];
+    $items[] = ['key' => 'account', 'label' => 'Account', 'url' => 'account.php', 'icon' => 'user'];
+    foreach ($items as &$item) $item['active'] = $item['key'] === $active;
+    return $items;
+}
+
+/** Render a signed-in page through the authenticated layout. */
+function yolotask_render_app(array $user, string $pageTitle, string $contentHtml, string $activeNav): never
+{
+    [$flash, $flashType] = yolotask_flash_take();
+    $appName = yolotask_brand_name();
+    $roleTitle = yolotask_role_title();
+    $userDisplayName = (string) ($user['display_name'] ?? '');
+    $logoutCsrfToken = \YoloTask\Security\Csrf::token();
+    $navItems = yolotask_portal_nav($activeNav);
+    require YOLOTASK_APP_ROOT . '/shared/views/layouts/authenticated.php';
+    exit;
+}
+
+/** Render the shared auth card. */
+function yolotask_render_auth(string $authMode, array $vars = []): never
+{
+    [$flash] = yolotask_flash_take();
+    $roleTitle = yolotask_role_title();
+    $csrfToken = \YoloTask\Security\Csrf::token();
+    extract($vars, EXTR_SKIP);
+    require YOLOTASK_APP_ROOT . '/shared/views/layouts/auth.php';
+    exit;
+}
+
+/** Format a UTC database time in Lagos time. */
+function yolotask_wat(?string $utc, string $pattern = 'j M Y, g:i A'): string
+{
+    if ($utc === null || $utc === '') return '—';
+    try {
+        return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('Africa/Lagos'))->format($pattern);
+    } catch (Throwable) {
+        return '—';
+    }
+}
