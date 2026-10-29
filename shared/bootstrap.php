@@ -25,7 +25,19 @@ if (is_file($mailConfigFile)) {
     }
 }
 
-if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
+// Payment provider settings: payments.local.php (which reads afrstar.key),
+// or afrstar.key on its own. See config/payments.example.php.
+$config['_config_dir'] = rtrim($privateConfigDir, '/');
+$paymentsConfigFile = rtrim($privateConfigDir, '/') . '/payments.local.php';
+if (is_file($paymentsConfigFile)) {
+    $paymentsLoaded = require $paymentsConfigFile;
+    if (is_array($paymentsLoaded)) {
+        $config['payments'] = $paymentsLoaded;
+    }
+}
+
+// Provider callbacks (hooks/) and cron define YOLOTASK_NO_SESSION: no cookie, no session.
+if (!defined('YOLOTASK_NO_SESSION') && session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
     $role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main';
     session_name('YT_' . strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $role)) . '_SESSION');
     ini_set('session.use_strict_mode', '1');
@@ -184,6 +196,8 @@ function yolotask_portal_nav(string $active): array
     $role = yolotask_role();
     $items = [['key' => 'home', 'label' => 'Home', 'url' => 'dashboard.php', 'icon' => 'home']];
     if ($role === 'admin') $items[] = ['key' => 'users', 'label' => 'Users', 'url' => 'users.php', 'icon' => 'user-plus'];
+    if ($role === 'admin') $items[] = ['key' => 'money', 'label' => 'Money', 'url' => 'wallets.php', 'icon' => 'wallet'];
+    if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'wallet', 'label' => 'Wallet', 'url' => 'wallet.php', 'icon' => 'wallet'];
     if ($role === 'reviewer') $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'inbox'];
     if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'chart'];
     $items[] = ['key' => 'account', 'label' => 'Account', 'url' => 'account.php', 'icon' => 'user'];
