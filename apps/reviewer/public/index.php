@@ -4,27 +4,31 @@ declare(strict_types=1);
 define('YOLOTASK_APP_ROLE', 'reviewer');
 define('YOLOTASK_APP_ROOT', dirname(__DIR__, 3));
 require_once YOLOTASK_APP_ROOT . '/shared/bootstrap.php';
+header('X-Robots-Tag: noindex, nofollow');
 
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK V2');
+$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
+$legalBaseUrl = yolotask_portal_url('main');
 $roleTitle = 'Reviewer';
 $roleSlug = 'reviewer';
-$subtitle = 'Fair decisions start with a clear review process.';
-$description = 'The reviewer workspace will support careful, consistent checks of task submissions. Access is staff-created; self-registration and reviewer sign-in are not enabled in this staging phase.';
-$heroChips = ['REVIEWER PORTAL', 'STAFF-CONTROLLED ACCESS', 'V2 STAGING'];
-$statusMessage = 'Reviewer access is not yet enabled. This page is a design preview only; review queues and decision actions are unavailable.';
-$availabilityTitle = 'Reviewer access is not enabled yet';
-$availabilityBody = 'Reviewer accounts are provisioned by authorized staff. The review queue and decision workflows are not active in this build.';
+$subtitle = 'Fair decisions keep YOLOTASK trusted.';
+$description = 'The reviewer workspace is for authorised YOLOTASK staff who check submitted proofs and resolve escalations.';
+$heroChips = ['Authorised staff only', 'Audited actions'];
 $headerAction = null;
-$primaryAction = null;
+$primaryAction = ['url' => yolotask_portal_url('main'), 'label' => 'Visit YOLOTASK'];
 $secondaryAction = null;
 $navItems = [
-    ['label' => 'Overview', 'url' => '#overview'],
-    ['label' => 'Review values', 'url' => '#value'],
-    ['label' => 'Access notes', 'url' => '#access'],
+    ['label' => 'Home', 'url' => '#overview'],
+    ['label' => 'Principles', 'url' => '#features'],
 ];
 $features = [
-    ['icon' => '01', 'tag' => 'CONSISTENCY', 'title' => 'Clear review standards', 'description' => 'Review guidance and evidence requirements will be made visible before the reviewer queue is activated.'],
-    ['icon' => '02', 'tag' => 'COMING NEXT', 'title' => 'A manageable review queue', 'description' => 'Queue claiming, release, and decision history will be tested after role authentication and task submissions are ready.'],
-    ['icon' => '03', 'tag' => 'STAFF ONLY', 'title' => 'No public reviewer sign-up', 'description' => 'Reviewer and administrator roles cannot be created through public registration forms.'],
+    ['icon' => '01', 'tag' => 'ACCURACY', 'title' => 'Check every proof carefully', 'description' => 'Each decision is measured against the advertiser\'s instructions, never personal preference.'],
+    ['icon' => '02', 'tag' => 'FAIRNESS', 'title' => 'Treat both sides equally', 'description' => 'Earners and advertisers deserve consistent, explainable outcomes.'],
+    ['icon' => '03', 'tag' => 'ACCOUNTABILITY', 'title' => 'Every action is recorded', 'description' => 'Review decisions are logged so they can be audited and appealed.'],
+];
+$featuresHeading = 'How we review';
+$steps = [
+    ['title' => 'Invitation only', 'body' => 'Reviewer accounts are issued by YOLOTASK operations.'],
+    ['title' => 'Check against the brief', 'body' => 'Each proof is compared with the advertiser\'s instructions.'],
+    ['title' => 'Record the decision', 'body' => 'Every outcome is logged with a reason that can be appealed.'],
 ];
 require YOLOTASK_APP_ROOT . '/shared/views/layouts/public.php';
