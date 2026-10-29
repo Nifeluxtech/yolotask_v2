@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Expected from the route: $authMode ('login'|'register'), $roleTitle, $csrfToken,
  * optional $error, $flash, $emailValue, $nameValue.
  */
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
+$appName = yolotask_brand_name();
 $authMode = ($authMode ?? 'login') === 'register' ? 'register' : 'login';
 $roleTitle = is_string($roleTitle ?? null) ? $roleTitle : 'Earner';
 $isAdvertiser = $roleTitle === 'Advertiser';
@@ -41,10 +41,10 @@ if ($authMode === 'login') {
   <meta name="theme-color" content="#0A1628">
   <meta name="robots" content="noindex">
   <title><?= h($pageTitle) ?> · <?= h($appName) ?></title>
-  <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="assets/css/app.css">
+  <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
   <link rel="manifest" href="manifest.json">
-  <script src="assets/js/ui.js" defer></script>
+  <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body class="auth-page">
   <a class="skip-link" href="#auth-form">Skip to form</a>

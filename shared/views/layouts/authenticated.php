@@ -13,7 +13,7 @@ declare(strict_types=1);
  * Uses global helper h(string): string for escaping.
  */
 
-$appName         = is_string($appName ?? null) && $appName !== '' ? $appName : 'YOLOTASK';
+$appName         = yolotask_brand_name(is_string($appName ?? null) ? $appName : null);
 $roleTitle       = is_string($roleTitle ?? null) && $roleTitle !== '' ? $roleTitle : '';
 $pageTitle       = is_string($pageTitle ?? null) && $pageTitle !== '' ? $pageTitle : 'Dashboard';
 $userDisplayName = is_string($userDisplayName ?? null) && $userDisplayName !== '' ? $userDisplayName : 'Account';
@@ -72,14 +72,14 @@ $flashIcon = [
   try {
     var t = localStorage.getItem('yolo_theme');
     if (t !== 'light' && t !== 'dark') {
-      t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      t = 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (e) { /* keep default dark */ }
 })();
 </script>
-<link rel="stylesheet" href="assets/css/app.css">
-<script src="assets/js/ui.js" defer></script>
+<link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
+<script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 <style>
   .safe-area { padding-bottom: env(safe-area-inset-bottom, 0); }
   .bottom-nav { margin-bottom: env(safe-area-inset-bottom, 0); }

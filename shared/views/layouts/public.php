@@ -12,7 +12,7 @@ declare(strict_types=1);
  * Uses global helper h(string): string for escaping.
  */
 
-$appName        = is_string($appName ?? null) && $appName !== '' ? $appName : 'YOLOTASK';
+$appName        = yolotask_brand_name(is_string($appName ?? null) ? $appName : null);
 $roleTitle      = is_string($roleTitle ?? null) && $roleTitle !== '' ? $roleTitle : '';
 $roleSlug       = is_string($roleSlug ?? null) && $roleSlug !== '' ? $roleSlug : 'platform';
 $subtitle       = is_string($subtitle ?? null) && $subtitle !== '' ? $subtitle : 'Earn on every task you complete';
@@ -73,14 +73,14 @@ $legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
   try {
     var t = localStorage.getItem('yolo_theme');
     if (t !== 'light' && t !== 'dark') {
-      t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      t = 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (e) { /* keep default dark */ }
 })();
 </script>
-<link rel="stylesheet" href="assets/css/app.css">
-<script src="assets/js/ui.js" defer></script>
+<link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
+<script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body>
 
@@ -123,7 +123,23 @@ $legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
 <main id="main" class="container page">
 
   <section class="hero" id="overview" data-role="<?= h($roleSlug) ?>">
-    <h1><?= h($heroH1) ?></h1>
+    <div class="hero-orb hero-orb-1" aria-hidden="true"></div>
+    <div class="hero-orb hero-orb-2" aria-hidden="true"></div>
+    <?php if ($roleTitle !== '' && $roleSlug !== 'main'): ?><p class="hero-eyebrow"><?= h($roleTitle) ?> portal</p><?php endif; ?>
+    <h1><?php
+      // Signature V1 headline: the closing phrase glows in the cyan-to-violet gradient.
+      $heroText  = trim($subtitle) !== '' ? trim($subtitle) : $heroH1;
+      $heroParts = preg_split('/(?<=[.!?])\s+/', $heroText, -1, PREG_SPLIT_NO_EMPTY) ?: [$heroText];
+      if (count($heroParts) >= 2) {
+          $heroAccent = (string) array_pop($heroParts);
+          $heroLead   = implode(' ', $heroParts);
+      } else {
+          $words      = preg_split('/\s+/', $heroText) ?: [$heroText];
+          $heroAccent = implode(' ', array_splice($words, -min(2, count($words))));
+          $heroLead   = implode(' ', $words);
+      }
+      echo h($heroLead), $heroLead !== '' ? ' ' : '', '<span class="grad">', h($heroAccent), '</span>';
+    ?></h1>
     <p class="hero-lead"><?= h($description) ?></p>
 
     <?php if ($heroChips !== []): ?>

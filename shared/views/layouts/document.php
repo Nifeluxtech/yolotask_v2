@@ -5,7 +5,7 @@ declare(strict_types=1);
  * Long-form document layout (Terms, Privacy, Refunds).
  * Expects $docTitle, $docUpdated and trusted $docBody HTML from the page.
  */
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
+$appName = yolotask_brand_name();
 $docTitle = is_string($docTitle ?? null) ? $docTitle : 'YOLOTASK';
 $docUpdated = is_string($docUpdated ?? null) ? $docUpdated : '';
 $docBody = is_string($docBody ?? null) ? $docBody : '';
@@ -20,9 +20,9 @@ $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php'
   <meta name="theme-color" content="#0A1628">
   <meta name="description" content="<?= h($docTitle) ?> for YOLOTASK, the verified digital task marketplace.">
   <title><?= h($docTitle) ?> · <?= h($appName) ?></title>
-  <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="assets/css/app.css">
-  <script src="assets/js/ui.js" defer></script>
+  <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
+  <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
