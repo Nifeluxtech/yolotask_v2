@@ -23,29 +23,32 @@ if (isset($_SESSION['user_id'])) {
         Logger::error('auth.session_lookup_failed', ['exception' => get_class($e)]);
     }
 }
+$dashboardUrl = $signedInUser !== null ? 'dashboard.php' : null;
 
-$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK V2');
+$appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
+$legalBaseUrl = yolotask_portal_url('main');
 $roleTitle = 'Advertiser';
 $roleSlug = 'advertiser';
-$subtitle = 'Build the right campaign, the right way.';
-$description = 'The advertiser portal is where brands will prepare and manage campaigns. For now, create a staging account and help us verify the secure sign-in foundation.';
-$heroChips = ['ADVERTISER PORTAL', 'SECURE SIGN-IN', 'V2 STAGING'];
-$statusMessage = $signedInUser !== null
-    ? 'You are signed in. Campaign creation, funding, and payouts remain disabled in this staging build.'
-    : 'Advertiser sign-up and sign-in are open for staging verification. Campaign creation, funding, and payouts are not active.';
-$availabilityTitle = 'Advertiser staging access';
-$availabilityBody = 'You can test account creation, validation, sign-in, session rotation, and sign-out. Campaigns, deposits, and all balance-changing operations remain unavailable.';
+$subtitle = 'Real people. Real actions. Measurable growth.';
+$description = 'Launch campaigns that pay real Nigerians to follow, engage, review and sign up — and only pay for actions that pass verification.';
+$heroChips = ['Pay per verified action', 'Targeted reach', 'Escrow-protected budgets'];
 $headerAction = ['url' => 'login.php', 'label' => 'Sign in'];
 $primaryAction = ['url' => 'register.php', 'label' => 'Create advertiser account'];
-$secondaryAction = ['url' => 'login.php', 'label' => 'I already have an account'];
+$secondaryAction = ['url' => 'login.php', 'label' => 'Sign in'];
 $navItems = [
-    ['label' => 'Overview', 'url' => '#overview'],
-    ['label' => 'For brands', 'url' => '#value'],
-    ['label' => 'Access notes', 'url' => '#access'],
+    ['label' => 'Home', 'url' => '#overview'],
+    ['label' => 'Benefits', 'url' => '#features'],
+    ['label' => 'How it works', 'url' => '#how-it-works'],
 ];
 $features = [
-    ['icon' => '01', 'tag' => 'ACCOUNT', 'title' => 'Your business, your space', 'description' => 'The advertiser role uses a separate entry point and is kept distinct from earner and staff access.'],
-    ['icon' => '02', 'tag' => 'COMING NEXT', 'title' => 'Campaign tools with guardrails', 'description' => 'Campaign setup, targeting, review, and allocation will be built after account and database behavior has passed staging tests.'],
-    ['icon' => '03', 'tag' => 'NO LIVE FUNDS', 'title' => 'Funding is not switched on', 'description' => 'Deposits, campaign charges, wallet adjustments, and advertiser payouts are disabled in this staging build.'],
+    ['icon' => '01', 'tag' => 'REACH', 'title' => 'Reach engaged people', 'description' => 'Put your brand in front of earners who complete each action by hand, following your exact instructions.'],
+    ['icon' => '02', 'tag' => 'CONTROL', 'title' => 'Approve what you pay for', 'description' => 'Review every proof, approve good work and reject anything that misses the brief.'],
+    ['icon' => '03', 'tag' => 'PROTECTED', 'title' => 'Budgets held safely', 'description' => 'Campaign budgets are reserved before launch and released only for approved actions.'],
+];
+$featuresHeading = 'Why advertisers choose YOLOTASK';
+$steps = [
+    ['title' => 'Create your account', 'body' => 'Set up your advertiser profile with your name or business name.'],
+    ['title' => 'Launch a campaign', 'body' => 'Describe the action you want, set the reward per action and fund the budget.'],
+    ['title' => 'Approve real results', 'body' => 'Review each proof and pay only for actions that meet your brief.'],
 ];
 require YOLOTASK_APP_ROOT . '/shared/views/layouts/public.php';
