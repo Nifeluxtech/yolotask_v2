@@ -17,6 +17,13 @@ if (is_file($appConfigFile)) {
         $config = $loaded;
     }
 }
+$mailConfigFile = rtrim($privateConfigDir, '/') . '/mail.local.php';
+if (is_file($mailConfigFile)) {
+    $mailLoaded = require $mailConfigFile;
+    if (is_array($mailLoaded)) {
+        $config['mail'] = array_merge(is_array($config['mail'] ?? null) ? $config['mail'] : [], $mailLoaded);
+    }
+}
 
 if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
     $role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main';
