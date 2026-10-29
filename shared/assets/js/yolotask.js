@@ -17,7 +17,7 @@
     var stored = null;
     try { stored = localStorage.getItem(THEME_KEY); } catch (e) { /* private mode */ }
     if (stored !== 'light' && stored !== 'dark') {
-      stored = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      stored = 'dark';
     }
     applyTheme(stored);
   }
