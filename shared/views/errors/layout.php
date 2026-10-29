@@ -14,7 +14,7 @@ $homeUrl = function_exists('yolotask_portal_url') && defined('YOLOTASK_APP_ROLE'
   <meta name="robots" content="noindex">
   <title><?= htmlspecialchars($errorTitle, ENT_QUOTES, 'UTF-8') ?> · YOLOTASK</title>
   <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(t){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/<?= htmlspecialchars(function_exists('yolotask_asset') ? yolotask_asset('assets/css/app.css') : 'assets/css/app.css', ENT_QUOTES) ?>">
 </head>
 <body class="error-page">
   <main class="container page page-enter error-main">
