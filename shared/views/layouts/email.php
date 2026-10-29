@@ -1,3 +1,3 @@
 <?php
-// TODO: Implement in the approved YOLOTASK V2 roadmap phase.
-// This placeholder is not a working route or business service.
+// Transactional emails are rendered by YoloTask\Messaging\Mailer, which keeps
+// the HTML inline-styled for email clients. This file is intentionally unused.

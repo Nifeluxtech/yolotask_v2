@@ -100,7 +100,7 @@ $flashIcon = [
 
     <nav class="header-nav" aria-label="Primary">
       <?php foreach ($navItems as $item): ?>
-        <a href="<?= h($item['url']) ?>"><?= h($item['label']) ?></a>
+        <a href="<?= h($item['url']) ?>"<?= !empty($item['active']) ? ' class="active" aria-current="page"' : '' ?>><?= h($item['label']) ?></a>
       <?php endforeach; ?>
     </nav>
 
@@ -156,7 +156,7 @@ $flashIcon = [
 
 <nav class="bottom-nav" aria-label="Primary">
   <?php foreach ($navItems as $i => $item): ?>
-    <a href="<?= h($item['url']) ?>"<?= $i === 0 ? ' class="active" aria-current="page"' : '' ?>>
+    <a href="<?= h($item['url']) ?>"<?= !empty($item['active']) ? ' class="active" aria-current="page"' : '' ?>>
       <?= yolotask_nav_icon($item['icon'] ?? 'home') ?>
       <span><?= h($item['label']) ?></span>
     </a>
