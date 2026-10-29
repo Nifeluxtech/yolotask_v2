@@ -121,5 +121,12 @@ if ($authMode === 'login') {
       <nav class="flex" aria-label="Legal"><a href="<?= h($mainUrl) ?>/terms.php">Terms</a><a href="<?= h($mainUrl) ?>/privacy.php">Privacy</a><a href="<?= h($mainUrl) ?>/refunds.php">Refunds</a></nav>
     </div>
   </footer>
+
+  <nav class="bottom-nav" aria-label="<?= h($roleTitle) ?> mobile">
+    <a href="index.php"><?= yolotask_nav_icon('home') ?><span>Home</span></a>
+    <a href="login.php"<?= $authMode === 'login' ? ' class="active" aria-current="page"' : '' ?>><?= yolotask_nav_icon('login') ?><span>Sign in</span></a>
+    <a href="register.php"<?= $authMode === 'register' ? ' class="active" aria-current="page"' : '' ?>><?= yolotask_nav_icon('user-plus') ?><span>Join</span></a>
+    <a href="<?= h($mainUrl) ?>/terms.php"><?= yolotask_nav_icon('doc') ?><span>Terms</span></a>
+  </nav>
 </body>
 </html>

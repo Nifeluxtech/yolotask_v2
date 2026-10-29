@@ -223,11 +223,14 @@ $legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
 </footer>
 
 <nav class="bottom-nav" aria-label="Primary mobile">
-  <?php foreach ($navItems as $item): ?>
-    <a href="<?= h($item['url']) ?>"><?= h($item['label']) ?></a>
+  <?php $dockIcons = ['home', 'sparkle', 'tasks']; ?>
+  <?php foreach ($navItems as $i => $item): ?>
+    <a href="<?= h($item['url']) ?>"<?= $i === 0 ? ' class="active"' : '' ?>><?= yolotask_nav_icon($item['icon'] ?? ($dockIcons[$i] ?? 'home')) ?><span><?= h($item['label']) ?></span></a>
   <?php endforeach; ?>
-  <?php if ($actions['primaryAction'] !== null): ?>
-    <a href="<?= h($actions['primaryAction']['url']) ?>"><?= h($actions['primaryAction']['label']) ?></a>
+  <?php if ($signedInUser !== null && $dashboardUrl !== null): ?>
+    <a href="<?= h($dashboardUrl) ?>"><?= yolotask_nav_icon('chart') ?><span>Dashboard</span></a>
+  <?php elseif ($actions['headerAction'] !== null): ?>
+    <a href="<?= h($actions['headerAction']['url']) ?>"><?= yolotask_nav_icon('login') ?><span><?= h($actions['headerAction']['label']) ?></span></a>
   <?php endif; ?>
 </nav>
 

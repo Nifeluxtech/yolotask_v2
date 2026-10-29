@@ -61,8 +61,9 @@ $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php'
   </footer>
 
   <nav class="bottom-nav" aria-label="Legal mobile">
-    <a href="index.php">Home</a>
-    <?php foreach ($legalLinks as $url => $label): ?><a href="<?= h($url) ?>"><?= h($label) ?></a><?php endforeach; ?>
+    <a href="index.php"><?= yolotask_nav_icon('home') ?><span>Home</span></a>
+    <?php $docIcons = ['doc', 'shield', 'refund']; $di = 0; $currentDoc = basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')); ?>
+    <?php foreach ($legalLinks as $url => $label): ?><a href="<?= h($url) ?>"<?= basename((string) parse_url($url, PHP_URL_PATH)) === $currentDoc ? ' class="active" aria-current="page"' : '' ?>><?= yolotask_nav_icon($docIcons[$di++] ?? 'doc') ?><span><?= h($label) ?></span></a><?php endforeach; ?>
   </nav>
 </body>
 </html>

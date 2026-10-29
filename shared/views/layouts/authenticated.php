@@ -32,27 +32,6 @@ $logoutCsrf      = is_string($logoutCsrfToken ?? null) ? $logoutCsrfToken : '';
 $flash           = is_string($flash ?? null) && $flash !== '' ? $flash : null;
 $flashType       = in_array($flashType ?? null, ['success', 'error', 'warning'], true) ? $flashType : 'success';
 
-/** Inline SVG path ids available to nav items. */
-function yolotask_nav_icon(string $id): string
-{
-    static $paths = [
-        'home'      => '<path d="m3 10.5 9-7.5 9 7.5V20a1.5 1.5 0 0 1-1.5 1.5h-4.5v-6h-6v6H4.5A1.5 1.5 0 0 1 3 20z"/>',
-        'tasks'     => '<path d="M4 7l2 2 4-4M4 17l2 2 4-4M13 7h7M13 17h7"/>',
-        'wallet'    => '<path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 12h3M3 9h18"/>',
-        'user'      => '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20.5a7.5 7.5 0 0 1 14 0"/>',
-        'chart'     => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-        'megaphone' => '<path d="m3 11 14-6v14L3 13zM7 12v6a2 2 0 0 0 4 0M19 9a3 3 0 0 1 0 6"/>',
-        'bell'      => '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6M10 20a2 2 0 0 0 4 0"/>',
-        'inbox'     => '<path d="M3 13h5l1.5 2.5h5L16 13h5M4 6h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/>',
-        'shield'    => '<path d="M12 3 4.5 6v6c0 4.5 3 7.5 7.5 9 4.5-1.5 7.5-4.5 7.5-9V6zM9 12l2 2 4-4"/>',
-    ];
-
-    $path = $paths[$id] ?? $paths['home'];
-
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-        . 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $path . '</svg>';
-}
-
 $flashIcon = [
     'success' => '<path d="M20 6 9 17l-5-5"/>',
     'error'   => '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/>',
@@ -81,8 +60,6 @@ $flashIcon = [
 <link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
 <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 <style>
-  .safe-area { padding-bottom: env(safe-area-inset-bottom, 0); }
-  .bottom-nav { margin-bottom: env(safe-area-inset-bottom, 0); }
   .skip-link {
     position: absolute;
     left: -9999px;
@@ -108,7 +85,6 @@ $flashIcon = [
   }
   .user-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .site-footer { padding: var(--space-5) 0; border-top: 1px solid var(--border); margin-top: var(--space-6); }
-  @media (min-width: 1025px) { .bottom-nav { display: flex; } }
 </style>
 </head>
 <body>
@@ -139,7 +115,7 @@ $flashIcon = [
         <span><?= h($userDisplayName) ?></span>
       </span>
 
-      <form method="post" action="logout.php">
+      <form method="post" action="logout.php" class="header-signout">
         <input type="hidden" name="_csrf" value="<?= h($logoutCsrf) ?>">
         <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
       </form>
@@ -178,13 +154,17 @@ $flashIcon = [
   </div>
 </footer>
 
-<nav class="bottom-nav safe-area" aria-label="Primary">
-  <?php foreach ($navItems as $item): ?>
-    <a href="<?= h($item['url']) ?>">
-      <?= yolotask_nav_icon($item['icon']) ?>
+<nav class="bottom-nav" aria-label="Primary">
+  <?php foreach ($navItems as $i => $item): ?>
+    <a href="<?= h($item['url']) ?>"<?= $i === 0 ? ' class="active" aria-current="page"' : '' ?>>
+      <?= yolotask_nav_icon($item['icon'] ?? 'home') ?>
       <span><?= h($item['label']) ?></span>
     </a>
   <?php endforeach; ?>
+  <form method="post" action="logout.php" class="dock-form">
+    <input type="hidden" name="_csrf" value="<?= h($logoutCsrf) ?>">
+    <button type="submit" class="dock-logout"><?= yolotask_nav_icon('logout') ?><span>Sign out</span></button>
+  </form>
 </nav>
 
 </body>
