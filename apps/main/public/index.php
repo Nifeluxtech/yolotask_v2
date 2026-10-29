@@ -11,7 +11,7 @@ $appName = (string) (yolotask_config()['app_name'] ?? 'YOLOTASK');
 $legalBaseUrl = '';
 $roleTitle = 'Earn and grow online';
 $roleSlug = 'main';
-$subtitle = 'Earn from simple tasks. Grow with real engagement.';
+$subtitle = 'Real tasks. Real rewards. One marketplace.';
 $description = 'YOLOTASK connects people who want to earn from verified digital tasks with brands that want genuine engagement. It is a promotional task marketplace — not an investment platform.';
 $heroChips = ['Earners', 'Advertisers', 'Verified work'];
 $headerAction = ['url' => $earnerUrl . '/login.php', 'label' => 'Sign in'];
