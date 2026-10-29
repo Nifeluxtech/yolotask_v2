@@ -9,6 +9,14 @@ use YoloTask\Security\Csrf;
 $role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : '';
 if (!in_array($role, ['earner', 'advertiser'], true)) { http_response_code(404); exit('Not found.'); }
 $error = null;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_SESSION['user_id'])) {
+    try {
+        $existing = Auth::currentUser(Database::connection());
+        if (is_array($existing) && (string) ($existing['role'] ?? '') === $role) { header('Location: dashboard.php', true, 303); exit; }
+    } catch (Throwable $e) {
+        Logger::error('auth.session_lookup_failed', ['exception' => get_class($e)]);
+    }
+}
 $flash = is_string($_SESSION['_flash'] ?? null) ? $_SESSION['_flash'] : null;
 unset($_SESSION['_flash']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
         try {
             if (Auth::login(Database::connection(), $email, $password, $role)) {
-                header('Location: index.php', true, 303);
+                header('Location: dashboard.php', true, 303);
                 exit;
             }
             $error = 'Email or password is incorrect, or sign-in is temporarily unavailable.';
