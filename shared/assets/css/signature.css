@@ -342,3 +342,59 @@ body.auth-page, body { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-
   .user-row { flex-direction: column; align-items: stretch; }
   .user-action .btn { width: 100%; }
 }
+
+/* ============================================================
+   Phase 3: wallets, top-ups, withdrawals, admin money tools
+   ============================================================ */
+.wallet-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; max-width: 860px; margin: 0 auto; }
+.wallet-balance { display: flex; flex-direction: column; gap: 2px; }
+.wallet-balance .amount {
+  font-size: clamp(2.1rem, 9vw, 3rem); font-weight: 900; letter-spacing: -.03em; line-height: 1.05;
+  background: var(--grad-text); -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent; overflow-wrap: anywhere;
+}
+.wallet-sub { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: .5rem; color: var(--text-muted); font-size: var(--text-sm); }
+.wallet-sub strong { color: var(--text); }
+.notice-card {
+  display: flex; align-items: flex-start; gap: 12px;
+  border: 1px solid rgba(0, 212, 255, .28);
+  background: linear-gradient(90deg, rgba(0, 212, 255, .10), rgba(0, 212, 255, .02)), var(--surface);
+}
+.notice-card.notice-warning { border-color: rgba(245, 158, 11, .35); background: linear-gradient(90deg, rgba(245, 158, 11, .12), rgba(245, 158, 11, .03)), var(--surface); }
+.notice-card .verify-icon { background: rgba(0, 212, 255, .14); color: var(--primary); }
+.notice-card.notice-warning .verify-icon { background: rgba(245, 158, 11, .15); color: #F59E0B; }
+.notice-card p { margin: 2px 0 0; }
+.tx-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tx-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 14px; background: rgba(255, 255, 255, .02);
+}
+.tx-row .tx-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tx-row .tx-meta strong { overflow-wrap: anywhere; line-height: 1.3; }
+.tx-row .tx-amount { font-weight: 800; white-space: nowrap; text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.tx-in { color: #34D399; }
+.tx-out { color: var(--text); }
+.tx-icon { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: rgba(0, 212, 255, .1); color: var(--primary); }
+.tx-icon svg { width: 18px; height: 18px; }
+.money-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 6px; margin-bottom: 1rem; -webkit-overflow-scrolling: touch; }
+.money-tabs a {
+  flex: none; padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  color: var(--text-muted); text-decoration: none; border: 1px solid transparent; white-space: nowrap;
+}
+.money-tabs a:hover { color: var(--primary); background: rgba(0, 212, 255, .08); }
+.money-tabs a.active { color: var(--primary); border-color: rgba(0, 212, 255, .35); background: rgba(0, 212, 255, .1); }
+.money-tabs .badge { margin-left: 4px; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.inline-form .input { flex: 1 1 180px; min-width: 0; }
+.mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: .85em; overflow-wrap: anywhere; }
+.raw-body { max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 6px 0 0; padding: 8px; border-radius: 10px; background: rgba(0, 0, 0, .25); font-size: 12px; }
+.review-actions { display: grid; gap: 8px; margin-top: 8px; }
+@media (min-width: 721px) { .wallet-grid.two { grid-template-columns: 1fr 1fr; max-width: none; } .review-actions { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) {
+  .tx-row { align-items: flex-start; }
+  .inline-form .btn { width: 100%; }
+}
+.card-header { flex-wrap: wrap; gap: 8px; }
+.user-meta details.danger-details summary { margin-bottom: 0; }
+.user-meta details.danger-details[open] summary { margin-bottom: .75rem; }
+@media (max-width: 720px) { .money-stats .stat-card .stat-value { font-size: clamp(1.05rem, 5vw, 1.4rem); overflow-wrap: normal; white-space: nowrap; } }
