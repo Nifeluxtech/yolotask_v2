@@ -45,6 +45,30 @@ final class Mailer
             return file_put_contents($file, $entry, FILE_APPEND | LOCK_EX) !== false;
         }
 
+        $smtpHeaders = array_merge(['To: ' . $to, 'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=', 'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000'], $headers);
+        if ($driver === 'sendmail') {
+            $bin = (string) ($config['sendmail_path'] ?? '/usr/sbin/sendmail');
+            if (function_exists('proc_open')) {
+                try {
+                    $proc = proc_open([$bin, '-t', '-i', '-f', $from], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+                    if (is_resource($proc)) {
+                        fwrite($pipes[0], implode("\n", $smtpHeaders) . "\n\n" . str_replace("\r\n", "\n", $body));
+                        fclose($pipes[0]);
+                        $err = stream_get_contents($pipes[2]);
+                        fclose($pipes[1]); fclose($pipes[2]);
+                        $code = proc_close($proc);
+                        if ($code === 0) return true;
+                        Logger::error('mail.sendmail_failed', ['code' => $code, 'stderr' => substr((string) $err, 0, 300)]);
+                    }
+                } catch (\Throwable $e) {
+                    Logger::error('mail.sendmail_error', ['message' => $e->getMessage()]);
+                }
+            } else {
+                Logger::error('mail.sendmail_unavailable', ['reason' => 'proc_open() is disabled']);
+            }
+            if (empty($config['smtp_host'])) return false;
+            $driver = 'smtp';
+        }
         if ($driver === 'smtp') {
             try {
                 self::smtp($config, $from, $to, array_merge(['To: ' . $to, 'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=', 'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000', 'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . substr(strrchr($from, '@') ?: '@yolotask.com.ng', 1) . '>'], $headers), $body);
@@ -77,6 +101,7 @@ final class Mailer
         $verify = (bool) ($c['smtp_verify_peer'] ?? true);
         $ctx = stream_context_create(['ssl' => ['verify_peer' => $verify, 'verify_peer_name' => $verify, 'allow_self_signed' => !$verify]]);
         $scheme = $port === 465 ? 'ssl://' : 'tcp://';
+        $plain = $port === 25 && !empty($c['smtp_plain']);
         $fp = @stream_socket_client($scheme . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
         if (!$fp) throw new \RuntimeException("connect {$host}:{$port} failed: {$errstr}");
         stream_set_timeout($fp, 20);
@@ -95,14 +120,16 @@ final class Mailer
             $cmd(null, [220]);
             $helo = 'yolotask.com.ng';
             $cmd('EHLO ' . $helo, [250]);
-            if ($port !== 465) {
+            if ($port !== 465 && !$plain) {
                 $cmd('STARTTLS', [220]);
                 if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) throw new \RuntimeException('STARTTLS failed');
                 $cmd('EHLO ' . $helo, [250]);
             }
-            $cmd('AUTH LOGIN', [334]);
-            $cmd(base64_encode((string) ($c['smtp_user'] ?? $from)), [334]);
-            $cmd(base64_encode((string) ($c['smtp_pass'] ?? '')), [235]);
+            if ((string) ($c['smtp_pass'] ?? '') !== '') {
+                $cmd('AUTH LOGIN', [334]);
+                $cmd(base64_encode((string) ($c['smtp_user'] ?? $from)), [334]);
+                $cmd(base64_encode((string) $c['smtp_pass']), [235]);
+            }
             $cmd('MAIL FROM:<' . $from . '>', [250]);
             $cmd('RCPT TO:<' . $to . '>', [250, 251]);
             $cmd('DATA', [354]);
