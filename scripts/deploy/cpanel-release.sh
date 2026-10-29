@@ -42,7 +42,7 @@ fi
 # EasyApache 8.x binaries and require PHP 8.1+.
 PHP_BIN=""
 for candidate in /opt/cpanel/ea-php84/root/usr/bin/php /opt/cpanel/ea-php83/root/usr/bin/php /opt/cpanel/ea-php82/root/usr/bin/php /opt/cpanel/ea-php81/root/usr/bin/php /usr/local/bin/php "$(command -v php || true)"; do
-  if [[ -n "$candidate" && -x "$candidate" ]] && "$candidate" -r 'exit(PHP_VERSION_ID >= 80100 ? 0 : 1);' >/dev/null 2>&1; then
+  if [[ -n "$candidate" && -x "$candidate" ]] && (cd "$BASE" && "$candidate" -d log_errors=0 -r 'exit(PHP_VERSION_ID >= 80100 ? 0 : 1);') >/dev/null 2>&1; then
     PHP_BIN="$candidate"; break
   fi
 done
@@ -52,8 +52,10 @@ if [[ -f "$RELEASE/scripts/migrate.php" ]]; then
     echo "ERROR: no PHP 8.1+ CLI found for migrations." | tee -a "$MIGRATE_LOG" >&2
     exit 1
   fi
-  echo "[$(date -u +%FT%TZ)] $COMMIT using $PHP_BIN ($("$PHP_BIN" -r 'echo PHP_VERSION;'))" >> "$MIGRATE_LOG"
-  if ! "$PHP_BIN" "$RELEASE/scripts/migrate.php" --config-dir="$BASE/config-private" >> "$MIGRATE_LOG" 2>&1; then
+  echo "[$(date -u +%FT%TZ)] $COMMIT using $PHP_BIN ($(cd "$BASE" && "$PHP_BIN" -d log_errors=0 -r 'echo PHP_VERSION;'))" >> "$MIGRATE_LOG"
+  # Run from the deploy base with error_log files disabled so nothing is
+  # written into the Git working copy (cPanel refuses to deploy a dirty tree).
+  if ! (cd "$BASE" && "$PHP_BIN" -d log_errors=0 -d display_errors=stderr "$RELEASE/scripts/migrate.php" --config-dir="$BASE/config-private") >> "$MIGRATE_LOG" 2>&1; then
     echo "ERROR: database migration failed; see $MIGRATE_LOG. The live release was not changed." >&2
     tail -n 20 "$MIGRATE_LOG" >&2 || true
     exit 1
