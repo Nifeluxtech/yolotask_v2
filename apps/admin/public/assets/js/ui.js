@@ -111,7 +111,10 @@
   /* ---------- Page transitions ---------- */
   function initPageTransitions() {
     document.documentElement.classList.add('js-anim');
-    document.body.classList.add('page', 'page-enter');
+    /* Animate the content, never <body>: a transform on body unpins the fixed header and dock. */
+    var main = document.querySelector('main') || document.body;
+    if (main !== document.body) main.classList.add('page-enter');
+    window.addEventListener('pageshow', function () { main.style.opacity = ''; main.style.transform = ''; });
 
     if (reduceMotion.matches) return;
 
@@ -133,9 +136,9 @@
       if (link.getAttribute('href').charAt(0) === '#') return;
 
       event.preventDefault();
-      document.body.style.transition = 'opacity 180ms ease, transform 180ms ease';
-      document.body.style.opacity = '0';
-      document.body.style.transform = 'translateY(6px)';
+      main.style.transition = 'opacity 180ms ease, transform 180ms ease';
+      main.style.opacity = '0';
+      main.style.transform = 'translateY(6px)';
       setTimeout(function () { window.location.href = link.href; }, 190);
     });
   }
