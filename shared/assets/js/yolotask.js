@@ -142,8 +142,28 @@
     });
   }
 
+  /* ---------- Confirm buttons and resend countdowns ---------- */
+  function initConfirmAndCountdown() {
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-confirm]');
+      if (btn && !window.confirm(btn.getAttribute('data-confirm'))) event.preventDefault();
+    });
+    document.querySelectorAll('[data-countdown]').forEach(function (btn) {
+      var left = parseInt(btn.getAttribute('data-countdown'), 10) || 0;
+      var label = 'send a new code';
+      var tick = function () {
+        if (left <= 0) { btn.disabled = false; btn.textContent = label; return; }
+        btn.textContent = label + ' in ' + left + 's';
+        left -= 1;
+        setTimeout(tick, 1000);
+      };
+      tick();
+    });
+  }
+
   /* ---------- Active bottom nav ---------- */
   function initActiveNav() {
+    if (document.querySelector('.bottom-nav a.active')) return; /* server already marked it */
     var path = window.location.pathname.replace(/\/+$/, '') || '/';
     document.querySelectorAll('.bottom-nav a[href]').forEach(function (link) {
       var href = link.getAttribute('href');
@@ -167,6 +187,7 @@
     initServerToasts();
     initPageTransitions();
     initActiveNav();
+    initConfirmAndCountdown();
   }
 
   if (document.readyState === 'loading') {
