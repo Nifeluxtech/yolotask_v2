@@ -4,19 +4,38 @@ namespace YoloTask\Payments;
 
 use PDO;
 use RuntimeException;
+use YoloTask\Core\Settings;
 use YoloTask\Messaging\Mailer;
+use YoloTask\Security\Crypto;
 use YoloTask\Security\Audit;
 use YoloTask\Security\Throttle;
 
-/** The single payout bank account an earner keeps on file. */
+/**
+ * The single payout bank account an earner keeps on file. The account
+ * number is encrypted at rest (Crypto::seal); get() returns it decrypted.
+ * Replacing an existing account starts a withdrawal cooldown
+ * (money.bank_change_cooldown_hours).
+ */
 final class BankAccounts
 {
     public static function get(PDO $pdo, int $userId): ?array
     {
-        $stmt = $pdo->prepare('SELECT bank_code, bank_name, account_number, account_name, name_verified_via, updated_at FROM bank_accounts WHERE user_id = :u');
+        $stmt = $pdo->prepare('SELECT bank_code, bank_name, account_number, account_last4, account_name, name_verified_via, changed_at, updated_at FROM bank_accounts WHERE user_id = :u');
         $stmt->execute(['u' => $userId]);
         $row = $stmt->fetch();
-        return is_array($row) ? $row : null;
+        if (!is_array($row)) return null;
+        $row['sealed_account_number'] = (string) $row['account_number'];
+        $row['account_number'] = Crypto::reveal((string) $row['account_number']);
+        return $row;
+    }
+
+    /** UTC time until which withdrawals wait after a bank account change, or null. */
+    public static function cooldownUntil(PDO $pdo, ?array $bank): ?string
+    {
+        $hours = Settings::int($pdo, 'money.bank_change_cooldown_hours');
+        if ($bank === null || $hours <= 0 || empty($bank['changed_at'])) return null;
+        $until = strtotime((string) $bank['changed_at'] . ' UTC') + $hours * 3600;
+        return $until > time() ? gmdate('Y-m-d H:i:s', $until) : null;
     }
 
     /** Save or replace the bank account. Always needs the account password; emails a security alert. */
@@ -48,9 +67,11 @@ final class BankAccounts
         $existing = self::get($pdo, $userId);
         $pdo->beginTransaction();
         try {
-            $pdo->prepare('INSERT INTO bank_accounts (user_id, bank_code, bank_name, account_number, account_name, name_verified_via) VALUES (:u, :c, :n, :a, :m, :v)
-                ON DUPLICATE KEY UPDATE bank_code = VALUES(bank_code), bank_name = VALUES(bank_name), account_number = VALUES(account_number), account_name = VALUES(account_name), name_verified_via = VALUES(name_verified_via)')
-                ->execute(['u' => $userId, 'c' => $bankCode, 'n' => (string) BankCodes::name($bankCode), 'a' => $accountNumber, 'm' => $accountName, 'v' => $verifiedVia]);
+            $same = $existing !== null && $existing['bank_code'] === $bankCode && $existing['account_number'] === $accountNumber;
+            $pdo->prepare('INSERT INTO bank_accounts (user_id, bank_code, bank_name, account_number, account_last4, account_name, name_verified_via) VALUES (:u, :c, :n, :a, :l4, :m, :v)
+                ON DUPLICATE KEY UPDATE bank_code = VALUES(bank_code), bank_name = VALUES(bank_name), account_number = VALUES(account_number), account_last4 = VALUES(account_last4), account_name = VALUES(account_name), name_verified_via = VALUES(name_verified_via)')
+                ->execute(['u' => $userId, 'c' => $bankCode, 'n' => (string) BankCodes::name($bankCode), 'a' => Crypto::seal($accountNumber), 'l4' => substr($accountNumber, -4), 'm' => $accountName, 'v' => $verifiedVia]);
+            if ($existing !== null && !$same) $pdo->prepare('UPDATE bank_accounts SET changed_at = UTC_TIMESTAMP() WHERE user_id = :u')->execute(['u' => $userId]);
             Audit::record($pdo, $userId, $existing === null ? 'wallet.bank_account_added' : 'wallet.bank_account_changed', 'user', $userId);
             $pdo->commit();
         } catch (\Throwable $e) {

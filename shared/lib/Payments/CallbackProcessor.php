@@ -23,9 +23,9 @@ final class CallbackProcessor
 {
     private const MAX_BODY = 65536;
 
-    public static function collection(PDO $pdo, string $raw, array $post = [], string $ip = ''): array
+    public static function collection(PDO $pdo, string $raw, array $post = [], string $ip = '', ?int $logId = null): array
     {
-        $logId = self::log($pdo, 'collection', $raw, $ip);
+        $logId ??= self::log($pdo, 'collection', $raw, $ip);
         $payload = CallbackVerifier::parse($raw, $post);
         $orderSn = substr(trim((string) ($payload['order_sn'] ?? '')), 0, 64);
         $osn = substr(trim((string) ($payload['platform_osn'] ?? '')), 0, 64);
@@ -96,9 +96,9 @@ final class CallbackProcessor
         return self::finish($pdo, $logId, 200, $outcome, true, $after);
     }
 
-    public static function payout(PDO $pdo, string $raw, array $post = [], string $ip = ''): array
+    public static function payout(PDO $pdo, string $raw, array $post = [], string $ip = '', ?int $logId = null): array
     {
-        $logId = self::log($pdo, 'payout', $raw, $ip);
+        $logId ??= self::log($pdo, 'payout', $raw, $ip);
         $payload = CallbackVerifier::parse($raw, $post);
         $orderSn = substr(trim((string) ($payload['order_sn'] ?? '')), 0, 64);
         $osn = substr(trim((string) ($payload['platform_osn'] ?? '')), 0, 64);
@@ -155,7 +155,7 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE withdrawals SET status = 'paid', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal was paid', 'Withdrawal paid',
-                    [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask((string) $w['account_number']) . '.', 'Reference: ' . $orderSn]);
+                    [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::reveal((string) $w['account_number'])) . '.', 'Reference: ' . $orderSn]);
                 $outcome = 'paid';
             } else {
                 $tx = Ledger::post($pdo, 'wd-release:' . $w['id'], 'withdrawal_release', 'Withdrawal ' . $orderSn . ' failed at AfrStar; funds returned', [
@@ -165,7 +165,7 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE withdrawals SET status = 'failed', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal could not be paid', 'Withdrawal failed',
-                    ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask((string) $w['account_number']) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
+                    ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::reveal((string) $w['account_number'])) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
                 $outcome = 'failed_refunded';
             }
             $pdo->commit();
@@ -175,6 +175,58 @@ final class CallbackProcessor
             return self::finish($pdo, $logId, 500, 'error', true);
         }
         return self::finish($pdo, $logId, 200, $outcome, true, $after);
+    }
+
+    /**
+     * Cron (every five minutes): re-run callbacks that were logged but never
+     * finished (the request crashed or the database was briefly unavailable).
+     * The stored raw body goes through the same verification; outcomes are
+     * idempotent, so a callback AfrStar also re-sent is never applied twice.
+     * A callback that fails again is marked retry_failed for a person to check.
+     * @return array{retried:int,failed:int}
+     */
+    public static function retryUnfinished(PDO $pdo, int $limit = 50): array
+    {
+        $rows = $pdo->query("SELECT id, kind, raw_body, remote_ip FROM payment_callbacks WHERE outcome = 'received' AND processed_at IS NULL
+            AND received_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE) AND received_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY) ORDER BY id LIMIT " . max(1, $limit))->fetchAll() ?: [];
+        $out = ['retried' => 0, 'failed' => 0];
+        foreach ($rows as $r) {
+            $id = (int) $r['id'];
+            try {
+                $raw = (string) $r['raw_body'];
+                parse_str($raw, $form);
+                $post = json_decode($raw, true) === null && is_array($form) ? $form : [];
+                $res = (string) $r['kind'] === 'payout'
+                    ? self::payout($pdo, $raw, $post, (string) $r['remote_ip'], $id)
+                    : self::collection($pdo, $raw, $post, (string) $r['remote_ip'], $id);
+                foreach ($res['after'] as $job) $job();
+                $out['retried']++;
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $pdo->prepare("UPDATE payment_callbacks SET outcome = 'retry_failed', processed_at = UTC_TIMESTAMP() WHERE id = :id")->execute(['id' => $id]);
+                Logger::error('payments.callback_retry_failed', ['callback_id' => $id, 'exception' => get_class($e)]);
+                $out['failed']++;
+            }
+        }
+        return $out;
+    }
+
+    /** Cron: withdrawals sent to AfrStar with no callback after money.payout_stuck_hours go to the review queue. */
+    public static function flagStuckPayouts(PDO $pdo): int
+    {
+        $hours = max(1, \YoloTask\Core\Settings::int($pdo, 'money.payout_stuck_hours'));
+        $stmt = $pdo->prepare("SELECT id, order_sn, platform_osn, amount_kobo, fee_kobo FROM withdrawals WHERE status = 'processing' AND reviewed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)");
+        $stmt->bindValue('h', $hours, PDO::PARAM_INT);
+        $stmt->execute();
+        $n = 0;
+        foreach ($stmt->fetchAll() ?: [] as $w) {
+            $before = (int) $pdo->query('SELECT COUNT(*) FROM payment_reviews')->fetchColumn();
+            $amount = (int) $w['amount_kobo'] - (int) $w['fee_kobo'];
+            self::openReview($pdo, 'stuck:' . $w['id'] . ':' . $w['order_sn'], 'payout_conflict', null, (int) $w['id'], null, (string) $w['order_sn'], (string) ($w['platform_osn'] ?? ''), $amount, null,
+                "No AfrStar callback {$hours}+ hours after sending withdrawal #{$w['id']}. Check {$w['order_sn']} in the AfrStar portal; the hold stays until AfrStar confirms.");
+            if ((int) $pdo->query('SELECT COUNT(*) FROM payment_reviews')->fetchColumn() > $before) $n++;
+        }
+        return $n;
     }
 
     public static function mask(string $account): string

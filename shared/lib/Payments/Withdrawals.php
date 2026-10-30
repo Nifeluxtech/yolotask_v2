@@ -12,6 +12,7 @@ use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
 use YoloTask\Security\Audit;
+use YoloTask\Security\Crypto;
 
 /**
  * Earner withdrawals: request (available -> held, pending_review), admin
@@ -25,7 +26,29 @@ final class Withdrawals
 
     public static function limits(PDO $pdo): array
     {
-        return ['min' => Settings::int($pdo, 'money.withdraw_min_kobo'), 'max' => Settings::int($pdo, 'money.withdraw_max_kobo')];
+        return ['min' => Settings::int($pdo, 'money.withdraw_min_kobo'), 'max' => Settings::int($pdo, 'money.withdraw_max_kobo'),
+            'daily_count' => max(1, Settings::int($pdo, 'money.withdraw_daily_count')), 'daily_max' => Settings::int($pdo, 'money.withdraw_daily_max_kobo')];
+    }
+
+    /** Withdrawals in the last 24 hours that were not rejected (count and amount). */
+    public static function velocity(PDO $pdo, int $userId): array
+    {
+        $stmt = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(amount_kobo), 0) a FROM withdrawals WHERE user_id = :u AND status <> 'rejected' AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)");
+        $stmt->execute(['u' => $userId]);
+        $r = $stmt->fetch() ?: ['n' => 0, 'a' => 0];
+        return ['count' => (int) $r['n'], 'amount' => (int) $r['a']];
+    }
+
+    private static function lagos(string $utc): string
+    {
+        return (new \DateTimeImmutable($utc, new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Africa/Lagos'))->format('j M, g:i A') . ' WAT';
+    }
+
+    /** Decrypt the account number on rows read from withdrawals. */
+    private static function revealRow(array $row): array
+    {
+        if (array_key_exists('account_number', $row)) $row['account_number'] = Crypto::reveal((string) $row['account_number']);
+        return $row;
     }
 
     /** Request a withdrawal; a repeated $idemKey returns the original request id. */
@@ -41,6 +64,8 @@ final class Withdrawals
         if ($amountKobo > $limits['max']) throw new RuntimeException('The maximum withdrawal is ' . Money::format($limits['max']) . '.');
         $bank = BankAccounts::get($pdo, $userId);
         if ($bank === null) throw new RuntimeException('Add your bank account before withdrawing.');
+        $cooldown = BankAccounts::cooldownUntil($pdo, $bank);
+        if ($cooldown !== null) throw new RuntimeException('For your safety, withdrawals open again ' . self::lagos($cooldown) . ' because your bank account was changed recently.');
         Wallet::forUser($pdo, $userId);
 
         $pdo->beginTransaction();
@@ -55,9 +80,14 @@ final class Withdrawals
             if ((int) $open->fetchColumn() > 0) throw new RuntimeException('You already have a withdrawal in progress. Wait for it to finish before requesting another.');
             if ($wallet['status'] !== 'active') throw new RuntimeException('Your wallet is on hold. Contact support.');
             if ($wallet['available_kobo'] < $amountKobo) throw new RuntimeException('Your available balance is ' . Money::format($wallet['available_kobo']) . '.');
+            $velocity = self::velocity($pdo, $userId);
+            if ($velocity['count'] >= $limits['daily_count']) throw new RuntimeException('You can make ' . $limits['daily_count'] . ' withdrawal' . ($limits['daily_count'] === 1 ? '' : 's') . ' in 24 hours. Please try again later.');
+            if ($velocity['amount'] + $amountKobo > $limits['daily_max']) {
+                throw new RuntimeException('Withdrawals are limited to ' . Money::format($limits['daily_max']) . ' in 24 hours. You can withdraw up to ' . Money::format(max(0, $limits['daily_max'] - $velocity['amount'])) . ' now.');
+            }
 
-            $pdo->prepare('INSERT INTO withdrawals (user_id, wallet_id, idempotency_key, amount_kobo, fee_kobo, bank_code, bank_name, account_number, account_name) VALUES (:u, :w, :k, :a, :f, :bc, :bn, :an, :am)')
-                ->execute(['u' => $userId, 'w' => $wallet['id'], 'k' => $idemKey, 'a' => $amountKobo, 'f' => Fees::withdrawal($amountKobo), 'bc' => $bank['bank_code'], 'bn' => $bank['bank_name'], 'an' => $bank['account_number'], 'am' => $bank['account_name']]);
+            $pdo->prepare('INSERT INTO withdrawals (user_id, wallet_id, idempotency_key, amount_kobo, fee_kobo, bank_code, bank_name, account_number, account_last4, account_name) VALUES (:u, :w, :k, :a, :f, :bc, :bn, :an, :l4, :am)')
+                ->execute(['u' => $userId, 'w' => $wallet['id'], 'k' => $idemKey, 'a' => $amountKobo, 'f' => Fees::withdrawal($amountKobo), 'bc' => $bank['bank_code'], 'bn' => $bank['bank_name'], 'an' => Crypto::seal($bank['account_number']), 'l4' => substr($bank['account_number'], -4), 'am' => $bank['account_name']]);
             $id = (int) $pdo->lastInsertId();
             $tx = Ledger::post($pdo, 'wd-hold:' . $id, 'withdrawal_hold', 'Withdrawal #' . $id . ' requested', [
                 [$wallet['available_account_id'], 'debit', $amountKobo],
@@ -146,7 +176,7 @@ final class Withdrawals
     {
         $stmt = $pdo->prepare('SELECT id, amount_kobo, fee_kobo, bank_name, account_number, status, reject_reason, created_at, completed_at FROM withdrawals WHERE user_id = :u ORDER BY id DESC LIMIT ' . (int) $limit);
         $stmt->execute(['u' => $userId]);
-        return $stmt->fetchAll() ?: [];
+        return array_map([self::class, 'revealRow'], $stmt->fetchAll() ?: []);
     }
 
     public static function openForUser(PDO $pdo, int $userId): ?array
@@ -154,7 +184,7 @@ final class Withdrawals
         $stmt = $pdo->prepare("SELECT * FROM withdrawals WHERE user_id = :u AND status IN ('pending_review', 'processing') ORDER BY id DESC LIMIT 1");
         $stmt->execute(['u' => $userId]);
         $row = $stmt->fetch();
-        return is_array($row) ? $row : null;
+        return is_array($row) ? self::revealRow($row) : null;
     }
 
     public static function list(PDO $pdo, string $status, int $page, int $perPage = 25): array
@@ -168,7 +198,7 @@ final class Withdrawals
         $page = max(1, $page);
         $stmt = $pdo->prepare('SELECT w.*, u.email, u.display_name, wl.available_kobo FROM withdrawals w JOIN users u ON u.id = w.user_id JOIN wallets wl ON wl.id = w.wallet_id' . $where . ' ORDER BY w.id DESC LIMIT ' . $perPage . ' OFFSET ' . (($page - 1) * $perPage));
         $stmt->execute($args);
-        return ['rows' => $stmt->fetchAll() ?: [], 'total' => $total, 'page' => $page, 'pages' => max(1, (int) ceil($total / $perPage))];
+        return ['rows' => array_map([self::class, 'revealRow'], $stmt->fetchAll() ?: []), 'total' => $total, 'page' => $page, 'pages' => max(1, (int) ceil($total / $perPage))];
     }
 
     public static function counts(PDO $pdo): array
@@ -191,6 +221,6 @@ final class Withdrawals
     {
         $stmt = $pdo->prepare('SELECT * FROM withdrawals WHERE id = :id FOR UPDATE');
         $stmt->execute(['id' => $withdrawalId]);
-        return $stmt->fetch();
+        return self::revealRow($stmt->fetch());
     }
 }
