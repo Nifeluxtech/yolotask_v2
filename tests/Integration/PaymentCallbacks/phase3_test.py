@@ -322,7 +322,7 @@ s, l, h = earner.get('/bank-account.php')
 check('short account number rejected', '10-digit' in h)
 before = len(mails_to(earner_email))
 s, l, _ = earner.post('/bank-account.php', {'_csrf': earner.csrf(h), 'bank_code': '80000009', 'account_number': '0123 456 789', 'account_name': 'Ada Obi', 'password': PW})
-check('bank account saved', s == 303 and one(f"SELECT CONCAT(bank_code, ':', account_number) FROM bank_accounts WHERE user_id = {eid}") == '80000009:0123456789')
+check('bank account saved (number encrypted at rest, last 4 kept)', s == 303 and db(f"SELECT bank_code, LEFT(account_number, 5), account_last4, account_number LIKE '%0123456789%' FROM bank_accounts WHERE user_id = {eid}")[0] == ['80000009', 'enc1:', '6789', '0'])
 check('security email sent for bank account', len(mails_to(earner_email)) == before + 1 and 'bank account' in mails_to(earner_email)[-1]['subject'])
 
 # ---------- withdrawal request, double submit, one-open rule, reject
@@ -405,6 +405,12 @@ s, l, h = earner.get('/bank-account.php')
 earner.post('/bank-account.php', {'_csrf': earner.csrf(h), 'bank_code': '80000030', 'account_number': '0000000000', 'account_name': 'Ada Obi', 'password': PW})
 check('bank account change emails an alert', 'changed' in mails_to(earner_email)[-1]['subject'])
 s, l, h = earner.get('/withdraw.php')
+check('withdrawals paused after a bank account change (24 h cooldown)', 'data-bank-cooldown' in h and 'Withdrawals paused until' in h)
+n_wd = one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}")
+earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
+check('withdrawal request refused during cooldown', one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
+db(f"UPDATE bank_accounts SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR) WHERE user_id = {eid}")
+s, l, h = earner.get('/withdraw.php')
 earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
 wid4 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
 s, l, h = admin.get('/withdrawals.php')
@@ -416,14 +422,14 @@ check('funds back after rejecting the refused payout', balance(eid) == (790000, 
 
 # ---------- money settings
 s, l, h = admin.get('/payment-settings.php')
-admin.post('/payment-settings.php', {'_csrf': admin.csrf(h), 'money_topup_min_kobo': '200', 'money_topup_max_kobo': '500000', 'money_withdraw_min_kobo': '1000', 'money_withdraw_max_kobo': '500000', 'money_payin_expiry_hours': '24'})
+admin.post('/payment-settings.php', {'_csrf': admin.csrf(h), 'money_topup_min_kobo': '200', 'money_topup_max_kobo': '500000', 'money_withdraw_min_kobo': '1000', 'money_withdraw_max_kobo': '500000', 'money_payin_expiry_hours': '24', 'money_withdraw_daily_max_kobo': '500000', 'money_withdraw_daily_count': '3', 'money_bank_change_cooldown_hours': '24', 'money_payout_stuck_hours': '6'})
 s, l, h = adv.get('/topup.php')
 check('admin can change the minimum top-up', 'Minimum ₦200.00' in h)
 adv.post('/topup.php', {'_csrf': adv.csrf(h), 'amount': '150', 'phone': '08031234567'})
 s, l, h = adv.get('/topup.php')
 check('new minimum enforced', 'minimum top-up is ₦200.00' in h)
 s, l, h = admin.get('/payment-settings.php')
-admin.post('/payment-settings.php', {'_csrf': admin.csrf(h), 'money_topup_min_kobo': '100', 'money_topup_max_kobo': '500000', 'money_withdraw_min_kobo': '1000', 'money_withdraw_max_kobo': '500000', 'money_payin_expiry_hours': '24'})
+admin.post('/payment-settings.php', {'_csrf': admin.csrf(h), 'money_topup_min_kobo': '100', 'money_topup_max_kobo': '500000', 'money_withdraw_min_kobo': '1000', 'money_withdraw_max_kobo': '500000', 'money_payin_expiry_hours': '24', 'money_withdraw_daily_max_kobo': '500000', 'money_withdraw_daily_count': '3', 'money_bank_change_cooldown_hours': '24', 'money_payout_stuck_hours': '6'})
 
 # ---------- role and ownership
 s, l, h = earner.get(ADM + '/wallets.php')
@@ -472,6 +478,190 @@ s, l, h = admin.get('/transactions.php')
 check('admin ledger page lists transactions', s == 200 and 'Ledger transactions' in h and 'Adjustments' in h)
 s, l, h = admin.get('/dashboard.php')
 check('admin dashboard links withdrawals and payment review', 'withdrawals.php' in h and 'payments.php' in h and 'wallets.php' in h)
+
+# =====================================================================
+# Phase 3 gaps added with Phase 4: encryption at rest, legacy re-encryption,
+# withdrawal velocity, receipts, 5-minute cron (callback retry, stale
+# top-ups, stuck payouts), optional Paystack name lookup, reports, verify SQL.
+# =====================================================================
+import threading as _th
+from http.server import BaseHTTPRequestHandler as _BH, ThreadingHTTPServer as _TS
+
+check('withdrawal rows store the account number encrypted with last 4', one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid} AND (account_number NOT LIKE 'enc1:%' OR account_last4 IS NULL)") == '0')
+s, l, h = admin.get('/withdrawals.php?status=all')
+check('admin withdrawals page shows the decrypted number', '0123456789' in h)
+
+# legacy plaintext row -> encrypt script
+db(f"UPDATE bank_accounts SET account_number = '0000000000', account_last4 = NULL WHERE user_id = {eid}")
+s, l, h = earner.get('/bank-account.php')
+check('legacy plaintext bank number still readable', '••••0000' in h)
+r = subprocess.run(['php', ROOT + '/scripts/encrypt-bank-details.php', '--config-dir=' + CFG], capture_output=True, text=True)
+check('encrypt-bank-details.php seals legacy rows', r.returncode == 0 and 'bank_accounts: encrypted 1 row(s)' in r.stdout and one(f"SELECT LEFT(account_number, 5) FROM bank_accounts WHERE user_id = {eid}") == 'enc1:', r.stdout + r.stderr)
+r = subprocess.run(['php', ROOT + '/scripts/encrypt-bank-details.php', '--config-dir=' + CFG], capture_output=True, text=True)
+check('encrypt script is idempotent', 'bank_accounts: encrypted 0 row(s)' in r.stdout and 'withdrawals: encrypted 0 row(s)' in r.stdout, r.stdout)
+s, l, h = earner.get('/bank-account.php')
+check('sealed bank number shown masked after encryption', '••••0000' in h)
+
+# velocity limits
+db("INSERT INTO settings (setting_key, setting_value) VALUES ('money.withdraw_daily_count', '2') ON DUPLICATE KEY UPDATE setting_value = '2'")
+n_wd = one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}")
+s, l, h = earner.get('/withdraw.php')
+earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+s, l, h = earner.get('/withdraw.php')
+check('daily withdrawal count limit enforced', 'withdrawals in 24 hours' in h and one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
+db("UPDATE settings SET setting_value = '10' WHERE setting_key = 'money.withdraw_daily_count'")
+db("INSERT INTO settings (setting_key, setting_value) VALUES ('money.withdraw_daily_max_kobo', '350000') ON DUPLICATE KEY UPDATE setting_value = '350000'")
+earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+s, l, h = earner.get('/withdraw.php')
+check('daily withdrawal amount limit enforced (₦3,000 already used of ₦3,500)', 'limited to ₦3,500.00 in 24 hours' in h and 'up to ₦500.00' in h and one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
+db("DELETE FROM settings WHERE setting_key IN ('money.withdraw_daily_count', 'money.withdraw_daily_max_kobo')")
+
+# receipts
+s, l, h = earner.get('/wallet.php')
+m = re.search(r'href="receipt\.php\?id=(\d+)"', h)
+check('wallet history links to receipts', m is not None)
+rid = m.group(1) if m else '0'
+s, l, h = earner.get('/receipt.php?id=' + rid)
+check('earner opens own receipt', s == 200 and 'YOLOTASK RECEIPT' in h and 'TX-' in h and 'Print or save as PDF' in h)
+s, l, h = earner2.get('/receipt.php?id=' + rid)
+check("another earner cannot open someone's receipt", s == 404)
+paid_entry = one(f"SELECT e.id FROM ledger_entries e JOIN ledger_transactions t ON t.id = e.transaction_id JOIN ledger_accounts a ON a.id = e.account_id JOIN wallets w ON w.id = a.wallet_id WHERE w.user_id = {aid} AND t.type = 'topup' AND a.kind = 'wallet_available' ORDER BY e.id LIMIT 1")
+s, l, h = adv.get('/receipt.php?id=' + str(paid_entry))
+check('advertiser top-up receipt shows order and AfrStar reference', s == 200 and order_sn in h and osn in h)
+
+# every-five-minutes: callback retry
+s, l, h = adv.get('/topup.php')
+adv.post('/topup.php', {'_csrf': adv.csrf(h), 'amount': '700', 'phone': '08031234567'})
+o5 = db(f"SELECT order_sn, platform_osn FROM payment_orders WHERE user_id = {aid} ORDER BY id DESC LIMIT 1")[0]
+bal5 = balance(aid)[0]
+payload = {'merchant_sn': SN, 'order_sn': o5[0], 'platform_osn': o5[1], 'status': 1, 'message': 'Paid Success', 'amount': '700.00', 'amount_need': '700.00', 'amount_paid': '700.00', 'utr': 'UTRR' + o5[1], 'sign': md5(AK, o5[1], 1, '700.00')}
+db("INSERT INTO payment_callbacks (kind, remote_ip, raw_body, received_at) VALUES ('collection', '127.0.0.1', '" + json.dumps(payload).replace("'", "''") + "', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE))")
+cb_id = one("SELECT MAX(id) FROM payment_callbacks")
+env = dict(os.environ, YOLOTASK_CONFIG_DIR=CFG)
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('5-minute cron retries an unfinished callback and credits once', r.returncode == 0 and 'unfinished callbacks retried: 1' in r.stdout and balance(aid)[0] - bal5 == 70000
+      and one(f"SELECT outcome FROM payment_callbacks WHERE id = {cb_id}") == 'credited', r.stdout + r.stderr)
+s, l, h = collection_cb(o5[0], o5[1], '700.00')
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('AfrStar re-send after the retry does not double-credit', s == 200 and h == 'SUCCESS' and balance(aid)[0] - bal5 == 70000 and 'retried: 0' in r.stdout)
+db("INSERT INTO payment_callbacks (kind, remote_ip, raw_body, received_at) VALUES ('collection', '127.0.0.1', '{\"order_sn\":\"NOPE\",\"platform_osn\":\"X\",\"status\":1,\"sign\":\"bad\"}', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE))")
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('retried forged callback is verified again and rejected', one("SELECT outcome FROM payment_callbacks ORDER BY id DESC LIMIT 1") not in ('received', 'credited') and balance(aid)[0] - bal5 == 70000)
+# stale top-up expiry moved to 5-minute cron too
+s, l, h = adv.get('/topup.php')
+adv.post('/topup.php', {'_csrf': adv.csrf(h), 'amount': '300', 'phone': '08031234567'})
+db(f"UPDATE payment_orders SET created_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 HOUR) WHERE user_id = {aid} AND status = 'pending'")
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('5-minute cron expires stale top-ups', 'stale top-up orders expired: 1' in r.stdout, r.stdout)
+# stuck payout flagged
+db("DELETE FROM rate_limits WHERE bucket = 'bank_account'")
+s, l, h = earner.get('/bank-account.php')
+earner.post('/bank-account.php', {'_csrf': earner.csrf(h), 'bank_code': '80000009', 'account_number': '0123456789', 'account_name': 'Ada Obi', 'password': PW})
+db(f"UPDATE bank_accounts SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR) WHERE user_id = {eid}")
+s, l, h = earner.get('/withdraw.php')
+earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wid6 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
+s, l, h = admin.get('/withdrawals.php')
+admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid6})
+db(f"UPDATE withdrawals SET reviewed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 HOUR) WHERE id = {wid6}")
+st6 = one(f"SELECT status FROM withdrawals WHERE id = {wid6}")
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('payout with no callback after 6 h is flagged for review', st6 == 'processing' and 'stuck payouts flagged for review: 1' in r.stdout
+      and one(f"SELECT COUNT(*) FROM payment_reviews WHERE withdrawal_id = {wid6} AND dedupe_key LIKE 'stuck:%'") == '1', (st6, r.stdout))
+r = subprocess.run(['php', ROOT + '/cron/every-five-minutes.php'], capture_output=True, text=True, env=env)
+check('stuck payout flagged only once', 'stuck payouts flagged for review: 0' in r.stdout)
+s, l, h = admin.get('/payments.php')
+check('stuck payout visible in payment review', 'No AfrStar callback' in h)
+w6 = db(f"SELECT order_sn, platform_osn FROM withdrawals WHERE id = {wid6}")[0]
+payout_cb(w6[0], w6[1], '1000.00')
+check('late success callback still completes the flagged payout', one(f"SELECT status FROM withdrawals WHERE id = {wid6}") == 'paid')
+
+# optional Paystack account-name lookup
+PS = {'requests': []}
+
+
+class _PSH(_BH):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        PS['requests'].append(self.path)
+        ok = self.headers.get('Authorization') == 'Bearer sk_test_fake'
+        if self.path.startswith('/bank?'):
+            body = {'status': ok, 'data': [{'name': 'Access Bank', 'code': '044'}, {'name': 'Guaranty Trust Bank', 'code': '058'}, {'name': 'Zenith Bank', 'code': '057'}]}
+        elif self.path.startswith('/bank/resolve'):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            good = ok and q.get('bank_code') == ['044'] and q.get('account_number') == ['1234567890']
+            body = {'status': good, 'data': {'account_name': 'ADA OBI CHIOMA', 'account_number': '1234567890'}} if good else {'status': False, 'message': 'Could not resolve'}
+        else:
+            body = {'status': False}
+        b = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+ps_srv = _TS(('127.0.0.1', 8497), _PSH)
+_th.Thread(target=ps_srv.serve_forever, daemon=True).start()
+for f in os.listdir(os.path.join(os.path.dirname(MAIL), '..', 'cache')) if os.path.isdir(os.path.join(os.path.dirname(MAIL), '..', 'cache')) else []:
+    if f.startswith('paystack-banks'):
+        os.remove(os.path.join(os.path.dirname(MAIL), '..', 'cache', f))
+s, l, h = earner2.get('/bank-account.php')
+earner2.post('/bank-account.php', {'_csrf': earner2.csrf(h), 'bank_code': '80000001', 'account_number': '1234567890', 'account_name': 'Typed Name', 'password': PW})
+check('without a Paystack key the typed name is kept and nothing is sent', db(f"SELECT account_name, name_verified_via FROM bank_accounts WHERE user_id = {e2id}")[0] == ['Typed Name', 'none'] and PS['requests'] == [])
+cfg_ps = open(os.path.join(CFG, 'payments.local.php')).read()
+open(os.path.join(CFG, 'payments.local.php'), 'w').write(cfg_ps.replace("'secret_key' => '',", "'secret_key' => 'sk_test_fake',").replace("'https://api.paystack.co'", "'http://127.0.0.1:8497'"))
+time.sleep(4)  # opcache (php -S) only re-reads a changed config file after its revalidate window
+db(f"DELETE FROM rate_limits WHERE bucket = 'bank_account'")
+s, l, h = earner2.get('/bank-account.php')
+earner2.post('/bank-account.php', {'_csrf': earner2.csrf(h), 'bank_code': '80000001', 'account_number': '1234567890', 'account_name': 'Typed Name', 'password': PW})
+check('with a Paystack key the bank name replaces the typed name', db(f"SELECT account_name, name_verified_via FROM bank_accounts WHERE user_id = {e2id}")[0] == ['ADA OBI CHIOMA', 'paystack'], PS['requests'])
+check('Paystack bank code found by name from the bank list (Access Bank -> 044)', any(p.startswith('/bank?') for p in PS['requests']) and any('bank_code=044' in p for p in PS['requests']))
+s, l, h = earner2.get('/bank-account.php')
+check('bank page shows the name was confirmed', 'data-name-verified' in h)
+check('same account re-saved does not start a cooldown', one(f"SELECT changed_at IS NULL FROM bank_accounts WHERE user_id = {e2id}") == '1')
+db(f"DELETE FROM rate_limits WHERE bucket = 'bank_account'")
+earner2.post('/bank-account.php', {'_csrf': earner2.csrf(h), 'bank_code': '80000001', 'account_number': '9999999999', 'account_name': 'Ada Obi', 'password': PW})
+check('lookup failure falls back to the typed name', db(f"SELECT account_name, name_verified_via FROM bank_accounts WHERE user_id = {e2id}")[0] == ['Ada Obi', 'none'])
+open(os.path.join(CFG, 'payments.local.php'), 'w').write(cfg_ps)
+ps_srv.shutdown()
+time.sleep(4)
+
+# money settings: new fields validated
+s, l, h = admin.get('/payment-settings.php')
+check('money settings show velocity, cooldown and stuck-payout fields', 'money_withdraw_daily_count' in h and 'money_bank_change_cooldown_hours' in h and 'money_payout_stuck_hours' in h)
+base_ms = {'_csrf': admin.csrf(h), 'money_topup_min_kobo': '100', 'money_topup_max_kobo': '500000', 'money_withdraw_min_kobo': '1000', 'money_withdraw_max_kobo': '500000', 'money_payin_expiry_hours': '24',
+           'money_withdraw_daily_max_kobo': '200000', 'money_withdraw_daily_count': '5', 'money_bank_change_cooldown_hours': '12', 'money_payout_stuck_hours': '4'}
+admin.post('/payment-settings.php', base_ms)
+check('admin saves velocity/cooldown settings', one("SELECT setting_value FROM settings WHERE setting_key = 'money.withdraw_daily_count'") == '5' and one("SELECT setting_value FROM settings WHERE setting_key = 'money.bank_change_cooldown_hours'") == '12')
+admin.post('/payment-settings.php', dict(base_ms, money_withdraw_daily_count='0'))
+check('invalid daily count refused', one("SELECT setting_value FROM settings WHERE setting_key = 'money.withdraw_daily_count'") == '5')
+db("DELETE FROM settings WHERE setting_key IN ('money.withdraw_daily_count', 'money.withdraw_daily_max_kobo', 'money.bank_change_cooldown_hours', 'money.payout_stuck_hours')")
+
+# reports
+s, l, h = admin.get('/reports.php')
+check('admin money reports page shows period totals', s == 200 and 'Daily money report' in h and 'data-revenue' in h and 'Top-ups' in h)
+r = urllib.request.Request(ADM + '/reports.php?export=csv', headers={'User-Agent': 'x'})
+resp = admin.op.open(r, timeout=20)
+csv_body = resp.read().decode()
+check('ledger CSV export downloads with header and top-up rows', 'text/csv' in resp.headers.get('Content-Type', '') and csv_body.startswith('transaction_id,time_wat,type') and ',topup,' in csv_body)
+s, l, h = earner.get('/reports.php')
+check('earner cannot open money reports', 'Daily money report' not in h)
+
+# verify SQL scripts: no problem rows on a healthy database
+cli = shlex.split(os.environ.get('YT_DB_CLI', 'mariadb -uyt -pytpass -h127.0.0.1'))
+dbname = re.search(r"'database'\s*=>\s*'([^']+)'", open(CFG + '/database.local.php').read()).group(1)
+for f in ('wallet_ledger_reconciliation.sql', 'payment_order_reconciliation.sql', 'pre_release_checks.sql'):
+    out = subprocess.run(cli + ['-N', '-B', dbname], stdin=open(os.path.join(ROOT, 'database/verify', f)), capture_output=True, text=True)
+    check(f'verify/{f} runs clean', out.returncode == 0 and out.stdout.strip() == '', out.stdout[:300] + out.stderr[:300])
+db(f"UPDATE wallets SET held_kobo = held_kobo + 5 WHERE user_id = {eid}")
+out = subprocess.run(cli + ['-N', '-B', dbname], stdin=open(os.path.join(ROOT, 'database/verify/wallet_ledger_reconciliation.sql')), capture_output=True, text=True)
+check('verify/wallet_ledger_reconciliation.sql reports a tampered wallet', 'wallet_cache' in out.stdout)
+db(f"UPDATE wallets SET held_kobo = held_kobo - 5 WHERE user_id = {eid}")
+r = run_cron()
+check('daily reconciliation still OK after the Phase 3 gap checks', r.returncode == 0 and 'reconciliation: OK' in r.stdout, r.stdout)
 
 fails = [r for r in results if not r[1]]
 print(f'\n{len(results) - len(fails)}/{len(results)} passed')
