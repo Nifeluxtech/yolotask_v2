@@ -85,7 +85,7 @@ ob_start();
         <?php foreach ($history['rows'] as $e): $in = (string) $e['direction'] === 'credit'; ?>
           <li class="tx-row">
             <span class="tx-icon"><?= yolotask_nav_icon($in ? 'login' : 'logout') ?></span>
-            <div class="tx-meta"><strong><?= h(Wallet::entryLabel($e)) ?></strong><span class="text-xs text-faint"><?= h(yolotask_wat((string) $e['created_at'])) ?></span></div>
+            <div class="tx-meta"><strong><a href="receipt.php?id=<?= (int) $e['id'] ?>"><?= h(Wallet::entryLabel($e)) ?></a></strong><span class="text-xs text-faint"><?= h(yolotask_wat((string) $e['created_at'])) ?></span></div>
             <div class="tx-amount"><span class="<?= $in ? 'tx-in' : 'tx-out' ?>"><?= $in ? '+' : '−' ?><?= h(yolotask_money($e['amount_kobo'])) ?></span><span class="text-xs text-faint">Balance <?= h(yolotask_money($e['balance_after_kobo'])) ?></span></div>
           </li>
         <?php endforeach; ?>

@@ -72,7 +72,32 @@ $eventLabels = [
     'admin.wallet_debited' => 'Debited a wallet',
     'admin.payment_review_credited' => 'Credited a reviewed payment',
     'admin.payment_review_rejected' => 'Closed a payment review',
-    'admin.settings_updated' => 'Updated money settings',
+    'admin.settings_updated' => 'Updated settings',
+    'campaign.created' => 'Campaign created',
+    'campaign.updated' => 'Campaign draft edited',
+    'campaign.submitted' => 'Campaign funded and submitted',
+    'campaign.paused' => 'Campaign paused',
+    'campaign.resumed' => 'Campaign resumed',
+    'campaign.cancelled' => 'Campaign cancelled',
+    'campaign.instructions_updated' => 'Campaign instructions updated',
+    'campaign.draft_deleted' => 'Campaign draft deleted',
+    'campaign.settings_updated' => 'Approval settings updated',
+    'campaign.submission_approved' => 'Approved a proof',
+    'campaign.submission_rejected' => 'Rejected a proof',
+    'task.started' => 'Task started',
+    'task.released' => 'Task released',
+    'task.submitted' => 'Proof submitted',
+    'task.resubmitted' => 'Proof resubmitted',
+    'admin.campaign_approved' => 'Approved a campaign',
+    'admin.campaign_rejected' => 'Rejected a campaign',
+    'admin.campaign_cancelled' => 'Stopped a campaign',
+    'admin.submission_approved' => 'Approved a submission',
+    'admin.submission_rejected' => 'Rejected a submission',
+    'admin.task_type_updated' => 'Updated task prices',
+    'admin.task_type_added' => 'Added a task type',
+    'admin.platform_updated' => 'Updated a platform',
+    'admin.platform_added' => 'Added a platform',
+    'admin.ledger_exported' => 'Exported the ledger',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -134,6 +159,43 @@ $tips = $role === 'admin'
         ['title' => 'Protect your account', 'body' => 'Use a unique password and sign out on shared devices. YOLOTASK will never ask for your password.'],
     ]));
 
+// Phase 4 marketplace numbers for the second stats row.
+$market = [];
+$campaignQueue = 0;
+try {
+    if ($role === 'earner') {
+        $ts = \YoloTask\Tasks\Tasks::earnerStats($pdo, $userId);
+        $avail = \YoloTask\Tasks\Tasks::feed($pdo, $userId, 1)['total'];
+        $market = [
+            ['label' => 'Tasks available', 'value' => number_format($avail), 'tone' => '', 'note' => 'Live in your feed'],
+            ['label' => 'Waiting review', 'value' => number_format($ts['pending'] ?? 0), 'tone' => 'stat-warning', 'note' => 'Proofs submitted'],
+            ['label' => 'Approved', 'value' => number_format($ts['approved'] ?? 0), 'tone' => 'stat-success', 'note' => number_format($ts['rejected'] ?? 0) . ' rejected'],
+            ['label' => 'Earned', 'value' => \YoloTask\Money\Money::format($ts['earned'] ?? 0), 'tone' => 'stat-success', 'note' => ($ts['on_hold'] ?? 0) > 0 ? \YoloTask\Money\Money::format($ts['on_hold']) . ' on hold' : 'From approved tasks'],
+        ];
+    } elseif ($role === 'advertiser') {
+        $cs = \YoloTask\Campaigns\Campaigns::advertiserStats($pdo, $userId);
+        $market = [
+            ['label' => 'Live campaigns', 'value' => number_format($cs['live'] ?? 0), 'tone' => 'stat-success', 'note' => number_format($cs['open'] ?? 0) . ' open in total'],
+            ['label' => 'Proofs to review', 'value' => number_format($cs['to_review'] ?? 0), 'tone' => ($cs['to_review'] ?? 0) > 0 ? 'stat-warning' : '', 'note' => 'Across your campaigns'],
+            ['label' => 'Tasks completed', 'value' => number_format($cs['approved'] ?? 0), 'tone' => '', 'note' => 'Approved actions'],
+            ['label' => 'Spent', 'value' => \YoloTask\Money\Money::format($cs['spent'] ?? 0), 'tone' => '', 'note' => \YoloTask\Money\Money::format($cs['escrow'] ?? 0) . ' in escrow'],
+        ];
+    } elseif ($role === 'admin') {
+        $cc = \YoloTask\Campaigns\Campaigns::adminCounts($pdo);
+        $campaignQueue = (int) $cc['pending_approval'];
+        $pendingSubs = (int) $pdo->query("SELECT COUNT(*) FROM submissions WHERE status = 'pending'")->fetchColumn();
+        $revenue = (int) $pdo->query("SELECT balance_kobo FROM ledger_accounts WHERE code = 'system:revenue'")->fetchColumn();
+        $market = [
+            ['label' => 'Awaiting approval', 'value' => number_format($campaignQueue), 'tone' => $campaignQueue > 0 ? 'stat-warning' : '', 'note' => 'Campaigns in the queue'],
+            ['label' => 'Live campaigns', 'value' => number_format($cc['live']), 'tone' => 'stat-success', 'note' => number_format($cc['paused']) . ' paused'],
+            ['label' => 'Pending proofs', 'value' => number_format($pendingSubs), 'tone' => '', 'note' => number_format(\YoloTask\Tasks\StaleQueue::count($pdo)) . ' stale'],
+            ['label' => 'Task revenue', 'value' => \YoloTask\Money\Money::format($revenue), 'tone' => 'stat-success', 'note' => 'Margins on approved tasks'],
+        ];
+    }
+} catch (Throwable $e) {
+    Logger::error('dashboard.market_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
+}
+
 $adminMoney = ['withdrawals' => 0, 'reviews' => 0];
 $adminCounts = null;
 $platformActivity = [];
@@ -177,9 +239,9 @@ ob_start();
       default => 'Here is an overview of your earner account and its security.',
   }) ?></p>
   <div class="hero-actions">
-    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a>
-    <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a>
-    <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="topup.php">Top up wallet</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a>
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a>
+    <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="tasks.php">Find tasks</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a>
+    <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="campaign-new.php">New campaign</a><a class="btn btn-secondary btn-sm" href="campaigns.php">My campaigns</a><a class="btn btn-secondary btn-sm" href="topup.php">Top up wallet</a>
     <?php else: ?><a class="btn btn-secondary btn-sm" href="account.php">Account settings</a><?php endif; ?>
   </div>
 </section>
@@ -194,6 +256,19 @@ ob_start();
     </article>
   <?php endforeach; ?>
 </section>
+
+<?php if ($market !== []): ?>
+<section class="grid grid-4 dash-stats money-stats market-stats" aria-label="Marketplace">
+  <?php foreach ($market as $stat): ?>
+    <article class="stat-card <?= h($stat['tone']) ?>">
+      <span class="stat-icon"><?= yolotask_nav_icon($role === 'earner' ? 'tasks' : 'megaphone') ?></span>
+      <span class="stat-label"><?= h($stat['label']) ?></span>
+      <span class="stat-value"><?= h($stat['value']) ?></span>
+      <span class="text-xs text-faint text-break"><?= h($stat['note']) ?></span>
+    </article>
+  <?php endforeach; ?>
+</section>
+<?php endif; ?>
 
 <div class="grid grid-2 dash-panels">
   <section class="card" id="activity" aria-labelledby="activity-title">

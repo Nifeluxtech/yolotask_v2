@@ -25,6 +25,13 @@ $fields = [
     'money.topup_max_kobo' => 'Maximum top-up (₦)',
     'money.withdraw_min_kobo' => 'Minimum withdrawal (₦)',
     'money.withdraw_max_kobo' => 'Maximum withdrawal (₦)',
+    'money.withdraw_daily_max_kobo' => 'Withdrawals per earner per 24 hours, total (₦)',
+];
+// key => [label, min, max, hint]
+$intFields = [
+    'money.withdraw_daily_count' => ['Withdrawals per earner per 24 hours (count)', 1, 50, 'Rejected requests do not count.'],
+    'money.bank_change_cooldown_hours' => ['Withdrawal pause after a bank account change (hours)', 0, 168, '0 = no pause. Adding the first account never pauses withdrawals.'],
+    'money.payout_stuck_hours' => ['Flag a payout with no AfrStar callback after (hours)', 1, 72, 'Flagged payouts appear in Payments & review.'],
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -39,6 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hours = (int) ($_POST['money_payin_expiry_hours'] ?? 0);
         if ($hours < 1 || $hours > 168) throw new RuntimeException('Top-up expiry must be between 1 and 168 hours.');
         $values['money.payin_expiry_hours'] = (string) $hours;
+        foreach ($intFields as $key => [$label, $min, $max]) {
+            $raw = is_string($_POST[str_replace('.', '_', $key)] ?? null) ? $_POST[str_replace('.', '_', $key)] : '';
+            if (!preg_match('/^\d{1,4}$/', $raw) || (int) $raw < $min || (int) $raw > $max) throw new RuntimeException("{$label} must be between {$min} and {$max}.");
+            $values[$key] = (string) (int) $raw;
+        }
+        if ((int) $values['money.withdraw_daily_max_kobo'] < (int) $values['money.withdraw_min_kobo']) throw new RuntimeException('The 24-hour total cannot be below the minimum withdrawal.');
         if ((int) $values['money.topup_min_kobo'] > (int) $values['money.topup_max_kobo']) throw new RuntimeException('The minimum top-up cannot be above the maximum.');
         if ((int) $values['money.withdraw_min_kobo'] > (int) $values['money.withdraw_max_kobo']) throw new RuntimeException('The minimum withdrawal cannot be above the maximum.');
         Settings::save($pdo, (int) $admin['id'], $values);
@@ -75,6 +88,11 @@ ob_start();
       <div class="field"><label class="label" for="money_payin_expiry_hours">Unpaid top-ups expire after (hours)</label>
         <input class="input" id="money_payin_expiry_hours" name="money_payin_expiry_hours" type="number" min="1" max="168" required value="<?= (int) $all['money.payin_expiry_hours'] ?>">
         <p class="input-hint">Expiring moves no money. A late confirmed payment from AfrStar is still credited.</p></div>
+      <?php foreach ($intFields as $key => [$label, $min, $max, $hint]): $name = str_replace('.', '_', $key); ?>
+        <div class="field"><label class="label" for="<?= h($name) ?>"><?= h($label) ?></label>
+          <input class="input" id="<?= h($name) ?>" name="<?= h($name) ?>" type="number" min="<?= $min ?>" max="<?= $max ?>" required value="<?= (int) $all[$key] ?>">
+          <p class="input-hint"><?= h($hint) ?></p></div>
+      <?php endforeach; ?>
       <button class="btn btn-primary" type="submit">Save money rules</button>
     </form>
   </section>

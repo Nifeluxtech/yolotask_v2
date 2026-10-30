@@ -49,12 +49,13 @@ ob_start();
     <section class="card notice-card" aria-label="Current bank account">
       <span class="verify-icon"><?= yolotask_nav_icon('shield') ?></span>
       <div><strong><?= h((string) $bank['bank_name']) ?> ••••<?= h(substr((string) $bank['account_number'], -4)) ?></strong>
-        <p class="text-sm text-faint"><?= h((string) $bank['account_name']) ?> · Updated <?= h(yolotask_wat((string) $bank['updated_at'], 'j M Y')) ?></p></div>
+        <p class="text-sm text-faint"><?= h((string) $bank['account_name']) ?> · Updated <?= h(yolotask_wat((string) $bank['updated_at'], 'j M Y')) ?></p>
+        <?php if ((string) $bank['name_verified_via'] === 'paystack'): ?><span class="badge badge-success" data-name-verified>Name confirmed with the bank</span><?php endif; ?></div>
     </section>
   <?php endif; ?>
   <section class="card" aria-labelledby="bank-title">
     <div class="card-header"><h2 id="bank-title"><?= $bank ? 'Change bank account' : 'Add your bank account' ?></h2><span class="badge badge-info">One account</span></div>
-    <p class="text-sm text-faint">Withdrawals are paid only into this account. For your safety we ask for your password and email you whenever it changes.</p>
+    <p class="text-sm text-faint">Withdrawals are paid only into this account. For your safety we ask for your password, email you whenever it changes, and pause withdrawals for <?= (int) \YoloTask\Core\Settings::int($pdo, 'money.bank_change_cooldown_hours') ?> hours after a change.</p>
     <form method="post" action="bank-account.php" class="stack" autocomplete="off">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
       <div class="field">

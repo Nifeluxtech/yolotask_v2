@@ -67,6 +67,7 @@ function yolotask_admin_money_tabs(PDO $pdo, string $active): string
         'withdrawals' => ['Withdrawals', 'withdrawals.php', $wd],
         'payments' => ['Payments & review', 'payments.php', $rev],
         'transactions' => ['Ledger', 'transactions.php', 0],
+        'reports' => ['Reports', 'reports.php', 0],
         'settings' => ['Money settings', 'payment-settings.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Money sections">';

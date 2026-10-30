@@ -48,7 +48,8 @@ $open = Withdrawals::openForUser($pdo, $userId);
 $limits = Withdrawals::limits($pdo);
 $configured = AfrstarClient::isConfigured();
 $verified = !empty($user['email_verified_at']);
-$canRequest = $configured && $verified && $bank !== null && $open === null && $wallet['available_kobo'] >= $limits['min'];
+$cooldown = BankAccounts::cooldownUntil($pdo, $bank);
+$canRequest = $configured && $verified && $bank !== null && $open === null && $cooldown === null && $wallet['available_kobo'] >= $limits['min'];
 $csrf = Csrf::token();
 $idem = bin2hex(random_bytes(16));
 ob_start();
@@ -61,6 +62,14 @@ ob_start();
       <span class="verify-icon"><?= yolotask_nav_icon('bell') ?></span>
       <div><strong>Confirm your email first</strong><p class="text-sm text-faint">Withdrawals are unlocked once your email address is confirmed.</p></div>
       <a class="btn btn-primary btn-sm" href="verify.php">Confirm now</a>
+    </section>
+  <?php endif; ?>
+
+  <?php if ($cooldown !== null && $open === null): ?>
+    <section class="card notice-card notice-warning" role="status" data-bank-cooldown>
+      <span class="verify-icon"><?= yolotask_nav_icon('shield') ?></span>
+      <div><strong>Withdrawals paused until <?= h(yolotask_wat($cooldown)) ?> WAT</strong>
+        <p class="text-sm text-faint">Your bank account was changed recently. This short wait protects your earnings if someone else got into your account.</p></div>
     </section>
   <?php endif; ?>
 
@@ -84,7 +93,7 @@ ob_start();
         <div class="field">
           <label class="label" for="amount">Amount (₦)</label>
           <input class="input" id="amount" name="amount" inputmode="decimal" autocomplete="off" required placeholder="2000" pattern="[0-9,]+(\.[0-9]{1,2})?">
-          <p class="input-hint">Minimum <?= h(yolotask_money($limits['min'])) ?>. No fees. Every withdrawal is reviewed before it is sent.</p>
+          <p class="input-hint">Minimum <?= h(yolotask_money($limits['min'])) ?>, up to <?= h(yolotask_money($limits['daily_max'])) ?> and <?= (int) $limits['daily_count'] ?> withdrawals in 24 hours. No fees. Every withdrawal is reviewed before it is sent.</p>
         </div>
         <button class="btn btn-primary btn-block" type="submit"<?= $canRequest ? '' : ' disabled' ?>>Request withdrawal</button>
       </form>
