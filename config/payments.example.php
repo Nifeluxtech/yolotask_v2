@@ -35,10 +35,16 @@ return [
         'callback_ips' => [],
     ],
     // Optional Paystack account-name lookup on the bank account page.
-    // Leave secret_key empty to skip the lookup (users type the name).
+    // Leave secret_key empty to skip the lookup (users type the name and
+    // nothing is sent to Paystack). With a key, the name returned by the
+    // bank replaces the typed one and the account shows as confirmed.
     'paystack_name_lookup' => [
         'secret_key' => '',
-        // AfrStar bank code => Paystack bank code, e.g. '80000009' => '058'.
+        // Optional overrides: AfrStar bank code => Paystack bank code, e.g.
+        // '80000009' => '058'. Banks not listed are matched by name against
+        // Paystack's bank list (cached 24 h in runtime/cache).
         'bank_code_map' => [],
+        // Only change for local testing against a fake server.
+        'base_url' => 'https://api.paystack.co',
     ],
 ];
