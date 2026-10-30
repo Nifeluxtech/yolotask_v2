@@ -12,13 +12,30 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules, in kobo. Keys match the rows seeded by migration 0003. */
+    /** Money rules (kobo, migration 0003) and task/campaign rules (migration 0005). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
         'money.withdraw_min_kobo' => '100000',    // ₦1,000
         'money.withdraw_max_kobo' => '50000000',  // ₦500,000
         'money.payin_expiry_hours' => '24',
+        // Phase 3 hardening: withdrawal velocity, bank-change cooldown, stuck payouts.
+        'money.withdraw_daily_count' => '3',
+        'money.withdraw_daily_max_kobo' => '50000000', // ₦500,000
+        'money.bank_change_cooldown_hours' => '24',
+        'money.payout_stuck_hours' => '6',
+        // Phase 4 task and campaign rules (rows seeded by migration 0005).
+        'tasks.reservation_minutes' => '60',
+        'tasks.max_active_reservations' => '3',
+        'tasks.reward_hold_hours' => '0',
+        'tasks.resubmission_cap' => '1',
+        'tasks.stale_hours' => '24',
+        'tasks.auto_approve_default_hours' => '48',
+        'tasks.auto_approve_min_hours' => '12',
+        'tasks.auto_approve_max_hours' => '336',
+        'tasks.proof_max_bytes' => '2097152',
+        'campaigns.min_quantity' => '1',
+        'campaigns.max_quantity' => '100000',
     ];
 
     private static ?array $cache = null;
