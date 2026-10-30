@@ -145,6 +145,10 @@ final class Wallet
             'withdrawal_release' => $held ? 'Hold released' : 'Withdrawal returned',
             'withdrawal_paid' => 'Withdrawal paid out',
             'adjustment' => 'Adjustment by YOLOTASK',
+            'campaign_fund' => 'Campaign funded',
+            'campaign_refund' => 'Campaign refund',
+            'task_reward' => 'Task reward',
+            'task_reward_release' => 'Task reward released',
             default => 'Wallet update',
         };
     }

@@ -20,6 +20,8 @@ final class Ledger
 {
     public const CLEARING = 'system:afrstar_clearing';
     public const ADJUSTMENTS = 'system:adjustments';
+    public const REVENUE = 'system:revenue';
+    public const REWARD_HOLD = 'system:reward_hold';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -132,7 +134,50 @@ final class Ledger
         $open = (int) $pdo->query("SELECT COALESCE(SUM(amount_kobo), 0) FROM withdrawals WHERE status IN ('pending_review', 'processing')")->fetchColumn();
         if ($held !== $open) $problems[] = "Held balances {$held} != open withdrawals {$open}";
 
+        foreach (self::reconcileCampaigns($pdo) as $p) $problems[] = $p;
+
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
+        return $problems;
+    }
+
+    /**
+     * Phase 4 checks: every campaign escrow account equals that campaign's
+     * unspent budget (funded - spent - refunded), total escrow equals total
+     * unspent budgets, spent equals approved submissions, closed campaigns
+     * keep only what pending submissions still need, revenue equals the
+     * margins of approved submissions and the reward hold equals rewards
+     * not yet released.
+     * @return list<string>
+     */
+    public static function reconcileCampaigns(PDO $pdo): array
+    {
+        if (!(bool) $pdo->query("SHOW TABLES LIKE 'submissions'")->fetchColumn()) return [];
+        $problems = [];
+        $sql = "SELECT c.id, c.funded_kobo - c.spent_kobo - c.refunded_kobo unspent, COALESCE(a.balance_kobo, 0) escrow
+                FROM campaigns c LEFT JOIN ledger_accounts a ON a.id = c.escrow_account_id
+                WHERE COALESCE(a.balance_kobo, 0) <> c.funded_kobo - c.spent_kobo - c.refunded_kobo OR c.funded_kobo - c.spent_kobo - c.refunded_kobo < 0 LIMIT 50";
+        foreach ($pdo->query($sql) as $r) $problems[] = "Campaign #{$r['id']} escrow {$r['escrow']} != unspent budget {$r['unspent']}";
+
+        $escrow = (int) $pdo->query("SELECT COALESCE(SUM(balance_kobo), 0) FROM ledger_accounts WHERE kind = 'campaign_escrow'")->fetchColumn();
+        $unspent = (int) $pdo->query('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) FROM campaigns')->fetchColumn();
+        if ($escrow !== $unspent) $problems[] = "Total campaign escrow {$escrow} != total unspent campaign budgets {$unspent}";
+
+        $sql = "SELECT c.id, c.spent_kobo, c.approved_count, c.pending_count, COALESCE(SUM(CASE WHEN s.status = 'approved' THEN s.unit_price_kobo END), 0) approved_value,
+                       COALESCE(SUM(s.status = 'approved'), 0) approved_n, COALESCE(SUM(s.status = 'pending'), 0) pending_n
+                FROM campaigns c LEFT JOIN submissions s ON s.campaign_id = c.id GROUP BY c.id, c.spent_kobo, c.approved_count, c.pending_count
+                HAVING approved_value <> c.spent_kobo OR approved_n <> c.approved_count OR pending_n <> c.pending_count LIMIT 50";
+        foreach ($pdo->query($sql) as $r) $problems[] = "Campaign #{$r['id']} counters (spent {$r['spent_kobo']}, approved {$r['approved_count']}, pending {$r['pending_count']}) do not match its submissions";
+
+        $sql = "SELECT id, funded_kobo - spent_kobo - refunded_kobo unspent, pending_count * unit_price_kobo needed FROM campaigns
+                WHERE status IN ('completed', 'cancelled', 'ended', 'rejected') AND funded_kobo - spent_kobo - refunded_kobo <> pending_count * unit_price_kobo LIMIT 50";
+        foreach ($pdo->query($sql) as $r) $problems[] = "Closed campaign #{$r['id']} still holds {$r['unspent']} in escrow (pending work needs {$r['needed']})";
+
+        $sys = [];
+        foreach ($pdo->query("SELECT code, balance_kobo FROM ledger_accounts WHERE code IN ('system:revenue', 'system:reward_hold')") as $r) $sys[(string) $r['code']] = (int) $r['balance_kobo'];
+        $margin = (int) $pdo->query("SELECT COALESCE(SUM(unit_price_kobo - unit_reward_kobo), 0) FROM submissions WHERE status = 'approved'")->fetchColumn();
+        if (($sys[self::REVENUE] ?? 0) !== $margin) $problems[] = 'Revenue ' . ($sys[self::REVENUE] ?? 0) . " != margins of approved tasks {$margin}";
+        $held = (int) $pdo->query("SELECT COALESCE(SUM(unit_reward_kobo), 0) FROM submissions WHERE reward_status = 'held'")->fetchColumn();
+        if (($sys[self::REWARD_HOLD] ?? 0) !== $held) $problems[] = 'Reward hold ' . ($sys[self::REWARD_HOLD] ?? 0) . " != rewards waiting for release {$held}";
         return $problems;
     }
 }
