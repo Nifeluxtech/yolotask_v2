@@ -1291,3 +1291,54 @@ body.auth-page, body { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-
 .user-meta details.danger-details summary { margin-bottom: 0; }
 .user-meta details.danger-details[open] summary { margin-bottom: .75rem; }
 @media (max-width: 720px) { .money-stats .stat-card .stat-value { font-size: clamp(1.05rem, 5vw, 1.4rem); overflow-wrap: normal; white-space: nowrap; } }
+
+/* ============================================================
+   Phase 4: campaigns, task feed, submissions and proofs
+   ============================================================ */
+.progress { position: relative; display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, .07); margin: .6rem 0 .25rem; }
+[data-theme="light"] .progress { background: rgba(10, 22, 40, .08); }
+.progress-bar { display: block; height: 100%; background: var(--grad-brand); }
+.progress-pending { display: block; height: 100%; background: rgba(245, 158, 11, .55); }
+.tx-meta .progress { margin: 6px 0 0; height: 6px; }
+.badge-premium { background: linear-gradient(90deg, rgba(0, 212, 255, .18), rgba(124, 58, 237, .22)); color: #C4B5FD; border: 1px solid rgba(124, 58, 237, .35); }
+[data-theme="light"] .badge-premium { color: #5B21B6; }
+.platform-icon { font-weight: 900; font-size: 15px; background: var(--grad-brand); color: #fff; }
+.task-row .tx-amount .btn, .campaign-row .tx-amount .btn { margin-top: 4px; }
+.proof-thumb { flex: none; display: block; width: 72px; height: 72px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: rgba(0, 0, 0, .25); }
+.proof-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.proof-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.proof-grid figure { margin: 0; display: grid; gap: 4px; }
+.proof-grid .proof-thumb { width: 100%; height: auto; aspect-ratio: 3 / 4; }
+.submission-row { align-items: flex-start; }
+.instructions { white-space: normal; line-height: 1.6; }
+.steps-list { margin: 0 0 1rem; padding-left: 1.2rem; display: grid; gap: 4px; color: var(--text-muted); }
+.form-pair { gap: 12px; }
+.tier-choice { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.tier-choice legend { grid-column: 1 / -1; margin-bottom: 4px; }
+.radio-card { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 14px; cursor: pointer; background: rgba(255, 255, 255, .02); }
+.radio-card > span { display: flex; flex-direction: column; gap: 2px; }
+.radio-card:has(input:checked) { border-color: rgba(0, 212, 255, .45); background: rgba(0, 212, 255, .08); }
+.radio-card input { margin-top: 4px; accent-color: #00D4FF; }
+.cost-preview { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid rgba(0, 212, 255, .28); background: linear-gradient(90deg, rgba(0, 212, 255, .10), rgba(124, 58, 237, .06)), var(--surface); }
+.cost-preview strong { font-size: 1.5rem; font-weight: 900; }
+.price-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.catalog-form { width: 100%; }
+.market-stats { margin-top: 1rem; }
+@media (max-width: 720px) {
+  .form-pair { grid-template-columns: 1fr; }
+  .tier-choice { grid-template-columns: 1fr; }
+  .price-grid { grid-template-columns: 1fr 1fr; }
+  .submission-row .proof-thumb { width: 100%; height: 180px; }
+}
+
+/* Wallet receipts (Phase 3 addition) */
+.receipt-list { display: grid; gap: 0; margin: 1rem 0 0; }
+.receipt-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.receipt-list dt { color: var(--text-muted); font-size: var(--text-sm); flex: none; }
+.receipt-list dd { margin: 0; text-align: right; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+@media print {
+  .site-header, .bottom-nav, .site-footer, .no-print, .toast-container, .page-header { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .receipt .card { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; }
+  .receipt .amount { -webkit-text-fill-color: #000 !important; color: #000 !important; }
+}
