@@ -196,10 +196,13 @@ function yolotask_portal_nav(string $active): array
     $role = yolotask_role();
     $items = [['key' => 'home', 'label' => 'Home', 'url' => 'dashboard.php', 'icon' => 'home']];
     if ($role === 'admin') $items[] = ['key' => 'users', 'label' => 'Users', 'url' => 'users.php', 'icon' => 'user-plus'];
+    if ($role === 'admin') $items[] = ['key' => 'market', 'label' => 'Tasks', 'url' => 'campaigns.php', 'icon' => 'megaphone'];
     if ($role === 'admin') $items[] = ['key' => 'money', 'label' => 'Money', 'url' => 'wallets.php', 'icon' => 'wallet'];
+    if ($role === 'earner') $items[] = ['key' => 'tasks', 'label' => 'Tasks', 'url' => 'tasks.php', 'icon' => 'tasks'];
+    if ($role === 'earner') $items[] = ['key' => 'submissions', 'label' => 'My work', 'url' => 'submissions.php', 'icon' => 'inbox'];
+    if ($role === 'advertiser') $items[] = ['key' => 'campaigns', 'label' => 'Campaigns', 'url' => 'campaigns.php', 'icon' => 'megaphone'];
     if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'wallet', 'label' => 'Wallet', 'url' => 'wallet.php', 'icon' => 'wallet'];
     if ($role === 'reviewer') $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'inbox'];
-    if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'chart'];
     $items[] = ['key' => 'account', 'label' => 'Account', 'url' => 'account.php', 'icon' => 'user'];
     foreach ($items as &$item) $item['active'] = $item['key'] === $active;
     return $items;
