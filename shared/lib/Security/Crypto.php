@@ -32,6 +32,42 @@ final class Crypto
         return str_pad((string) random_int(0, (10 ** $digits) - 1), $digits, '0', STR_PAD_LEFT);
     }
 
+    private const SEAL_PREFIX = 'enc1:';
+
+    /**
+     * Encrypt a sensitive field (bank account numbers) at rest with
+     * libsodium secretbox, keyed from the private security key. Output:
+     * "enc1:" + base64(nonce || ciphertext). Changing security_key makes
+     * sealed values unreadable, so keep that key stable and backed up.
+     */
+    public static function seal(string $plain): string
+    {
+        $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+        return self::SEAL_PREFIX . base64_encode($nonce . sodium_crypto_secretbox($plain, $nonce, self::sealKey()));
+    }
+
+    /** Decrypt a sealed field; legacy plaintext (no prefix) is returned unchanged. */
+    public static function reveal(?string $value): string
+    {
+        $value = (string) $value;
+        if (!str_starts_with($value, self::SEAL_PREFIX)) return $value;
+        $raw = base64_decode(substr($value, strlen(self::SEAL_PREFIX)), true);
+        if ($raw === false || strlen($raw) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) throw new RuntimeException('Sealed value is corrupt.');
+        $plain = sodium_crypto_secretbox_open(substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), self::sealKey());
+        if ($plain === false) throw new RuntimeException('Sealed value cannot be decrypted with the current security key.');
+        return $plain;
+    }
+
+    public static function isSealed(?string $value): bool
+    {
+        return str_starts_with((string) $value, self::SEAL_PREFIX);
+    }
+
+    private static function sealKey(): string
+    {
+        return hash_hkdf('sha256', self::key(), SODIUM_CRYPTO_SECRETBOX_KEYBYTES, 'yolotask-sensitive-fields-v1');
+    }
+
     public static function clientIp(): string
     {
         return (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
