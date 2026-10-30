@@ -32,6 +32,35 @@ callbacks answer 503.
   Payments & review (review queue, orders, raw callback log), Ledger, Money
   settings (min/max top-up and withdrawal, unpaid-order expiry).
 
+## Hardening added with Phase 4
+
+- **Bank details encrypted at rest.** `bank_accounts.account_number` and
+  `withdrawals.account_number` hold `enc1:` + libsodium secretbox ciphertext
+  keyed (HKDF) from `security_key`; `account_last4` keeps masked display.
+  Legacy plaintext rows still read correctly; `scripts/encrypt-bank-details.php`
+  seals them (idempotent). Keep `security_key` stable and backed up: changing
+  it makes sealed numbers unreadable.
+- **Withdrawal velocity.** Per earner per rolling 24 h: at most
+  `money.withdraw_daily_count` (3) requests and `money.withdraw_daily_max_kobo`
+  (₦500,000) in total; rejected requests do not count.
+- **Bank-change cooldown.** Replacing a saved bank account pauses withdrawals
+  for `money.bank_change_cooldown_hours` (24 h). Adding the first account, or
+  re-saving the same one, does not.
+- **Every five minutes** (`cron/every-five-minutes.php`): callbacks that were
+  logged but never finished are re-run through the same verification
+  (idempotent; a second failure is marked `retry_failed`), unpaid top-ups
+  expire, and payouts with no callback after `money.payout_stuck_hours` (6 h)
+  open a `payout_conflict` review item (the hold stays until AfrStar answers).
+- **Receipts.** `receipt.php?id=<entry>` on the earner and advertiser portals
+  (linked from wallet history): printable, owner-only.
+- **Reports.** Admin → Money → Reports: daily totals per Lagos day and a
+  ledger CSV export (audited; formula-safe).
+- **Paystack name lookup** stays optional: only with
+  `paystack_name_lookup.secret_key`. The Paystack bank code comes from
+  `bank_code_map` or Paystack's bank list matched by name (cached 24 h).
+- **Read-only SQL checks** in `database/verify/` (wallet/ledger, payment
+  orders, campaign funding, pre-release); each returns rows only on a problem.
+
 ## Rules (admin-editable, `settings` table)
 
 Min top-up ₦100, max ₦500,000; min withdrawal ₦1,000, max ₦500,000; unpaid
