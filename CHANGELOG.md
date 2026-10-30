@@ -1,5 +1,25 @@
 # Changelog
 
+## Phase 3 gaps closed (with Phase 4)
+
+- Bank account numbers encrypted at rest (libsodium, `enc1:`), last 4 digits kept for display; `scripts/encrypt-bank-details.php` seals existing rows.
+- Withdrawal velocity limits (3 per 24 h, ₦500,000 per 24 h) and a 24 h withdrawal pause after a bank account change; all admin-editable in Money settings.
+- `cron/every-five-minutes.php`: retries unfinished AfrStar callbacks, expires stale top-ups, flags payouts with no callback after 6 h for review.
+- Printable wallet receipts for earners and advertisers; admin Money → Reports with daily totals and ledger CSV export.
+- Paystack name lookup finds the Paystack bank code from Paystack's bank list (still optional, only with a key); bank page shows when the name was confirmed.
+- Read-only verification SQL in `database/verify/`; docs/callbacks-and-reconciliation.md.
+
+## Phase 4 — Campaigns, task feed, submissions and proofs
+
+- Admin catalog: platforms (with allowed link domains) and task types with base and premium advertiser price and earner reward; seeded with 8 platforms and 7 task types (premium = base × 1.5). Margin goes to a `system:revenue` ledger account on approval.
+- Advertiser campaigns: draft → fund (full budget locked in a per-campaign escrow ledger account, idempotent) → admin approval → live; pause/resume, cancel (unspent escrow refunded, pending proofs stay reserved), end date (cron), automatic completion with leftover refund. https-only, platform-checked, normalised links with a duplicate guard. Versioned instructions. Live cost preview, progress bars, funding history.
+- Earner task feed with platform filter; start reserves a slot (60 min, max 3 at once) under a row lock so slots can never be over-claimed; release; one submission per campaign; proof screenshot upload (JPEG/PNG/WebP ≤ 2 MB, validated and re-encoded with GD, reused screenshots refused) stored outside public roots and served only to the earner, the campaign's advertiser and admins; resubmission after rejection (cap 1).
+- Advertiser review: approve (earner paid, margin to revenue) or reject with reason (earner emailed, slot back in the pool); auto-approval after the advertiser's window (default 48 h, 12–336 h); optional reward hold window with hourly release.
+- Admin: campaign approval queue and all campaigns, campaign detail with stop/refund, all submissions with stale filter and proof viewing, task settings.
+- Dashboards: real marketplace stats for earners, advertisers and admins; Tasks/My work (earner), Campaigns (advertiser) and Tasks (admin) in the bottom dock.
+- Cron: `every-fifteen-minutes.php` (reservations, auto-approve, end dates), `hourly.php` (reward release + escrow reconciliation), `every-minute.php` (optional); daily reconciliation now covers escrow, revenue and reward hold.
+- Migrations `0005_campaigns_funding_links.sql` and `0006_tasks_submissions_proofs_appeals.sql` (additive). Integration test `tests/Integration/TaskSubmissions/phase4_test.py`.
+
 ## Phase 3 — Wallets, ledger and AfrStar payments
 
 - Double-entry ledger in integer kobo (`Money\Ledger`): balanced postings only, unique idempotency keys, row locks, no negative wallets; wallet balances cached on `wallets` and `ledger_accounts`.
