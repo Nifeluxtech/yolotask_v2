@@ -202,7 +202,8 @@ function yolotask_portal_nav(string $active): array
     if ($role === 'earner') $items[] = ['key' => 'submissions', 'label' => 'My work', 'url' => 'submissions.php', 'icon' => 'inbox'];
     if ($role === 'advertiser') $items[] = ['key' => 'campaigns', 'label' => 'Campaigns', 'url' => 'campaigns.php', 'icon' => 'megaphone'];
     if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'wallet', 'label' => 'Wallet', 'url' => 'wallet.php', 'icon' => 'wallet'];
-    if ($role === 'reviewer') $items[] = ['key' => 'activity', 'label' => 'Activity', 'url' => 'dashboard.php#activity', 'icon' => 'inbox'];
+    if ($role === 'reviewer') $items[] = ['key' => 'appeals', 'label' => 'Appeals', 'url' => 'appeals.php', 'icon' => 'shield'];
+    if ($role === 'reviewer') $items[] = ['key' => 'stale', 'label' => 'Stale', 'url' => 'stale.php', 'icon' => 'inbox'];
     $items[] = ['key' => 'account', 'label' => 'Account', 'url' => 'account.php', 'icon' => 'user'];
     foreach ($items as &$item) $item['active'] = $item['key'] === $active;
     return $items;
