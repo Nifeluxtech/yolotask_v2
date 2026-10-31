@@ -44,10 +44,23 @@ final class Withdrawals
         return (new \DateTimeImmutable($utc, new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Africa/Lagos'))->format('j M, g:i A') . ' WAT';
     }
 
-    /** Decrypt the account number on rows read from withdrawals. */
+    /** Decrypt the account number on rows read from withdrawals (strict: used before a payout). */
     private static function revealRow(array $row): array
     {
         if (array_key_exists('account_number', $row)) $row['account_number'] = Crypto::reveal((string) $row['account_number']);
+        return $row;
+    }
+
+    /**
+     * Display-only rows: a number this host cannot decrypt (legacy enc1: without
+     * ext-sodium) shows as ••••last4 instead of breaking the whole page.
+     */
+    private static function displayRow(array $row): array
+    {
+        if (array_key_exists('account_number', $row)) {
+            $fallback = '••••' . (string) ($row['account_last4'] ?? '');
+            $row['account_number'] = Crypto::revealOr((string) $row['account_number'], $fallback);
+        }
         return $row;
     }
 
@@ -174,9 +187,9 @@ final class Withdrawals
 
     public static function forUser(PDO $pdo, int $userId, int $limit = 10): array
     {
-        $stmt = $pdo->prepare('SELECT id, amount_kobo, fee_kobo, bank_name, account_number, status, reject_reason, created_at, completed_at FROM withdrawals WHERE user_id = :u ORDER BY id DESC LIMIT ' . (int) $limit);
+        $stmt = $pdo->prepare('SELECT id, amount_kobo, fee_kobo, bank_name, account_number, account_last4, status, reject_reason, created_at, completed_at FROM withdrawals WHERE user_id = :u ORDER BY id DESC LIMIT ' . (int) $limit);
         $stmt->execute(['u' => $userId]);
-        return array_map([self::class, 'revealRow'], $stmt->fetchAll() ?: []);
+        return array_map([self::class, 'displayRow'], $stmt->fetchAll() ?: []);
     }
 
     public static function openForUser(PDO $pdo, int $userId): ?array
@@ -184,7 +197,7 @@ final class Withdrawals
         $stmt = $pdo->prepare("SELECT * FROM withdrawals WHERE user_id = :u AND status IN ('pending_review', 'processing') ORDER BY id DESC LIMIT 1");
         $stmt->execute(['u' => $userId]);
         $row = $stmt->fetch();
-        return is_array($row) ? self::revealRow($row) : null;
+        return is_array($row) ? self::displayRow($row) : null;
     }
 
     public static function list(PDO $pdo, string $status, int $page, int $perPage = 25): array
@@ -198,7 +211,7 @@ final class Withdrawals
         $page = max(1, $page);
         $stmt = $pdo->prepare('SELECT w.*, u.email, u.display_name, wl.available_kobo FROM withdrawals w JOIN users u ON u.id = w.user_id JOIN wallets wl ON wl.id = w.wallet_id' . $where . ' ORDER BY w.id DESC LIMIT ' . $perPage . ' OFFSET ' . (($page - 1) * $perPage));
         $stmt->execute($args);
-        return ['rows' => array_map([self::class, 'revealRow'], $stmt->fetchAll() ?: []), 'total' => $total, 'page' => $page, 'pages' => max(1, (int) ceil($total / $perPage))];
+        return ['rows' => array_map([self::class, 'displayRow'], $stmt->fetchAll() ?: []), 'total' => $total, 'page' => $page, 'pages' => max(1, (int) ceil($total / $perPage))];
     }
 
     public static function counts(PDO $pdo): array

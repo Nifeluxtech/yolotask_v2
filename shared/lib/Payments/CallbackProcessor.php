@@ -155,7 +155,7 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE withdrawals SET status = 'paid', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal was paid', 'Withdrawal paid',
-                    [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::reveal((string) $w['account_number'])) . '.', 'Reference: ' . $orderSn]);
+                    [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . '.', 'Reference: ' . $orderSn]);
                 $outcome = 'paid';
             } else {
                 $tx = Ledger::post($pdo, 'wd-release:' . $w['id'], 'withdrawal_release', 'Withdrawal ' . $orderSn . ' failed at AfrStar; funds returned', [
@@ -165,7 +165,7 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE withdrawals SET status = 'failed', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal could not be paid', 'Withdrawal failed',
-                    ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::reveal((string) $w['account_number'])) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
+                    ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
                 $outcome = 'failed_refunded';
             }
             $pdo->commit();
