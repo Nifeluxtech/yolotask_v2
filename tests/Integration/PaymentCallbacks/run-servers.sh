@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts local servers for the Phase 3 integration test:
-#   8401 main (AfrStar callback hooks), 8402 earner, 8403 advertiser, 8405 admin,
+#   8401 main (AfrStar callback hooks), 8402 earner, 8403 advertiser, 8404 reviewer, 8405 admin,
 #   8499 fake AfrStar gateway.
 # Usage: YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh [stop]
 # YT_PHP_ARGS adds php flags, e.g. simulate a host without ext-sodium:
@@ -20,6 +20,7 @@ start() { # port docroot
 start 8401 apps/main/public
 start 8402 apps/earner/public
 start 8403 apps/advertiser/public
+start 8404 apps/reviewer/public
 start 8405 apps/admin/public
 setsid nohup python3 "$ROOT/tests/Integration/PaymentCallbacks/fake_afrstar.py" 8499 TESTSN001 testak123 testsk456 >"$LOGS/fake-afrstar.log" 2>&1 < /dev/null &
 sleep 1.5
