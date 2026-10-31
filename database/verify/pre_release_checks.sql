@@ -19,9 +19,10 @@ SELECT 'no_active_admin' AS problem FROM (SELECT COUNT(*) AS n FROM users WHERE 
 SELECT 'bad_price' AS problem, slug, base_price_kobo, base_reward_kobo, premium_price_kobo, premium_reward_kobo FROM task_types
 WHERE base_reward_kobo <= 0 OR premium_reward_kobo <= 0 OR base_reward_kobo >= base_price_kobo OR premium_reward_kobo >= premium_price_kobo;
 
--- 5. Bank account numbers encrypted at rest (run scripts/encrypt-bank-details.php if not).
-SELECT 'plaintext_bank_number' AS problem, 'bank_accounts' AS tbl, COUNT(*) AS n FROM bank_accounts WHERE account_number NOT LIKE 'enc1:%' HAVING n > 0;
-SELECT 'plaintext_bank_number' AS problem, 'withdrawals' AS tbl, COUNT(*) AS n FROM withdrawals WHERE account_number NOT LIKE 'enc1:%' HAVING n > 0;
+-- 5. Bank account numbers encrypted at rest, enc2: (AES-256-GCM) or legacy enc1: (libsodium).
+--    Run scripts/encrypt-bank-details.php if not.
+SELECT 'plaintext_bank_number' AS problem, 'bank_accounts' AS tbl, COUNT(*) AS n FROM bank_accounts WHERE account_number NOT LIKE 'enc1:%' AND account_number NOT LIKE 'enc2:%' HAVING n > 0;
+SELECT 'plaintext_bank_number' AS problem, 'withdrawals' AS tbl, COUNT(*) AS n FROM withdrawals WHERE account_number NOT LIKE 'enc1:%' AND account_number NOT LIKE 'enc2:%' HAVING n > 0;
 
 -- 6. Money settings present and sane.
 SELECT 'setting_out_of_range' AS problem, setting_key, setting_value FROM settings
