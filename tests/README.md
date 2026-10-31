@@ -14,3 +14,15 @@ local ports). Then:
 
 The test writes fake AfrStar credentials (`TESTSN001,testak123,testsk456`) into
 the config dir and points the client at `fake_afrstar.py` on port 8499.
+
+## Crypto without ext-sodium
+
+    python3 tests/Unit/Crypto/crypto_nosodium_test.py
+
+Needs only the php CLI (openssl). Simulates a host without ext-sodium with
+`-d disable_functions=sodium_*` and checks enc2 (AES-256-GCM) round trips,
+tamper detection, legacy plain text, and enc1 reads when sodium is present.
+To run the integration suites against servers without sodium:
+
+    YT_PHP_ARGS="-d disable_functions=sodium_crypto_secretbox,sodium_crypto_secretbox_open" \
+      YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
