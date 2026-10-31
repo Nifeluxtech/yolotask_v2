@@ -26,3 +26,10 @@ To run the integration suites against servers without sodium:
 
     YT_PHP_ARGS="-d disable_functions=sodium_crypto_secretbox,sodium_crypto_secretbox_open" \
       YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+
+## Phase 5 integration test (appeals, reviewer queues)
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Appeals/phase5_test.py
+
+Needs migration 0008 and Pillow; the reviewer portal runs on port 8404.
