@@ -33,6 +33,14 @@ try {
     exit(1);
 }
 
+// AfrStar hub log: keep forwarded-callback rows for 180 days (table exists after migration 0007).
+try {
+    $n = $pdo->exec("DELETE FROM afrstar_callback_forwards WHERE received_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 180 DAY)");
+    fwrite(STDOUT, "cleanup: forwarded AfrStar callbacks: " . (int) $n . " removed\n");
+} catch (Throwable $e) {
+    fwrite(STDOUT, "cleanup: forwarded AfrStar callbacks: skipped (migration 0007 not applied)\n");
+}
+
 // Phase 3: money housekeeping and reconciliation.
 try {
     $expired = \YoloTask\Payments\PaymentOrders::expireStale($pdo);
