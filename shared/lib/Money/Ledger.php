@@ -22,6 +22,8 @@ final class Ledger
     public const ADJUSTMENTS = 'system:adjustments';
     public const REVENUE = 'system:revenue';
     public const REWARD_HOLD = 'system:reward_hold';
+    /** Phase 5: appeal payouts the platform fronted for advertisers (debit-normal; equals open advertiser_debts). */
+    public const ADVERTISER_RECEIVABLE = 'system:advertiser_receivable';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -135,6 +137,7 @@ final class Ledger
         if ($held !== $open) $problems[] = "Held balances {$held} != open withdrawals {$open}";
 
         foreach (self::reconcileCampaigns($pdo) as $p) $problems[] = $p;
+        foreach (AdvertiserDebts::reconcile($pdo) as $p) $problems[] = $p;
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;
@@ -171,6 +174,13 @@ final class Ledger
         $sql = "SELECT id, funded_kobo - spent_kobo - refunded_kobo unspent, pending_count * unit_price_kobo needed FROM campaigns
                 WHERE status IN ('completed', 'cancelled', 'ended', 'rejected') AND funded_kobo - spent_kobo - refunded_kobo <> pending_count * unit_price_kobo LIMIT 50";
         foreach ($pdo->query($sql) as $r) $problems[] = "Closed campaign #{$r['id']} still holds {$r['unspent']} in escrow (pending work needs {$r['needed']})";
+
+        // Phase 5: approvals paid on appeal over a campaign's budget are all recorded.
+        if ((bool) $pdo->query("SHOW COLUMNS FROM campaigns LIKE 'extra_approved_count'")->fetchColumn()) {
+            $sql = "SELECT c.id, c.extra_approved_count, COUNT(a.id) n FROM campaigns c LEFT JOIN submission_appeals a ON a.campaign_id = c.id AND a.status = 'overturned' AND a.over_budget = 1
+                    GROUP BY c.id, c.extra_approved_count HAVING n <> c.extra_approved_count LIMIT 50";
+            foreach ($pdo->query($sql) as $r) $problems[] = "Campaign #{$r['id']} extra approvals {$r['extra_approved_count']} != over-budget appeal payouts {$r['n']}";
+        }
 
         $sys = [];
         foreach ($pdo->query("SELECT code, balance_kobo FROM ledger_accounts WHERE code IN ('system:revenue', 'system:reward_hold')") as $r) $sys[(string) $r['code']] = (int) $r['balance_kobo'];
