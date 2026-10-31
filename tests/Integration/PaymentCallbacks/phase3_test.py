@@ -322,7 +322,7 @@ s, l, h = earner.get('/bank-account.php')
 check('short account number rejected', '10-digit' in h)
 before = len(mails_to(earner_email))
 s, l, _ = earner.post('/bank-account.php', {'_csrf': earner.csrf(h), 'bank_code': '80000009', 'account_number': '0123 456 789', 'account_name': 'Ada Obi', 'password': PW})
-check('bank account saved (number encrypted at rest, last 4 kept)', s == 303 and db(f"SELECT bank_code, LEFT(account_number, 5), account_last4, account_number LIKE '%0123456789%' FROM bank_accounts WHERE user_id = {eid}")[0] == ['80000009', 'enc1:', '6789', '0'])
+check('bank account saved (number encrypted at rest, last 4 kept)', s == 303 and db(f"SELECT bank_code, LEFT(account_number, 5), account_last4, account_number LIKE '%0123456789%' FROM bank_accounts WHERE user_id = {eid}")[0] == ['80000009', 'enc2:', '6789', '0'])
 check('security email sent for bank account', len(mails_to(earner_email)) == before + 1 and 'bank account' in mails_to(earner_email)[-1]['subject'])
 
 # ---------- withdrawal request, double submit, one-open rule, reject
@@ -487,7 +487,7 @@ check('admin dashboard links withdrawals and payment review', 'withdrawals.php' 
 import threading as _th
 from http.server import BaseHTTPRequestHandler as _BH, ThreadingHTTPServer as _TS
 
-check('withdrawal rows store the account number encrypted with last 4', one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid} AND (account_number NOT LIKE 'enc1:%' OR account_last4 IS NULL)") == '0')
+check('withdrawal rows store the account number encrypted with last 4', one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid} AND (account_number NOT LIKE 'enc2:%' OR account_last4 IS NULL)") == '0')
 s, l, h = admin.get('/withdrawals.php?status=all')
 check('admin withdrawals page shows the decrypted number', '0123456789' in h)
 
@@ -496,7 +496,7 @@ db(f"UPDATE bank_accounts SET account_number = '0000000000', account_last4 = NUL
 s, l, h = earner.get('/bank-account.php')
 check('legacy plaintext bank number still readable', '••••0000' in h)
 r = subprocess.run(['php', ROOT + '/scripts/encrypt-bank-details.php', '--config-dir=' + CFG], capture_output=True, text=True)
-check('encrypt-bank-details.php seals legacy rows', r.returncode == 0 and 'bank_accounts: encrypted 1 row(s)' in r.stdout and one(f"SELECT LEFT(account_number, 5) FROM bank_accounts WHERE user_id = {eid}") == 'enc1:', r.stdout + r.stderr)
+check('encrypt-bank-details.php seals legacy rows', r.returncode == 0 and 'bank_accounts: encrypted 1 row(s)' in r.stdout and one(f"SELECT LEFT(account_number, 5) FROM bank_accounts WHERE user_id = {eid}") == 'enc2:', r.stdout + r.stderr)
 r = subprocess.run(['php', ROOT + '/scripts/encrypt-bank-details.php', '--config-dir=' + CFG], capture_output=True, text=True)
 check('encrypt script is idempotent', 'bank_accounts: encrypted 0 row(s)' in r.stdout and 'withdrawals: encrypted 0 row(s)' in r.stdout, r.stdout)
 s, l, h = earner.get('/bank-account.php')
