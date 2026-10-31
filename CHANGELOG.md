@@ -1,5 +1,11 @@
 # Changelog
 
+## Bank-detail encryption without libsodium
+
+- `Security\Crypto::seal()` now writes `enc2:` (OpenSSL AES-256-GCM, HKDF key with its own context) so saving a bank account works on hosts without ext-sodium (cPanel ea-php84). `reveal()` reads `enc2:`, legacy `enc1:` (only when ext-sodium is loaded; otherwise a clear error) and legacy plain text; `isSealed()` knows both prefixes.
+- `scripts/encrypt-bank-details.php`, `database/verify/pre_release_checks.sql` and the 0006 last-4 backfill treat both prefixes as encrypted.
+- Admin Money settings shows a bank-encryption readiness check (missing sodium is fine). Display-only paths (admin withdrawals list, wallet history, payout emails) fall back to ••••last4 if a legacy value cannot be decrypted on the host; payout approval still decrypts strictly. Test `tests/Unit/Crypto/crypto_nosodium_test.py`; `run-servers.sh` takes `YT_PHP_ARGS`.
+
 ## Phase 3 gaps closed (with Phase 4)
 
 - Bank account numbers encrypted at rest (libsodium, `enc1:`), last 4 digits kept for display; `scripts/encrypt-bank-details.php` seals existing rows.
