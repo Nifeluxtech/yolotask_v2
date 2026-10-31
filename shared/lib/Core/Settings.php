@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003) and task/campaign rules (migration 0005). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005) and appeal/review rules (migration 0008). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -36,6 +36,12 @@ final class Settings
         'tasks.proof_max_bytes' => '2097152',
         'campaigns.min_quantity' => '1',
         'campaigns.max_quantity' => '100000',
+        // Phase 5 appeals, reviewer queues and advertiser quality flag (rows seeded by migration 0008).
+        'appeals.window_hours' => '72',
+        'reviews.claim_minutes' => '30',
+        'appeals.flag_min_overturns' => '3',
+        'appeals.flag_rate_percent' => '30',
+        'appeals.flag_window_days' => '30',
     ];
 
     private static ?array $cache = null;
