@@ -6,6 +6,7 @@ use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
 use YoloTask\Money\Money;
 use YoloTask\Payments\AfrstarClient;
+use YoloTask\Security\Crypto;
 use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/money-helpers.php';
@@ -68,6 +69,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $all = Settings::all($pdo);
 $csrf = Csrf::token();
 $configured = AfrstarClient::isConfigured();
+// Readiness: bank numbers are sealed with OpenSSL AES-256-GCM (enc2:). ext-sodium
+// is optional; it is only needed to read legacy enc1: values.
+$cryptoOk = Crypto::gcmAvailable();
+$sodiumOk = Crypto::sodiumAvailable();
 ob_start();
 ?>
 <?= yolotask_admin_money_tabs($pdo, 'settings') ?>
@@ -76,6 +81,13 @@ ob_start();
     <span class="verify-icon"><?= yolotask_nav_icon($configured ? 'shield' : 'bell') ?></span>
     <div><strong>AfrStar <?= $configured ? 'connected' : 'not connected' ?></strong>
       <p class="text-sm text-faint"><?= $configured ? 'Merchant credentials are loaded from the private server configuration.' : 'Add the one-line afrstar.key file (MERCHANT_SN,MERCHANT_AK,MERCHANT_SK) to the private config directory to enable top-ups and payouts.' ?></p></div>
+  </section>
+  <section class="card notice-card<?= $cryptoOk ? '' : ' notice-warning' ?>" role="status" data-check="bank-encryption">
+    <span class="verify-icon"><?= yolotask_nav_icon($cryptoOk ? 'shield' : 'bell') ?></span>
+    <div><strong>Bank details encryption <?= $cryptoOk ? 'ready' : 'unavailable' ?></strong>
+      <p class="text-sm text-faint"><?= $cryptoOk
+        ? 'Account numbers are encrypted with OpenSSL AES-256-GCM. The PHP sodium extension is ' . ($sodiumOk ? 'loaded' : 'not loaded — that is fine; it is only needed to read older enc1 values') . '.'
+        : 'Enable the PHP openssl extension (aes-256-gcm) on this server. Earners cannot save bank accounts until it is available.' ?></p></div>
   </section>
   <section class="card" aria-labelledby="ms-title">
     <div class="card-header"><h2 id="ms-title">Money rules</h2><span class="badge badge-info">No fees</span></div>
