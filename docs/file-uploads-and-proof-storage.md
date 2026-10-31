@@ -17,8 +17,12 @@
   every document root.
 - The database stores the relative path, size, dimensions, upload hash and
   stored hash (`submission_proofs`).
-- Files are served only by `proof.php?id=` on the earner, advertiser and
-  admin portals after a check: the uploading earner, the campaign's
-  advertiser, or an admin. Anyone else gets 404 (signed-out 403). Responses
+- Files are served only by `proof.php?id=` on the earner, advertiser,
+  reviewer and admin portals after a check: the uploading earner, the
+  campaign's advertiser, an admin, or (Phase 5) a reviewer when the
+  submission has an appeal or is still pending (reviewer queues). Anyone
+  else gets 404 (signed-out 403).
+- An optional extra screenshot sent with an appeal follows the same rules
+  and is stored as a proof with `is_appeal = 1`. Responses
   are `Cache-Control: private`, `nosniff`, sandboxed CSP.
 - If a submission fails after the file was written, the file is deleted.
