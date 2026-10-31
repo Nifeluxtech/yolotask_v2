@@ -8,6 +8,7 @@ use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 use YoloTask\Money\Wallet;
 use YoloTask\Security\Csrf;
+use YoloTask\Tasks\Appeals;
 use YoloTask\Tasks\Approvals;
 use YoloTask\Tasks\Submissions;
 
@@ -87,6 +88,7 @@ $subs = in_array((string) $c['status'], ['draft'], true) ? ['rows' => [], 'total
 $wallet = Wallet::forUser($pdo, $uid);
 $events = Campaigns::fundingEvents($pdo, $id);
 $history = Instructions::history($pdo, $id);
+$appeals = Appeals::forCampaign($pdo, $id);
 $escrow = (int) $c['funded_kobo'] - (int) $c['spent_kobo'] - (int) $c['refunded_kobo'];
 $open = in_array((string) $c['status'], Campaigns::OPEN, true);
 $csrf = Csrf::token();
@@ -188,13 +190,30 @@ ob_start();
       <?php foreach (array_slice($history, 1) as $v): ?><p class="text-xs text-faint text-break">v<?= (int) $v['version'] ?> · <?= h(yolotask_wat((string) $v['created_at'])) ?>: <?= h(mb_strimwidth((string) $v['instructions'], 0, 200, '…')) ?></p><?php endforeach; ?></details><?php endif; ?>
   </section>
 
+  <?php if ($appeals !== []): ?>
+  <section class="card" id="appeals" aria-labelledby="ap-title">
+    <div class="card-header"><h2 id="ap-title">Appeals</h2><span class="badge badge-info"><?= count($appeals) ?></span></div>
+    <p class="text-sm text-faint">Earners can ask a YOLOTASK reviewer to check a rejected proof. Overturned rejections are paid from this campaign's escrow, or from your wallet when the budget is already used.</p>
+    <ul class="tx-list">
+      <?php foreach ($appeals as $ap): [$apLabel, $apClass] = Appeals::statusLabel($ap); ?>
+        <li class="tx-row" data-appeal="<?= (int) $ap['id'] ?>" data-appeal-status="<?= h((string) $ap['status']) ?>"><span class="tx-icon"><?= yolotask_nav_icon('shield') ?></span>
+          <div class="tx-meta"><strong><?= h(CampaignMembers::publicName((string) $ap['earner_name'])) ?> · submission #<?= (int) $ap['submission_id'] ?></strong>
+            <span class="text-xs text-faint text-break">Your reason: <?= h((string) $ap['rejection_reason']) ?> · appealed <?= h(yolotask_wat((string) $ap['created_at'])) ?></span>
+            <?php if ($ap['status'] !== 'open'): ?><span class="text-xs text-break">Reviewer: <?= h((string) ((int) $ap['admin_override'] === 1 && $ap['override_note'] ? $ap['override_note'] : $ap['resolution_note'])) ?></span><?php endif; ?>
+            <?php if ($ap['status'] === 'overturned' && ((int) $ap['wallet_kobo'] > 0 || (int) $ap['platform_kobo'] > 0)): ?><span class="text-xs text-faint">Budget already used: <?= (int) $ap['wallet_kobo'] > 0 ? h(yolotask_money($ap['wallet_kobo'])) . ' charged from your wallet' : '' ?><?= (int) $ap['wallet_kobo'] > 0 && (int) $ap['platform_kobo'] > 0 ? '; ' : '' ?><?= (int) $ap['platform_kobo'] > 0 ? h(yolotask_money($ap['platform_kobo'])) . ' paid by YOLOTASK and owed by you' : '' ?></span><?php endif; ?></div>
+          <div class="tx-amount"><span class="badge <?= h($apClass) ?>"><?= h($apLabel) ?></span></div></li>
+      <?php endforeach; ?>
+    </ul>
+  </section>
+  <?php endif; ?>
+
   <?php if ($events !== []): ?>
   <section class="card" aria-labelledby="f-title">
     <div class="card-header"><h2 id="f-title">Funding</h2></div>
     <ul class="tx-list">
       <?php foreach ($events as $e): $in = $e['event'] === 'refund'; ?>
         <li class="tx-row"><span class="tx-icon"><?= yolotask_nav_icon($in ? 'refund' : 'wallet') ?></span>
-          <div class="tx-meta"><strong><?= $in ? 'Refunded to wallet' : 'Locked in escrow' ?></strong><span class="text-xs text-faint"><?= h(yolotask_wat((string) $e['created_at'])) ?><?= $e['note'] ? ' · ' . h((string) $e['note']) : '' ?></span></div>
+          <div class="tx-meta"><strong><?= $in ? 'Refunded' : ($e['event'] === 'appeal_topup' ? 'Added for an appeal (over budget)' : 'Locked in escrow') ?></strong><span class="text-xs text-faint"><?= h(yolotask_wat((string) $e['created_at'])) ?><?= $e['note'] ? ' · ' . h((string) $e['note']) : '' ?></span></div>
           <div class="tx-amount"><span class="<?= $in ? 'tx-in' : 'tx-out' ?>"><?= $in ? '+' : '−' ?><?= h(yolotask_money($e['amount_kobo'])) ?></span></div></li>
       <?php endforeach; ?>
     </ul>

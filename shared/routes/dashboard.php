@@ -98,6 +98,19 @@ $eventLabels = [
     'admin.platform_updated' => 'Updated a platform',
     'admin.platform_added' => 'Added a platform',
     'admin.ledger_exported' => 'Exported the ledger',
+    'task.appealed' => 'Appealed a rejected proof',
+    'reviewer.appeal_upheld' => 'Upheld a rejection on appeal',
+    'reviewer.appeal_overturned' => 'Overturned a rejection on appeal',
+    'admin.appeal_upheld' => 'Decided an appeal (upheld)',
+    'admin.appeal_overturned' => 'Decided an appeal (overturned)',
+    'admin.appeal_override_upheld' => 'Overrode an appeal (upheld)',
+    'admin.appeal_override_overturned' => 'Overrode an appeal (overturned)',
+    'reviewer.submission_approved' => 'Approved a stale proof',
+    'reviewer.submission_rejected' => 'Rejected a stale proof',
+    'reviewer.claimed_appeal' => 'Claimed an appeal',
+    'reviewer.claimed_submission' => 'Claimed a stale proof',
+    'admin.advertiser_debt_collected' => 'Collected an advertiser debt',
+    'admin.advertiser_debt_written_off' => 'Wrote off an advertiser debt',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -180,8 +193,19 @@ try {
             ['label' => 'Tasks completed', 'value' => number_format($cs['approved'] ?? 0), 'tone' => '', 'note' => 'Approved actions'],
             ['label' => 'Spent', 'value' => \YoloTask\Money\Money::format($cs['spent'] ?? 0), 'tone' => '', 'note' => \YoloTask\Money\Money::format($cs['escrow'] ?? 0) . ' in escrow'],
         ];
+    } elseif ($role === 'reviewer') {
+        $openAppeals = \YoloTask\Tasks\Appeals::openCount($pdo);
+        $staleCount = \YoloTask\Tasks\StaleQueue::count($pdo);
+        $rc = \YoloTask\Tasks\ReviewerActions::counts($pdo, $userId);
+        $market = [
+            ['label' => 'Open appeals', 'value' => number_format($openAppeals), 'tone' => $openAppeals > 0 ? 'stat-warning' : '', 'note' => 'Oldest first in your queue'],
+            ['label' => 'Stale proofs', 'value' => number_format($staleCount), 'tone' => $staleCount > 0 ? 'stat-warning' : '', 'note' => 'Waiting on advertisers'],
+            ['label' => 'Decided today', 'value' => number_format($rc['today']), 'tone' => 'stat-success', 'note' => 'By you'],
+            ['label' => 'Last 30 days', 'value' => number_format($rc['last30']), 'tone' => '', 'note' => 'Your decisions'],
+        ];
     } elseif ($role === 'admin') {
         $cc = \YoloTask\Campaigns\Campaigns::adminCounts($pdo);
+        $adminAppeals = \YoloTask\Tasks\Appeals::openCount($pdo);
         $campaignQueue = (int) $cc['pending_approval'];
         $pendingSubs = (int) $pdo->query("SELECT COUNT(*) FROM submissions WHERE status = 'pending'")->fetchColumn();
         $revenue = (int) $pdo->query("SELECT balance_kobo FROM ledger_accounts WHERE code = 'system:revenue'")->fetchColumn();
@@ -234,14 +258,15 @@ ob_start();
   <h2 id="dash-greeting"><?= h($greeting . ($firstName !== '' ? ', ' . $firstName : '')) ?></h2>
   <p class="text-faint"><?= h(match ($role) {
       'admin' => 'Here is how the YOLOTASK community looks today.',
-      'reviewer' => 'Here is an overview of your reviewer account and its security.',
+      'reviewer' => 'Here are your review queues and your account.',
       'advertiser' => 'Here is an overview of your advertiser account and its security.',
       default => 'Here is an overview of your earner account and its security.',
   }) ?></p>
   <div class="hero-actions">
-    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a>
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="appeals.php">Appeals<?= ($adminAppeals ?? 0) > 0 ? ' (' . $adminAppeals . ')' : '' ?></a>
     <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="tasks.php">Find tasks</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a>
     <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="campaign-new.php">New campaign</a><a class="btn btn-secondary btn-sm" href="campaigns.php">My campaigns</a><a class="btn btn-secondary btn-sm" href="topup.php">Top up wallet</a>
+    <?php elseif ($role === 'reviewer'): ?><a class="btn btn-primary btn-sm" href="appeals.php">Appeal queue<?= ($openAppeals ?? 0) > 0 ? ' (' . $openAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="stale.php">Stale proofs<?= ($staleCount ?? 0) > 0 ? ' (' . $staleCount . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="history.php">My decisions</a>
     <?php else: ?><a class="btn btn-secondary btn-sm" href="account.php">Account settings</a><?php endif; ?>
   </div>
 </section>
@@ -261,7 +286,7 @@ ob_start();
 <section class="grid grid-4 dash-stats money-stats market-stats" aria-label="Marketplace">
   <?php foreach ($market as $stat): ?>
     <article class="stat-card <?= h($stat['tone']) ?>">
-      <span class="stat-icon"><?= yolotask_nav_icon($role === 'earner' ? 'tasks' : 'megaphone') ?></span>
+      <span class="stat-icon"><?= yolotask_nav_icon($role === 'earner' ? 'tasks' : ($role === 'reviewer' ? 'shield' : 'megaphone')) ?></span>
       <span class="stat-label"><?= h($stat['label']) ?></span>
       <span class="stat-value"><?= h($stat['value']) ?></span>
       <span class="text-xs text-faint text-break"><?= h($stat['note']) ?></span>

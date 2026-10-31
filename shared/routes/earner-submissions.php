@@ -5,6 +5,7 @@ use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
 use YoloTask\Security\Csrf;
+use YoloTask\Tasks\Appeals;
 use YoloTask\Tasks\Proofs;
 use YoloTask\Tasks\Submissions;
 use YoloTask\Tasks\Tasks;
@@ -34,8 +35,13 @@ if ($detail) {
         }
         yolotask_csrf_or_back($back);
         try {
-            Submissions::resubmit($pdo, $user, $id, $_FILES['proof'] ?? null, yolotask_post_str('comment'));
-            yolotask_flash('Proof resubmitted. The advertiser will review it again.');
+            if (yolotask_post_str('action') === 'appeal') {
+                Appeals::file($pdo, $user, $id, yolotask_post_str('reason'), $_FILES['appeal_proof'] ?? null);
+                yolotask_flash('Appeal sent. A YOLOTASK reviewer will decide and we will email you.');
+            } else {
+                Submissions::resubmit($pdo, $user, $id, $_FILES['proof'] ?? null, yolotask_post_str('comment'));
+                yolotask_flash('Proof resubmitted. The advertiser will review it again.');
+            }
         } catch (RuntimeException $e) {
             yolotask_flash($e->getMessage(), 'error');
         } catch (Throwable $e) {
@@ -48,6 +54,9 @@ if ($detail) {
     if ($s === null) yolotask_error_page(404);
     $proofs = Proofs::forSubmission($pdo, $id);
     $canResubmit = Submissions::canResubmit($pdo, $s);
+    $appeal = Appeals::forSubmission($pdo, $id);
+    $appealBlock = $appeal === null ? Appeals::eligibility($pdo, $s) : null;
+    $canAppeal = $appeal === null && $appealBlock === null;
     $csrf = Csrf::token();
     ob_start();
     ?>
@@ -63,7 +72,7 @@ if ($detail) {
     <?php if ($s['status'] === 'pending'): ?>
       <p class="text-sm">Waiting for the advertiser. If they do not decide, it is approved automatically on <strong><?= h(yolotask_wat((string) $s['auto_approve_at'])) ?></strong>.</p>
     <?php elseif ($s['status'] === 'approved'): ?>
-      <p class="text-sm">Approved <?= h(yolotask_wat((string) $s['decided_at'])) ?>. <?php if ($s['reward_status'] === 'held'): ?>Your reward is on a short hold and reaches your wallet on <strong><?= h(yolotask_wat((string) $s['reward_release_at'])) ?></strong>.<?php else: ?>Your reward is in your wallet.<?php endif; ?></p>
+      <p class="text-sm"><?= $s['decision_source'] === 'appeal' ? 'Approved on appeal' : 'Approved' ?> <?= h(yolotask_wat((string) $s['decided_at'])) ?>. <?php if ($s['reward_status'] === 'held'): ?>Your reward is on a short hold and reaches your wallet on <strong><?= h(yolotask_wat((string) $s['reward_release_at'])) ?></strong>.<?php else: ?>Your reward is in your wallet.<?php endif; ?></p>
     <?php else: ?>
       <p class="text-sm">Not accepted <?= h(yolotask_wat((string) $s['decided_at'])) ?>.</p>
       <p class="text-sm"><strong>Reason:</strong> <?= h((string) $s['reject_reason']) ?></p>
@@ -73,9 +82,33 @@ if ($detail) {
   <section class="card" aria-labelledby="pf-title">
     <div class="card-header"><h2 id="pf-title">Your proof</h2><span class="badge badge-info"><?= count($proofs) ?> file<?= count($proofs) === 1 ? '' : 's' ?></span></div>
     <div class="proof-grid">
-      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint">Attempt <?= (int) $p['attempt'] ?></figcaption></figure><?php endforeach; ?>
+      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Appeal screenshot' : 'Attempt ' . (int) $p['attempt'] ?></figcaption></figure><?php endforeach; ?>
     </div>
   </section>
+  <?php if ($appeal !== null): [$aLabel, $aClass] = Appeals::statusLabel($appeal); ?>
+    <section class="card" id="appeal" aria-labelledby="ap-title" data-appeal-status="<?= h((string) $appeal['status']) ?>">
+      <div class="card-header"><h2 id="ap-title">Your appeal</h2><span class="badge <?= h($aClass) ?>"><?= h($aLabel) ?></span></div>
+      <p class="text-sm text-faint">Sent <?= h(yolotask_wat((string) $appeal['created_at'])) ?></p>
+      <p class="text-sm text-break">“<?= h((string) $appeal['message']) ?>”</p>
+      <?php if ($appeal['status'] === 'open'): ?>
+        <p class="text-sm">A YOLOTASK reviewer is checking your proof against the advertiser's instructions. We will email you the decision.</p>
+      <?php else: ?>
+        <p class="text-sm"><strong>Decision<?= (int) $appeal['admin_override'] === 1 && $appeal['override_from_status'] !== 'open' ? ' (admin review)' : '' ?>:</strong> <?= $appeal['status'] === 'overturned' ? 'Overturned — your proof was approved and you were paid.' : 'Rejection upheld. This decision is final.' ?></p>
+        <p class="text-sm text-break">Reviewer note: <?= h((string) ((int) $appeal['admin_override'] === 1 && $appeal['override_note'] ? $appeal['override_note'] : $appeal['resolution_note'])) ?></p>
+      <?php endif; ?>
+    </section>
+  <?php elseif ($canAppeal): ?>
+    <section class="card" id="appeal" aria-labelledby="ap-title">
+      <div class="card-header"><h2 id="ap-title">Appeal this decision</h2><span class="badge badge-info">Until <?= h(yolotask_wat(Appeals::windowEndsAt($pdo, $s), 'j M, g:i A')) ?></span></div>
+      <p class="text-sm text-faint">If you followed the instructions exactly, a YOLOTASK reviewer can check your proof. You can appeal once<?= $canResubmit ? ', and an appealed task cannot be resubmitted' : '' ?>.</p>
+      <form method="post" action="submission.php?id=<?= (int) $s['id'] ?>" enctype="multipart/form-data" class="stack">
+        <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="submission_id" value="<?= (int) $s['id'] ?>"><input type="hidden" name="action" value="appeal">
+        <div class="field"><label class="label" for="reason">Why the rejection is wrong</label><textarea class="input" id="reason" name="reason" rows="3" minlength="10" maxlength="1000" required></textarea></div>
+        <div class="field"><label class="label" for="appeal_proof">Extra screenshot (optional)</label><input class="input" id="appeal_proof" name="appeal_proof" type="file" accept="image/jpeg,image/png,image/webp"></div>
+        <button class="btn btn-secondary btn-block" type="submit">Send appeal</button>
+      </form>
+    </section>
+  <?php endif; ?>
   <?php if ($canResubmit): ?>
     <section class="card" aria-labelledby="rs-title">
       <div class="card-header"><h2 id="rs-title">Fix and resubmit</h2></div>

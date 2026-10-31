@@ -7,12 +7,12 @@ use YoloTask\Security\Auth;
 use YoloTask\Tasks\Proofs;
 
 /*
- * Proof image endpoint (earner, advertiser and admin portals). Files live
- * outside every document root; this is the only way to read one. Access:
- * the earner who uploaded it, the advertiser who owns the campaign, any
- * admin. Everyone else gets the same 404, so ids reveal nothing.
+ * Proof image endpoint (earner, advertiser, reviewer and admin portals).
+ * Files live outside every document root; this is the only way to read one.
+ * Access: the earner who uploaded it, the advertiser who owns the campaign,
+ * any admin, and reviewers for appealed or pending submissions. Everyone else gets the same 404, so ids reveal nothing.
  */
-if (!in_array(yolotask_role(), ['earner', 'advertiser', 'admin'], true)) yolotask_error_page(404);
+if (!in_array(yolotask_role(), ['earner', 'advertiser', 'reviewer', 'admin'], true)) yolotask_error_page(404);
 try {
     $pdo = Database::connection();
     $user = Auth::currentUser($pdo);

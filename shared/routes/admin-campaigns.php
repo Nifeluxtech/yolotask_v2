@@ -96,7 +96,9 @@ if ($detail) {
   <section class="card card-glow dash-hero" aria-labelledby="c-title">
     <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?> <?= yolotask_tier_badge((string) $c['tier']) ?></p>
     <h2 id="c-title" class="text-break"><?= h((string) $c['title']) ?></h2>
-    <div class="wallet-sub"><?= yolotask_campaign_badge((string) $c['status']) ?><span>By <strong><?= h((string) $c['advertiser_name']) ?></strong> <span class="text-break"><?= h((string) $c['advertiser_email']) ?></span></span></div>
+    <?php $quality = \YoloTask\Tasks\AdvertiserQuality::stats($pdo, (int) $c['advertiser_user_id']); ?>
+    <div class="wallet-sub"><?= yolotask_campaign_badge((string) $c['status']) ?><span>By <strong><?= h((string) $c['advertiser_name']) ?></strong> <span class="text-break"><?= h((string) $c['advertiser_email']) ?></span></span><?php if ($quality['flagged']): ?><a class="badge badge-danger" href="appeals.php?view=flags">Quality flag</a><?php endif; ?></div>
+    <p class="text-xs text-faint">Appeals against this advertiser (<?= \YoloTask\Tasks\AdvertiserQuality::rules($pdo)['days'] ?> days): <?= (int) $quality['overturned'] ?> overturned of <?= (int) $quality['decided'] ?> decided · <a href="appeals.php?status=all&amp;advertiser=<?= (int) $c['advertiser_user_id'] ?>">view appeals</a><?= (int) $c['extra_approved_count'] > 0 ? ' · ' . (int) $c['extra_approved_count'] . ' paid over budget on appeal' : '' ?></p>
     <?= yolotask_progress((int) $c['approved_count'], (int) $c['pending_count'], (int) $c['quantity']) ?>
     <p class="text-sm text-break"><a href="<?= h((string) $c['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $c['link_url']) ?></a></p>
     <?php if ($c['status_reason']): ?><p class="text-sm text-faint">Status note: <?= h((string) $c['status_reason']) ?></p><?php endif; ?>

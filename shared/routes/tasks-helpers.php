@@ -52,14 +52,17 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
 {
     $queue = 0;
     $stale = 0;
+    $appeals = 0;
     try {
         $queue = (int) $pdo->query("SELECT COUNT(*) FROM campaigns WHERE status = 'pending_approval'")->fetchColumn();
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
+        $appeals = \YoloTask\Tasks\Appeals::openCount($pdo);
     } catch (Throwable) {
     }
     $tabs = [
         'campaigns' => ['Campaigns', 'campaigns.php', $queue],
         'submissions' => ['Submissions', 'submissions.php', $stale],
+        'appeals' => ['Appeals', 'appeals.php', $appeals],
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
     ];

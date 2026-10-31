@@ -47,6 +47,15 @@ $fStatus = is_string($_GET['status'] ?? null) ? $_GET['status'] : '';
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $result = Users::search($pdo, mb_substr($q, 0, 100), $fRole, $fStatus, $page);
 $counts = Users::counts($pdo);
+// Phase 5: advertiser quality flag and open appeal debts, shown on advertiser rows.
+$flagIds = [];
+$owed = [];
+try {
+    $flagIds = \YoloTask\Tasks\AdvertiserQuality::flaggedIds($pdo);
+    $owed = \YoloTask\Money\AdvertiserDebts::openTotals($pdo, array_map(static fn ($u) => (int) $u['id'], array_filter($result['rows'], static fn ($u) => (string) $u['role'] === 'advertiser')));
+} catch (Throwable $e) {
+    Logger::error('admin.users_flags_failed', ['exception' => get_class($e)]);
+}
 $csrf = Csrf::token();
 $query = static fn (array $over): string => '?' . http_build_query(array_filter(array_merge(['q' => $q, 'role' => $fRole, 'status' => $fStatus, 'page' => $page], $over), static fn ($v) => $v !== '' && $v !== null));
 $statusBadge = ['active' => 'badge-success', 'suspended' => 'badge-warning', 'closed' => 'badge-danger'];
@@ -82,6 +91,9 @@ ob_start();
               <span class="badge badge-info"><?= h(ucfirst((string) $u['role'])) ?></span>
               <span class="badge <?= $statusBadge[(string) $u['status']] ?? 'badge-info' ?>"><?= h(ucfirst((string) $u['status'])) ?></span>
               <?php if (empty($u['email_verified_at'])): ?><span class="badge badge-warning">Unverified</span><?php endif; ?>
+              <?php if (isset($flagIds[(int) $u['id']])): ?><a class="badge badge-danger" data-quality-flag="<?= (int) $u['id'] ?>" href="appeals.php?view=flags">Quality flag</a><?php endif; ?>
+              <?php if (($owed[(int) $u['id']] ?? 0) > 0): ?><a class="badge badge-warning" data-debt-owed="<?= (int) $u['id'] ?>" href="appeals.php?view=debts">Owes <?= h(\YoloTask\Money\Money::format($owed[(int) $u['id']])) ?></a><?php endif; ?>
+              <?php if ((string) $u['role'] === 'advertiser'): ?><a class="text-xs" href="appeals.php?status=all&amp;advertiser=<?= (int) $u['id'] ?>">Appeals</a><?php endif; ?>
               <span class="text-xs text-faint">Joined <?= h(yolotask_wat((string) $u['created_at'], 'j M Y')) ?> · Last sign-in <?= h(yolotask_wat($u['last_login_at'] ? (string) $u['last_login_at'] : null, 'j M, g:i A')) ?></span>
             </span>
           </div>
