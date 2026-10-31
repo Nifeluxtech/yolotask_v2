@@ -9,6 +9,8 @@ server-to-server callbacks. These files handle them.
 | `afrstar_collection.php` | Collection (top-up) callback. |
 | `afrstar_payout.php` | Payout (withdrawal) callback. |
 
+Before YOLOTASK processing, the runner relays callbacks for other apps on the same AfrStar merchant (SPLUG `DEP-`/`WDL-` refs) when `config-private/afrstar-forward.php` exists (`YoloTask\Payments\CallbackForwarder`; see docs/callbacks-and-reconciliation.md).
+
 They live outside every document root. The public entry points are two
 three-line files in the main site's document root that include them:
 

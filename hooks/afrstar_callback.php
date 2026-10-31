@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
+use YoloTask\Payments\CallbackForwarder;
 use YoloTask\Payments\CallbackProcessor;
 
 if (!defined('YOLOTASK_APP_ROLE')) define('YOLOTASK_APP_ROLE', 'hook');
@@ -29,9 +30,34 @@ function yolotask_afrstar_callback(string $kind): never
         echo 'METHOD_NOT_ALLOWED';
         exit;
     }
-    $raw = (string) file_get_contents('php://input', false, null, 0, 65536);
+    // Size guard: AfrStar callbacks are a few hundred bytes; refuse anything over 64 KB.
+    $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    $raw = $declared > CallbackForwarder::MAX_BODY ? '' : (string) file_get_contents('php://input', false, null, 0, CallbackForwarder::MAX_BODY + 1);
+    if ($declared > CallbackForwarder::MAX_BODY || strlen($raw) > CallbackForwarder::MAX_BODY) {
+        http_response_code(413);
+        echo 'PAYLOAD_TOO_LARGE';
+        exit;
+    }
     $post = is_array($_POST) ? $_POST : [];
     $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+    // Hub: callbacks for another app on the same AfrStar merchant (e.g. SPLUG
+    // DEP-/WDL- orders) are relayed before YOLOTASK looks at its own orders.
+    // Off unless config-private/afrstar-forward.php exists. See
+    // docs/callbacks-and-reconciliation.md.
+    try {
+        $forwarded = CallbackForwarder::handle($kind, $raw, $post, (string) ($_SERVER['CONTENT_TYPE'] ?? ''), $ip);
+    } catch (Throwable $e) {
+        Logger::error('payments.forward_crashed', ['kind' => $kind, 'exception' => get_class($e)]);
+        $forwarded = null;
+    }
+    if ($forwarded !== null) {
+        http_response_code($forwarded['status']);
+        header('Content-Length: ' . strlen($forwarded['body']));
+        echo $forwarded['body'];
+        exit;
+    }
+
     try {
         $pdo = Database::connection();
         $result = $kind === 'payout'
