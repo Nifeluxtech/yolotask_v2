@@ -399,6 +399,16 @@ final class Campaigns
         return $c;
     }
 
+    /**
+     * Slots a campaign can fill: its quantity plus approvals paid on appeal
+     * after its slots were already used (those are funded outside the budget
+     * and recorded in extra_approved_count, so they never take a slot).
+     */
+    public static function capacity(array $c): int
+    {
+        return (int) $c['quantity'] + (int) ($c['extra_approved_count'] ?? 0);
+    }
+
     public static function lockRow(PDO $pdo, int $id): array
     {
         $stmt = $pdo->prepare('SELECT * FROM campaigns WHERE id = :id FOR UPDATE');
@@ -410,7 +420,7 @@ final class Campaigns
 
     public static function slotsLeft(array $c): int
     {
-        return max(0, (int) $c['quantity'] - (int) $c['approved_count'] - (int) $c['pending_count'] - (int) ($c['reserved_count'] ?? 0));
+        return max(0, self::capacity($c) - (int) $c['approved_count'] - (int) $c['pending_count'] - (int) ($c['reserved_count'] ?? 0));
     }
 
     public static function listForAdvertiser(PDO $pdo, int $uid, string $status, int $page): array
