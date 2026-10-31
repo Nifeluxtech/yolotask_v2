@@ -7,7 +7,9 @@ declare(strict_types=1);
  *    (same signature checks; idempotent),
  *  - expires unpaid top-up orders past money.payin_expiry_hours (no money moves),
  *  - flags payouts with no callback after money.payout_stuck_hours into the
- *    payment review queue.
+ *    payment review queue,
+ *  - (Phase 5) deletes expired reviewer claims so appeals and stale proofs
+ *    return to the queue (decisions already ignore expired claims).
  * AfrStar has no status-query API, so callbacks stay the source of truth.
  * cPanel cron:
  *   0-59/5 * * * * /opt/cpanel/ea-php84/root/usr/bin/php $HOME/yolotask-v2-live/current/cron/every-five-minutes.php >> $HOME/yolotask-v2-live/runtime/logs/cron-5min.log 2>&1
@@ -27,6 +29,7 @@ try {
     fwrite(STDOUT, "{$t} payments: unfinished callbacks retried: {$r['retried']}, failed again: {$r['failed']}\n");
     fwrite(STDOUT, "{$t} payments: stale top-up orders expired: " . \YoloTask\Payments\PaymentOrders::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stuck payouts flagged for review: " . \YoloTask\Payments\CallbackProcessor::flagStuckPayouts($pdo) . "\n");
+    fwrite(STDOUT, "{$t} reviews: expired claims released: " . \YoloTask\Tasks\ReviewClaims::expire($pdo) . "\n");
 } catch (Throwable $e) {
     \YoloTask\Core\Logger::error('cron.five_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     fwrite(STDERR, "every-five-minutes failed: " . get_class($e) . "\n");

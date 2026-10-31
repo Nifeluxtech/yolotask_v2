@@ -14,16 +14,22 @@ Optional (housekeeping only; the 15-minute job does the same work):
 - `daily.php`: removes expired sessions, codes, links and throttle rows,
   expires unpaid AfrStar top-ups (no money moves) and runs the full ledger
   reconciliation (wallets, withdrawals, campaign escrow, revenue, reward
-  hold). Exit 2 = mismatch.
+  hold, over-budget appeal approvals, advertiser receivable = open advertiser
+  debts). Exit 2 = mismatch.
 - `every-five-minutes.php`: re-runs AfrStar callbacks that were logged but
   never finished, expires unpaid top-ups, flags payouts with no callback
-  after `money.payout_stuck_hours` for review. Single-instance lock.
+  after `money.payout_stuck_hours` for review, and (Phase 5) deletes expired
+  reviewer claims so appeals and stale proofs return to the queue.
+  Single-instance lock.
 - `every-fifteen-minutes.php`: expires task reservations, auto-approves
   submissions past their auto-approve time, ends campaigns past their end
-  date (refunding unused escrow), reports the stale count. Single-instance lock.
+  date (refunding unused escrow), reports the stale and open-appeal counts.
+  Single-instance lock.
 - `hourly.php`: releases held task rewards (only when a reward hold is
   set) and runs the campaign escrow reconciliation (exit 2 on mismatch).
 - `every-minute.php`: marks expired task reservations.
+
+Phase 5 adds no new cron lines.
 
 Every job is idempotent: money moves use unique ledger keys and re-check
 state under row locks, so a repeated or overlapping run never pays twice.
