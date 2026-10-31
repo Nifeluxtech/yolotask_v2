@@ -10,7 +10,8 @@ use YoloTask\Core\Logger;
  * Proof files: stored in the private runtime directory (never under a public
  * document root) with random names, recorded with their hashes, and served
  * only through proof.php after an ownership check: the earner who uploaded
- * it, the advertiser who owns the campaign, or an admin.
+ * it, the advertiser who owns the campaign, an admin, or a reviewer when the
+ * submission is appealed or still pending (reviewer queues).
  */
 final class Proofs
 {
@@ -29,7 +30,7 @@ final class Proofs
      * Write cleaned image bytes and record them (inside the caller's transaction).
      * @param array{bytes:string,mime:string,ext:string,width:int,height:int,upload_sha256:string} $img
      */
-    public static function store(PDO $pdo, int $submissionId, int $attempt, array $img): int
+    public static function store(PDO $pdo, int $submissionId, int $attempt, array $img, bool $appeal = false): int
     {
         $sub = gmdate('Y/m');
         $dir = self::dir() . '/' . $sub;
@@ -45,8 +46,8 @@ final class Proofs
         }
         @chmod($path, 0600);
         self::$written[] = $path;
-        $pdo->prepare('INSERT INTO submission_proofs (submission_id, attempt, storage_path, mime, bytes, width, height, upload_sha256, stored_sha256) VALUES (:s, :a, :p, :m, :b, :w, :h, :u, :st)')
-            ->execute(['s' => $submissionId, 'a' => $attempt, 'p' => $rel, 'm' => $img['mime'], 'b' => strlen($img['bytes']), 'w' => $img['width'], 'h' => $img['height'], 'u' => $img['upload_sha256'], 'st' => hash('sha256', $img['bytes'])]);
+        $pdo->prepare('INSERT INTO submission_proofs (submission_id, attempt, is_appeal, storage_path, mime, bytes, width, height, upload_sha256, stored_sha256) VALUES (:s, :a, :ia, :p, :m, :b, :w, :h, :u, :st)')
+            ->execute(['s' => $submissionId, 'a' => $attempt, 'ia' => $appeal ? 1 : 0, 'p' => $rel, 'm' => $img['mime'], 'b' => strlen($img['bytes']), 'w' => $img['width'], 'h' => $img['height'], 'u' => $img['upload_sha256'], 'st' => hash('sha256', $img['bytes'])]);
         return (int) $pdo->lastInsertId();
     }
 
@@ -66,7 +67,7 @@ final class Proofs
 
     public static function forSubmission(PDO $pdo, int $submissionId): array
     {
-        $stmt = $pdo->prepare('SELECT id, attempt, mime, bytes, width, height, created_at FROM submission_proofs WHERE submission_id = :s ORDER BY attempt DESC, id DESC');
+        $stmt = $pdo->prepare('SELECT id, attempt, is_appeal, mime, bytes, width, height, created_at FROM submission_proofs WHERE submission_id = :s ORDER BY attempt DESC, id DESC');
         $stmt->execute(['s' => $submissionId]);
         return $stmt->fetchAll() ?: [];
     }
@@ -74,7 +75,8 @@ final class Proofs
     /** Proof row with the owners needed for the access check. */
     public static function find(PDO $pdo, int $proofId): ?array
     {
-        $stmt = $pdo->prepare('SELECT p.id, p.storage_path, p.mime, p.bytes, s.id submission_id, s.earner_user_id, c.advertiser_user_id FROM submission_proofs p
+        $stmt = $pdo->prepare('SELECT p.id, p.storage_path, p.mime, p.bytes, s.id submission_id, s.status submission_status, s.earner_user_id, c.advertiser_user_id,
+            (SELECT COUNT(*) FROM submission_appeals a WHERE a.submission_id = s.id) appeal_count FROM submission_proofs p
             JOIN submissions s ON s.id = p.submission_id JOIN campaigns c ON c.id = s.campaign_id WHERE p.id = :id');
         $stmt->execute(['id' => $proofId]);
         $row = $stmt->fetch();
@@ -87,6 +89,8 @@ final class Proofs
             'admin' => true,
             'earner' => (int) $proof['earner_user_id'] === (int) $user['id'],
             'advertiser' => (int) $proof['advertiser_user_id'] === (int) $user['id'],
+            // Reviewers see proofs only for work in their queues: appealed or still pending (stale queue).
+            'reviewer' => (int) ($proof['appeal_count'] ?? 0) > 0 || (string) ($proof['submission_status'] ?? '') === 'pending',
             default => false,
         };
     }

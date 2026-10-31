@@ -15,7 +15,8 @@ use YoloTask\Support\Uploads;
  * Earner submissions: one per earner per campaign. Submitting needs an
  * active reservation (the earner's slot) and a proof screenshot. After a
  * rejection the earner may resubmit up to tasks.resubmission_cap times, as
- * long as the campaign is live and a slot is free.
+ * long as the campaign is live and a slot is free, unless they appealed
+ * the rejection instead (Phase 5: one path or the other, never both).
  */
 final class Submissions
 {
@@ -80,12 +81,15 @@ final class Submissions
             $stmt->execute(['id' => $submissionId, 'u' => $uid]);
             $s = $stmt->fetch();
             if (!is_array($s) || (string) $s['status'] !== 'rejected') throw new RuntimeException('Only rejected submissions can be resubmitted.');
+            $appealed = $pdo->prepare('SELECT COUNT(*) FROM submission_appeals WHERE submission_id = :id');
+            $appealed->execute(['id' => $submissionId]);
+            if ((int) $appealed->fetchColumn() > 0) throw new RuntimeException('You appealed this decision, so it cannot be resubmitted. A reviewer will decide your appeal.');
             if ((int) $s['attempts'] > $cap) throw new RuntimeException($cap === 0 ? 'Resubmissions are not allowed.' : 'You have used all your resubmissions for this task.');
             if ((string) $c['status'] !== 'live') throw new RuntimeException('This campaign is not accepting new proofs right now.');
             $res = Tasks::lockReservation($pdo, (int) $c['id'], $uid);
             $held = $pdo->prepare("SELECT COUNT(*) FROM task_reservations WHERE campaign_id = :c AND status = 'active' AND expires_at > UTC_TIMESTAMP() AND earner_user_id <> :u");
             $held->execute(['c' => $c['id'], 'u' => $uid]);
-            if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= (int) $c['quantity']) throw new RuntimeException('All slots for this task are taken right now. Try again later.');
+            if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= Campaigns::capacity($c)) throw new RuntimeException('All slots for this task are taken right now. Try again later.');
             $attempt = (int) $s['attempts'] + 1;
             $pdo->prepare("UPDATE submissions SET status = 'pending', attempts = :a, comment = :cm, instructions_version = :v, reject_reason = NULL, decision_source = NULL, decided_by_user_id = NULL, decided_at = NULL,
                 submitted_at = UTC_TIMESTAMP(), auto_approve_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL :h HOUR) WHERE id = :id")
@@ -106,12 +110,15 @@ final class Submissions
 
     public static function canResubmit(PDO $pdo, array $s): bool
     {
-        return (string) $s['status'] === 'rejected' && (int) $s['attempts'] <= Settings::int($pdo, 'tasks.resubmission_cap') && (string) ($s['campaign_status'] ?? '') === 'live';
+        return (string) $s['status'] === 'rejected' && (int) $s['attempts'] <= Settings::int($pdo, 'tasks.resubmission_cap') && (string) ($s['campaign_status'] ?? '') === 'live'
+            && empty($s['appeal_id']);
     }
 
     private const SELECT = 'SELECT s.*, c.title campaign_title, c.status campaign_status, c.advertiser_user_id, c.link_url, c.quantity, p.name platform_name, t.name task_type_name,
         u.display_name earner_name, u.email earner_email,
-        (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id
+        (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id,
+        (SELECT ap.id FROM submission_appeals ap WHERE ap.submission_id = s.id) appeal_id,
+        (SELECT ap.status FROM submission_appeals ap WHERE ap.submission_id = s.id) appeal_status
         FROM submissions s JOIN campaigns c ON c.id = s.campaign_id JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id JOIN users u ON u.id = s.earner_user_id';
 
     public static function find(PDO $pdo, int $id): ?array
@@ -169,8 +176,8 @@ final class Submissions
     {
         return match ((string) $s['status']) {
             'pending' => ['Waiting for review', 'badge-warning'],
-            'approved' => [(string) ($s['decision_source'] ?? '') === 'auto' ? 'Approved (auto)' : 'Approved', 'badge-success'],
-            'rejected' => ['Rejected', 'badge-danger'],
+            'approved' => [match ((string) ($s['decision_source'] ?? '')) { 'auto' => 'Approved (auto)', 'appeal' => 'Approved on appeal', default => 'Approved' }, 'badge-success'],
+            'rejected' => [(string) ($s['appeal_status'] ?? '') === 'open' ? 'Rejected · appeal open' : ((string) ($s['appeal_status'] ?? '') === 'upheld' ? 'Rejected · appeal upheld' : 'Rejected'), 'badge-danger'],
             default => [ucfirst((string) $s['status']), 'badge-info'],
         };
     }

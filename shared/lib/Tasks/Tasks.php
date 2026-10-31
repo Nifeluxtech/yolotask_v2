@@ -31,7 +31,7 @@ final class Tasks
             AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.campaign_id = c.id AND s.earner_user_id = :me2)
             AND NOT EXISTS (SELECT 1 FROM task_reservations r WHERE r.campaign_id = c.id AND r.earner_user_id = :me3 AND r.status IN ('active', 'submitted') AND (r.status = 'submitted' OR r.expires_at > UTC_TIMESTAMP()))
             AND NOT EXISTS (SELECT 1 FROM submissions s2 JOIN campaigns c2 ON c2.id = s2.campaign_id WHERE s2.earner_user_id = :me4 AND s2.status IN ('pending', 'approved') AND c2.link_hash = c.link_hash AND c2.task_type_id = c.task_type_id)
-            AND c.quantity > c.approved_count + c.pending_count + (SELECT COUNT(*) FROM task_reservations r2 WHERE r2.campaign_id = c.id AND r2.status = 'active' AND r2.expires_at > UTC_TIMESTAMP())";
+            AND c.quantity + c.extra_approved_count > c.approved_count + c.pending_count + (SELECT COUNT(*) FROM task_reservations r2 WHERE r2.campaign_id = c.id AND r2.status = 'active' AND r2.expires_at > UTC_TIMESTAMP())";
         $args = ['me' => $earnerId, 'me2' => $earnerId, 'me3' => $earnerId, 'me4' => $earnerId];
         if ($platformId !== null && $platformId > 0) { $where .= ' AND c.platform_id = :p'; $args['p'] = $platformId; }
         $select = "SELECT c.id, c.title, c.tier, c.unit_reward_kobo, c.quantity, c.approved_count, c.pending_count, c.ends_at, p.name platform_name, p.slug platform_slug, t.name task_type_name,
@@ -87,7 +87,7 @@ final class Tasks
 
             $held = $pdo->prepare("SELECT COUNT(*) FROM task_reservations WHERE campaign_id = :c AND status = 'active' AND expires_at > UTC_TIMESTAMP()");
             $held->execute(['c' => $campaignId]);
-            if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= (int) $c['quantity']) throw new RuntimeException('All slots for this task are taken right now. Check back later.');
+            if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= Campaigns::capacity($c)) throw new RuntimeException('All slots for this task are taken right now. Check back later.');
 
             if ($mine === null) {
                 $pdo->prepare('INSERT INTO task_reservations (campaign_id, earner_user_id, status, expires_at) VALUES (:c, :u, \'active\', DATE_ADD(UTC_TIMESTAMP(), INTERVAL :m MINUTE))')
