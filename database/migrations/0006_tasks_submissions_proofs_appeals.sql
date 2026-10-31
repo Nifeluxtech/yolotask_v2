@@ -97,9 +97,9 @@ CREATE TABLE submission_appeals (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Phase 3 hardening (added with Phase 4): bank account numbers are now
--- encrypted at rest by the application (Security\Crypto::seal, "enc1:" +
--- base64), so the columns grow; account_last4 keeps the masked display
--- without decrypting. Existing plaintext rows keep working and are sealed by
+-- encrypted at rest by the application (Security\Crypto::seal: "enc2:"
+-- AES-256-GCM, or legacy "enc1:" libsodium, + base64), so the columns grow;
+-- account_last4 keeps the masked display without decrypting. Existing plaintext rows keep working and are sealed by
 -- scripts/encrypt-bank-details.php. bank_accounts.changed_at records when an
 -- existing account was replaced (withdrawal cooldown after a change).
 ALTER TABLE bank_accounts
@@ -107,10 +107,10 @@ ALTER TABLE bank_accounts
     ADD COLUMN account_last4 CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER account_number,
     ADD COLUMN changed_at DATETIME NULL AFTER name_verified_via;
 
-UPDATE bank_accounts SET account_last4 = RIGHT(account_number, 4) WHERE account_last4 IS NULL AND account_number NOT LIKE 'enc1:%';
+UPDATE bank_accounts SET account_last4 = RIGHT(account_number, 4) WHERE account_last4 IS NULL AND account_number NOT LIKE 'enc1:%' AND account_number NOT LIKE 'enc2:%';
 
 ALTER TABLE withdrawals
     MODIFY account_number VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     ADD COLUMN account_last4 CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER account_number;
 
-UPDATE withdrawals SET account_last4 = RIGHT(account_number, 4) WHERE account_last4 IS NULL AND account_number NOT LIKE 'enc1:%';
+UPDATE withdrawals SET account_last4 = RIGHT(account_number, 4) WHERE account_last4 IS NULL AND account_number NOT LIKE 'enc1:%' AND account_number NOT LIKE 'enc2:%';
