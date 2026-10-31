@@ -48,6 +48,7 @@ $q = trim(is_string($_GET['q'] ?? null) ? mb_substr($_GET['q'], 0, 100) : '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $orders = PaymentOrders::list($pdo, $status, $q, $page);
 $callbacks = $pdo->query('SELECT id, kind, order_sn, platform_osn, provider_status, signature_valid, outcome, http_status, remote_ip, raw_body, received_at FROM payment_callbacks ORDER BY id DESC LIMIT 20')->fetchAll() ?: [];
+$forwards = \YoloTask\Payments\CallbackForwarder::recent($pdo, 20);
 $csrf = Csrf::token();
 $kindLabel = ['amount_mismatch' => 'Amount mismatch', 'unmatched_callback' => 'Unknown order', 'payout_conflict' => 'Payout conflict'];
 $opt = static fn (string $value, string $label, string $current): string => '<option value="' . h($value) . '"' . ($value === $current ? ' selected' : '') . '>' . h($label) . '</option>';
@@ -137,6 +138,25 @@ ob_start();
         </div></li>
       <?php endforeach; ?>
     </ul>
+  <?php endif; ?>
+</section>
+
+<section class="card" id="forwarded" aria-labelledby="fwd-title">
+  <div class="card-header"><h2 id="fwd-title">Forwarded callbacks</h2><span class="badge badge-info">Other apps</span></div>
+  <p class="text-sm text-faint">Callbacks for other apps on the same AfrStar merchant (for example SPLUG), relayed untouched. They never touch YOLOTASK wallets. Read-only.</p>
+  <?php if ($forwards === []): ?>
+    <div class="empty-state"><p class="text-faint">No callbacks forwarded yet.</p></div>
+  <?php else: ?>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Route</th><th>Order</th><th>Result</th><th>Time</th></tr></thead><tbody>
+      <?php foreach ($forwards as $f): ?>
+        <tr data-forward="<?= (int) $f['id'] ?>">
+          <td><?= h((string) $f['route']) ?> · <?= h(ucfirst((string) $f['kind'])) ?></td>
+          <td class="mono text-break"><?= h((string) $f['order_sn']) ?></td>
+          <td><span class="badge <?= (string) $f['outcome'] === 'delivered' ? 'badge-success' : ((string) $f['outcome'] === 'rejected' ? 'badge-warning' : 'badge-danger') ?>"><?= h((string) $f['outcome']) ?></span> <span class="text-xs text-faint">HTTP <?= h((string) ($f['downstream_status'] ?? '—')) ?> · <?= (int) $f['latency_ms'] ?> ms<?= $f['error_code'] ? ' · ' . h((string) $f['error_code']) : '' ?></span></td>
+          <td class="text-xs"><?= h(yolotask_wat((string) $f['received_at'])) ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody></table></div>
   <?php endif; ?>
 </section>
 <?php
