@@ -35,8 +35,16 @@ callbacks answer 503.
 ## Hardening added with Phase 4
 
 - **Bank details encrypted at rest.** `bank_accounts.account_number` and
-  `withdrawals.account_number` hold `enc1:` + libsodium secretbox ciphertext
-  keyed (HKDF) from `security_key`; `account_last4` keeps masked display.
+  `withdrawals.account_number` hold `enc2:` + base64(IV‖tag‖ciphertext),
+  OpenSSL AES-256-GCM (random 12-byte IV, 16-byte tag, the prefix as AAD) with
+  a key derived by HKDF-SHA256 from `security_key` under its own context
+  (`yolotask-sensitive-fields-v2-aes-256-gcm`, distinct from the HMAC key and
+  the old libsodium key). `seal()` always writes `enc2:` so values are portable:
+  cPanel ea-php84 ships without ext-sodium, and openssl is everywhere. Older
+  `enc1:` values (libsodium secretbox) are still read where ext-sodium is
+  loaded; without it, reading one throws a clear error. A missing sodium
+  extension is fine — Money settings shows a "Bank details encryption ready"
+  check. `account_last4` keeps masked display.
   Legacy plaintext rows still read correctly; `scripts/encrypt-bank-details.php`
   seals them (idempotent). Keep `security_key` stable and backed up: changing
   it makes sealed numbers unreadable.
