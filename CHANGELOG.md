@@ -1,5 +1,15 @@
 # Changelog
 
+## Phase 5 — Appeals and reviewer queues
+
+- Earner appeals: one per rejected proof within 72 h (`appeals.window_hours`), reason required, optional extra screenshot (proof upload rules); not after a resubmission, and appealed proofs cannot be resubmitted. Appeal button/status on the earner submission page; emails on filing and decision. Rejection emails mention the appeal option.
+- Reviewer portal: appeal queue (oldest first) with the instructions version used, proofs, rejection reason, earner note and appeal; exclusive 30-minute claims (`reviews.claim_minutes`) with release and expiry; uphold or overturn with a required note. Second queue for stale pending proofs (approve/reject before auto-approve, reviewer recorded as decider). "My decisions" history; reviewer dashboard with live counts; reviewers can open proofs only for appealed or pending submissions.
+- Overturn pays through the same approve path (reward hold respected, key `appeal-approve:<id>`). When the escrow has no room the shortfall comes from the advertiser wallet, then from the new `system:advertiser_receivable` account with an advertiser debt for admins (`appeal-fund:<id>`); recorded as over budget (`campaigns.extra_approved_count`, appeal funding columns), never takes another earner's slot. Advertiser emailed; campaign page lists appeal outcomes and appeal top-ups.
+- Admin → Tasks → Appeals: all appeals with filters, decide open appeals, override a reviewer once (final, audited; reversing an overturn takes the reward back and returns any top-up), Flagged advertisers (≥ 3 overturned and ≥ 30 % in 30 days, admin-only) and Advertiser debts (collect from wallet / write off). Flags and debts also on the user list and campaign page. Appeal settings on Task settings.
+- Reconciliation adds over-budget approvals and receivable = open debts; `database/verify/campaign_funding_reconciliation.sql` updated.
+- `cron/every-five-minutes.php` deletes expired reviewer claims; `every-fifteen-minutes.php` reports open appeals. No new cron lines.
+- Migration `0008_appeals_reviewer_queue.sql` (additive; plain DDL). Integration test `tests/Integration/Appeals/phase5_test.py`; `run-servers.sh` also starts the reviewer portal on 8404.
+
 ## Bank-detail encryption without libsodium
 
 - `Security\Crypto::seal()` now writes `enc2:` (OpenSSL AES-256-GCM, HKDF key with its own context) so saving a bank account works on hosts without ext-sodium (cPanel ea-php84). `reveal()` reads `enc2:`, legacy `enc1:` (only when ext-sodium is loaded; otherwise a clear error) and legacy plain text; `isSealed()` knows both prefixes.
