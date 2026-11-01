@@ -84,3 +84,18 @@
   transactions, skipped payouts moved nothing, and commissions are based on
   the credited amount of a paid top-up
   (`database/verify/referral_award_reconciliation.sql`).
+- Deposit cashback (migration 0013): debit-normal expense account
+  `system:deposit_cashback` (no negative). On a confirmed AfrStar deposit:
+  Dr deposit_cashback / Cr advertiser available (key
+  `cashback:<paymentOrderId>`, type `deposit_cashback`, amount =
+  floor(credited × `cashback.rate_bps` / 10000), nothing below
+  `cashback.min_deposit_kobo`). One `deposit_cashbacks` row per payment
+  order (`paid` / `skipped` / `reversed`) makes every path idempotent. Runs
+  after the deposit commits, never inside it; errors are logged and the
+  hourly sweep retries deposits from the last 48 h. Admin reversal = Dr
+  advertiser available / Cr deposit_cashback (key `cashback-reverse:<id>`,
+  refused if the money is gone). Only payment orders earn cashback, so admin
+  credits, adjustments, bonuses and cashback itself never do, and cashback
+  never earns referral commission. Reconciliation: account = sum of `paid`
+  rows, rows match their ledger transactions, cashback only on the credited
+  amount of a paid top-up (`database/verify/deposit_cashback_reconciliation.sql`).

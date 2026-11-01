@@ -88,3 +88,20 @@ replayed or simultaneous callback pays once (unique per order). Admin wallet
 credits, adjustments and bonuses never earn commission. Flagged referrals
 earn nothing until an admin approves them; then earlier deposits are paid
 at the rate in force at that time.
+
+## Deposit cashback
+
+On the same two credit paths (collection callback, admin review-credit of an
+AfrStar payment) the depositing advertiser gets `cashback.rate_bps` of the
+credited amount back into their wallet balance (rounded down to the kobo;
+default 0 = off; admin 0–50 % and an optional minimum deposit
+`cashback.min_deposit_kobo` in Admin → Growth → Referrals). It runs after
+the response is sent, independently of the referral programme switch, and
+pays once per order (`deposit_cashbacks`, key `cashback:<paymentOrderId>`).
+A cashback error is logged and never affects the deposit; the hourly cron
+retries deposits confirmed in the last 48 h. Admin wallet credits,
+adjustments and bonuses never earn cashback, and cashback never earns
+referral commission. The top-up page shows "Get X% cashback on deposits"
+(and the minimum) only while the rate is above 0. There is no deposit
+reversal in the system; an admin can reverse a paid cashback from the
+cashback list (reason required).
