@@ -138,6 +138,7 @@ final class Ledger
 
         foreach (self::reconcileCampaigns($pdo) as $p) $problems[] = $p;
         foreach (AdvertiserDebts::reconcile($pdo) as $p) $problems[] = $p;
+        foreach (\YoloTask\Growth\Referrals::reconcile($pdo) as $p) $problems[] = $p; // Phase 6
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;

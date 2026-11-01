@@ -153,6 +153,10 @@ final class Wallet
             'appeal_unfund' => 'Appeal charge returned',
             'task_reward_reversal' => 'Task reward reversed (appeal)',
             'debt_collect' => 'Appeal payout repaid',
+            'referral_bonus' => 'Referral milestone bonus',
+            'referral_commission' => 'Referral deposit commission',
+            'referral_reversal' => 'Referral payout reversed',
+            'bonus' => 'Bonus from YOLOTASK',
             default => 'Wallet update',
         };
     }
