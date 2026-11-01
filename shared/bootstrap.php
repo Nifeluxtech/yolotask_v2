@@ -218,6 +218,20 @@ function yolotask_render_app(array $user, string $pageTitle, string $contentHtml
     $userDisplayName = (string) ($user['display_name'] ?? '');
     $logoutCsrfToken = \YoloTask\Security\Csrf::token();
     $navItems = yolotask_portal_nav($activeNav);
+    // Phase 6: notification bell and live announcements (earner and advertiser portals).
+    $showBell = in_array(yolotask_role(), ['earner', 'advertiser'], true);
+    $unreadCount = 0;
+    $announcementBanners = [];
+    if ($showBell && isset($user['id'])) {
+        try {
+            $bellPdo = \YoloTask\Core\Database::connection();
+            $unreadCount = \YoloTask\Messaging\Notifications::unreadCount($bellPdo, (int) $user['id']);
+            $announcementBanners = \YoloTask\Messaging\Announcements::live($bellPdo, yolotask_role());
+        } catch (Throwable $e) {
+            \YoloTask\Core\Logger::error('layout.notifications_failed', ['exception' => get_class($e)]);
+        }
+    }
+    $bellActive = $activeNav === 'notifications';
     require YOLOTASK_APP_ROOT . '/shared/views/layouts/authenticated.php';
     exit;
 }
