@@ -63,7 +63,7 @@ ob_start();
             <div class="tx-meta">
               <?php if ($isEarner): ?>
                 <strong>To <?= h((string) $r['bank_name']) ?> ••••<?= h(substr((string) $r['account_number'], -4)) ?></strong>
-                <span class="text-xs text-faint"><?= h(yolotask_wat((string) $r['created_at'])) ?><?= $r['status'] === 'rejected' && $r['reject_reason'] ? ' · ' . h((string) $r['reject_reason']) : '' ?></span>
+                <span class="text-xs text-faint"><?= h(yolotask_wat((string) $r['created_at'])) ?><?= (int) ($r['fee_kobo'] ?? 0) > 0 ? ' · fee ' . h(yolotask_money($r['fee_kobo'])) . ' (' . h(\YoloTask\Money\Fees::percent((int) $r['fee_bps'])) . ')' . (in_array($r['status'], ['rejected', 'failed'], true) ? ', returned' : ', you receive ' . h(yolotask_money((int) $r['amount_kobo'] - (int) $r['fee_kobo']))) : '' ?><?= $r['status'] === 'rejected' && $r['reject_reason'] ? ' · ' . h((string) $r['reject_reason']) : '' ?></span>
               <?php else: ?>
                 <strong><a href="topup-return.php?o=<?= h(rawurlencode((string) $r['order_sn'])) ?>">Top-up <?= h((string) $r['order_sn']) ?></a></strong>
                 <span class="text-xs text-faint"><?= h(yolotask_wat((string) $r['created_at'])) ?></span>

@@ -15,8 +15,11 @@ use YoloTask\Security\Crypto;
 
 /**
  * Earner withdrawals: request (available -> held, pending_review), admin
- * approve (AfrStar payout, processing) or reject (hold released). The payout
- * callback finishes it (CallbackProcessor). Lock order everywhere: wallet
+ * approve (AfrStar payout of the net amount, processing) or reject (the full
+ * gross amount released). The payout callback finishes it (CallbackProcessor).
+ * The withdrawal fee (Money\Fees, migration 0014) is fixed on the row at
+ * request time; the payout sends amount - fee and the paid posting moves the
+ * fee to system:withdrawal_fees. Lock order everywhere: wallet
  * row first, then the withdrawal row.
  */
 final class Withdrawals
@@ -63,8 +66,38 @@ final class Withdrawals
         return $row;
     }
 
-    /** Request a withdrawal; a repeated $idemKey returns the original request id. */
-    public static function request(PDO $pdo, array $user, int $amountKobo, string $idemKey): int
+    /**
+     * Basic checks shared by the preview and the request (amount limits only;
+     * balance, open withdrawals and velocity are checked under the lock).
+     */
+    public static function checkAmount(PDO $pdo, int $amountKobo): void
+    {
+        $limits = self::limits($pdo);
+        if ($amountKobo < $limits['min']) throw new RuntimeException('The minimum withdrawal is ' . Money::format($limits['min']) . '.');
+        if ($amountKobo > $limits['max']) throw new RuntimeException('The maximum withdrawal is ' . Money::format($limits['max']) . '.');
+    }
+
+    /**
+     * Server-computed preview shown before the earner confirms: gross amount,
+     * fee at their current rate (rounded down), net they will receive.
+     */
+    public static function preview(PDO $pdo, array $user, int $amountKobo): array
+    {
+        if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
+        self::checkAmount($pdo, $amountKobo);
+        $wallet = Wallet::forUser($pdo, (int) $user['id']);
+        if ($wallet['available_kobo'] < $amountKobo) throw new RuntimeException('Your available balance is ' . Money::format($wallet['available_kobo']) . '.');
+        return Fees::withdrawalQuote($pdo, (int) $user['id'], $amountKobo);
+    }
+
+    /**
+     * Request a withdrawal; a repeated $idemKey returns the original request id.
+     * $quotedFeeKobo is the fee the earner saw in the preview: when it no
+     * longer matches the fee that applies now, WithdrawalFeeChanged is thrown
+     * and nothing is created. The rate and fee are stored on the row and are
+     * never recalculated (later admin changes do not affect it).
+     */
+    public static function request(PDO $pdo, array $user, int $amountKobo, string $idemKey, ?int $quotedFeeKobo = null): int
     {
         if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before withdrawing.');
@@ -72,8 +105,7 @@ final class Withdrawals
         if (!preg_match('/^[a-f0-9]{32}$/', $idemKey)) throw new RuntimeException('Your form expired. Please try again.');
         $userId = (int) $user['id'];
         $limits = self::limits($pdo);
-        if ($amountKobo < $limits['min']) throw new RuntimeException('The minimum withdrawal is ' . Money::format($limits['min']) . '.');
-        if ($amountKobo > $limits['max']) throw new RuntimeException('The maximum withdrawal is ' . Money::format($limits['max']) . '.');
+        self::checkAmount($pdo, $amountKobo); // limits apply to the gross amount (fee included)
         $bank = BankAccounts::get($pdo, $userId);
         if ($bank === null) throw new RuntimeException('Add your bank account before withdrawing.');
         $cooldown = BankAccounts::cooldownUntil($pdo, $bank);
@@ -97,9 +129,13 @@ final class Withdrawals
             if ($velocity['amount'] + $amountKobo > $limits['daily_max']) {
                 throw new RuntimeException('Withdrawals are limited to ' . Money::format($limits['daily_max']) . ' in 24 hours. You can withdraw up to ' . Money::format(max(0, $limits['daily_max'] - $velocity['amount'])) . ' now.');
             }
+            // Fee at the rate in force now (base or the earner's level), rounded down; locked onto the row.
+            $quote = Fees::withdrawalQuote($pdo, $userId, $amountKobo);
+            if ($quotedFeeKobo !== null && $quotedFeeKobo !== $quote['fee']) throw new WithdrawalFeeChanged($quote);
+            if ($quote['net'] <= 0) throw new RuntimeException('This amount is too small to withdraw after the fee.');
 
-            $pdo->prepare('INSERT INTO withdrawals (user_id, wallet_id, idempotency_key, amount_kobo, fee_kobo, bank_code, bank_name, account_number, account_last4, account_name) VALUES (:u, :w, :k, :a, :f, :bc, :bn, :an, :l4, :am)')
-                ->execute(['u' => $userId, 'w' => $wallet['id'], 'k' => $idemKey, 'a' => $amountKobo, 'f' => Fees::withdrawal($amountKobo), 'bc' => $bank['bank_code'], 'bn' => $bank['bank_name'], 'an' => Crypto::seal($bank['account_number']), 'l4' => substr($bank['account_number'], -4), 'am' => $bank['account_name']]);
+            $pdo->prepare('INSERT INTO withdrawals (user_id, wallet_id, idempotency_key, amount_kobo, fee_kobo, fee_bps, fee_level_id, bank_code, bank_name, account_number, account_last4, account_name) VALUES (:u, :w, :k, :a, :f, :fb, :fl, :bc, :bn, :an, :l4, :am)')
+                ->execute(['u' => $userId, 'w' => $wallet['id'], 'k' => $idemKey, 'a' => $amountKobo, 'f' => $quote['fee'], 'fb' => $quote['bps'], 'fl' => $quote['level_id'], 'bc' => $bank['bank_code'], 'bn' => $bank['bank_name'], 'an' => Crypto::seal($bank['account_number']), 'l4' => substr($bank['account_number'], -4), 'am' => $bank['account_name']]);
             $id = (int) $pdo->lastInsertId();
             $tx = Ledger::post($pdo, 'wd-hold:' . $id, 'withdrawal_hold', 'Withdrawal #' . $id . ' requested', [
                 [$wallet['available_account_id'], 'debit', $amountKobo],
@@ -180,14 +216,14 @@ final class Withdrawals
         \YoloTask\Messaging\Notifications::notify($pdo, $userId, 'payments', 'Withdrawal declined', 'Your withdrawal of ' . Money::format((int) $w['amount_kobo']) . ' was declined: ' . rtrim($reason, '. ') . '. The money is back in your wallet.',
             'wallet.php', 'wd-rejected:' . $withdrawalId, [
                 'subject' => 'Your YOLOTASK withdrawal was declined', 'heading' => 'Withdrawal declined',
-                'lines' => ['Your withdrawal request of ' . Money::format((int) $w['amount_kobo']) . ' was declined.', 'Reason: ' . $reason, 'The full amount is back in your YOLOTASK wallet.'],
+                'lines' => ['Your withdrawal request of ' . Money::format((int) $w['amount_kobo']) . ' was declined.', 'Reason: ' . $reason, 'The full amount' . ((int) $w['fee_kobo'] > 0 ? ', including the ' . Money::format((int) $w['fee_kobo']) . ' fee,' : '') . ' is back in your YOLOTASK wallet.'],
                 'footnote' => 'Questions? Reply to YOLOTASK support from your account email.',
             ]);
     }
 
     public static function forUser(PDO $pdo, int $userId, int $limit = 10): array
     {
-        $stmt = $pdo->prepare('SELECT id, amount_kobo, fee_kobo, bank_name, account_number, account_last4, status, reject_reason, created_at, completed_at FROM withdrawals WHERE user_id = :u ORDER BY id DESC LIMIT ' . (int) $limit);
+        $stmt = $pdo->prepare('SELECT id, amount_kobo, fee_kobo, fee_bps, bank_name, account_number, account_last4, status, reject_reason, created_at, completed_at FROM withdrawals WHERE user_id = :u ORDER BY id DESC LIMIT ' . (int) $limit);
         $stmt->execute(['u' => $userId]);
         return array_map([self::class, 'displayRow'], $stmt->fetchAll() ?: []);
     }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
+use YoloTask\Money\Fees;
 use YoloTask\Money\Money;
 use YoloTask\Payments\AfrstarClient;
+use YoloTask\Security\Audit;
 use YoloTask\Security\Crypto;
 use YoloTask\Security\Csrf;
 
@@ -55,7 +57,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((int) $values['money.withdraw_daily_max_kobo'] < (int) $values['money.withdraw_min_kobo']) throw new RuntimeException('The 24-hour total cannot be below the minimum withdrawal.');
         if ((int) $values['money.topup_min_kobo'] > (int) $values['money.topup_max_kobo']) throw new RuntimeException('The minimum top-up cannot be above the maximum.');
         if ((int) $values['money.withdraw_min_kobo'] > (int) $values['money.withdraw_max_kobo']) throw new RuntimeException('The minimum withdrawal cannot be above the maximum.');
+        // Earner withdrawal fee (percentage, 0-50, up to two decimals; stored in basis points).
+        // Older forms without the field keep the current rate.
+        $oldFee = Fees::withdrawalBaseBps($pdo);
+        $feeRaw = is_string($_POST['money_withdraw_fee_percent'] ?? null) ? $_POST['money_withdraw_fee_percent'] : null;
+        $feeBps = $feeRaw === null ? $oldFee : Fees::parsePercent($feeRaw);
+        if ($feeBps === null) throw new RuntimeException('The withdrawal fee must be a percentage from 0 to 50 (up to two decimals).');
+        $values['money.withdraw_fee_bps'] = (string) $feeBps;
         Settings::save($pdo, (int) $admin['id'], $values);
+        if ($feeBps !== $oldFee) Audit::record($pdo, (int) $admin['id'], 'admin.withdrawal_fee_changed', 'settings', $feeBps);
         yolotask_flash('Money settings saved.');
     } catch (RuntimeException $e) {
         yolotask_flash($e->getMessage(), 'error');
@@ -73,6 +83,8 @@ $configured = AfrstarClient::isConfigured();
 // is optional; it is only needed to read legacy enc1: values.
 $cryptoOk = Crypto::gcmAvailable();
 $sodiumOk = Crypto::sodiumAvailable();
+$feeBps = Fees::withdrawalBaseBps($pdo);
+$levelFees = array_values(array_filter(\YoloTask\Growth\Levels::all($pdo), static fn (array $l): bool => $l['withdrawal_fee_bps'] !== null));
 ob_start();
 ?>
 <?= yolotask_admin_money_tabs($pdo, 'settings') ?>
@@ -90,13 +102,16 @@ ob_start();
         : 'Enable the PHP openssl extension (aes-256-gcm) on this server. Earners cannot save bank accounts until it is available.' ?></p></div>
   </section>
   <section class="card" aria-labelledby="ms-title">
-    <div class="card-header"><h2 id="ms-title">Money rules</h2><span class="badge badge-info">No fees</span></div>
+    <div class="card-header"><h2 id="ms-title">Money rules</h2><span class="badge badge-info" data-fee-badge><?= $feeBps > 0 ? h(Fees::percent($feeBps)) . ' withdrawal fee' : 'No fees' ?></span></div>
     <form method="post" action="payment-settings.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
       <?php foreach ($fields as $key => $label): $name = str_replace('.', '_', $key); ?>
         <div class="field"><label class="label" for="<?= h($name) ?>"><?= h($label) ?></label>
           <input class="input" id="<?= h($name) ?>" name="<?= h($name) ?>" inputmode="decimal" required value="<?= h(Money::decimal((int) $all[$key])) ?>"></div>
       <?php endforeach; ?>
+      <div class="field"><label class="label" for="money_withdraw_fee_percent">Earner withdrawal fee (%)</label>
+        <input class="input" id="money_withdraw_fee_percent" name="money_withdraw_fee_percent" inputmode="decimal" required pattern="[0-9]{1,2}(\.[0-9]{1,2})?" value="<?= h(rtrim(rtrim(number_format($feeBps / 100, 2, '.', ''), '0'), '.')) ?>">
+        <p class="input-hint">0–50, up to two decimals; 0 = free. Taken from the amount the earner withdraws and rounded down to the kobo. Earner levels can set a lower rate (Growth → Earner levels)<?= $levelFees !== [] ? ': ' . h(implode(', ', array_map(static fn (array $l): string => $l['name'] . ' ' . Fees::percent(min($feeBps, (int) $l['withdrawal_fee_bps'])), $levelFees))) : '' ?>. Each withdrawal keeps the fee it was requested with; a change here applies to new requests only. The minimum and maximum apply to the amount before the fee.</p></div>
       <div class="field"><label class="label" for="money_payin_expiry_hours">Unpaid top-ups expire after (hours)</label>
         <input class="input" id="money_payin_expiry_hours" name="money_payin_expiry_hours" type="number" min="1" max="168" required value="<?= (int) $all['money.payin_expiry_hours'] ?>">
         <p class="input-hint">Expiring moves no money. A late confirmed payment from AfrStar is still credited.</p></div>
