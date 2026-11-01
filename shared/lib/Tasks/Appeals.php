@@ -7,7 +7,8 @@ use RuntimeException;
 use YoloTask\Campaigns\Campaigns;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
-use YoloTask\Messaging\Mailer;
+use YoloTask\Growth\Referrals;
+use YoloTask\Messaging\Notifications;
 use YoloTask\Money\AdvertiserDebts;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
@@ -126,7 +127,9 @@ final class Appeals
             throw $e;
         }
         Throttle::hit($pdo, 'appeal_file', (string) $uid);
-        self::mail((string) $own['earner_email'], 'We received your appeal', 'Appeal received', [
+        self::tell($pdo, $uid, 'appeal:' . $id . ':filed', 'Appeal received: ' . mb_substr((string) $own['campaign_title'], 0, 90),
+            'Your appeal is in the reviewer queue. We will let you know the outcome.', 'submission.php?id=' . $submissionId,
+            'We received your appeal', 'Appeal received', [
             'Thanks. Your appeal for "' . $own['campaign_title'] . '" is in the reviewer queue.',
             'A YOLOTASK reviewer will compare your proof with the advertiser\'s instructions and decide. We will email you the outcome.',
         ], 'Open my submission', yolotask_portal_url('earner') . '/submission.php?id=' . $submissionId);
@@ -271,6 +274,7 @@ final class Appeals
             throw $e;
         }
         self::notifyDecided($pdo, $appealId);
+        if ($decision === 'overturn') Referrals::afterApproval($pdo, (int) $a0['earner_user_id']);
     }
 
     /**
@@ -319,6 +323,9 @@ final class Appeals
             throw $e;
         }
         self::notifyDecided($pdo, $appealId, true);
+        // Referral milestones: an overturn may reach one; a reversal never claws back, it flags paid milestones for admin review.
+        if ($decision === 'overturn') Referrals::afterApproval($pdo, (int) $a0['earner_user_id']);
+        else Referrals::afterApprovalReversed($pdo, (int) $a0['earner_user_id']);
     }
 
     /**
@@ -428,8 +435,12 @@ final class Appeals
             if ($a === null) return;
             $url = yolotask_portal_url('earner') . '/submission.php?id=' . (int) $a['submission_id'];
             $note = (string) ($override && $a['override_note'] ? $a['override_note'] : $a['resolution_note']);
+            $key = 'appeal:' . $appealId . ($override ? ':override:' : ':') . (string) $a['status'];
+            $earnerUrl = 'submission.php?id=' . (int) $a['submission_id'];
             if ((string) $a['status'] === 'overturned') {
-                self::mail((string) $a['earner_email'], 'Your appeal was successful', 'Appeal overturned', [
+                self::tell($pdo, (int) $a['earner_user_id'], $key, 'Appeal successful: ' . mb_substr((string) $a['campaign_title'], 0, 90),
+                    'Your proof was approved on appeal and the ' . Money::format((int) $a['unit_reward_kobo']) . ' reward is yours.', $earnerUrl,
+                    'Your appeal was successful', 'Appeal overturned', [
                     ($override ? 'A YOLOTASK admin reviewed your appeal again. ' : '') . 'Your proof for "' . $a['campaign_title'] . '" has been approved on appeal.',
                     'Reviewer note: ' . $note,
                     (string) $a['reward_status'] === 'held' ? 'Your ' . Money::format((int) $a['unit_reward_kobo']) . ' reward is on a short hold and then reaches your wallet.' : 'Your ' . Money::format((int) $a['unit_reward_kobo']) . ' reward is in your wallet.',
@@ -440,10 +451,13 @@ final class Appeals
                     if ((int) $a['wallet_kobo'] > 0) $lines[] = 'Your campaign budget was already used, so ' . Money::format((int) $a['wallet_kobo']) . ' was charged from your wallet for this task.';
                     if ((int) $a['platform_kobo'] > 0) $lines[] = 'Your wallet could not cover ' . Money::format((int) $a['platform_kobo']) . ', so YOLOTASK paid it for you. This amount is owed and will be settled from your wallet.';
                     $lines[] = 'Please check proofs carefully against your instructions before rejecting.';
-                    self::mail((string) $a['advertiser_email'], 'A rejection was overturned on appeal', 'Rejection overturned', $lines, 'Open the campaign', yolotask_portal_url('advertiser') . '/campaign.php?id=' . (int) $a['campaign_id'] . '#appeals');
+                    self::tell($pdo, (int) $a['advertiser_user_id'], $key, 'Rejection overturned: ' . mb_substr((string) $a['campaign_title'], 0, 90),
+                        'A reviewer overturned your rejection of submission #' . (int) $a['submission_id'] . ' after the earner appealed.', 'campaign.php?id=' . (int) $a['campaign_id'] . '#appeals',
+                        'A rejection was overturned on appeal', 'Rejection overturned', $lines, 'Open the campaign', yolotask_portal_url('advertiser') . '/campaign.php?id=' . (int) $a['campaign_id'] . '#appeals');
                 }
             } else {
-                self::mail((string) $a['earner_email'], 'Your appeal was reviewed', 'Rejection upheld', [
+                self::tell($pdo, (int) $a['earner_user_id'], $key, 'Appeal decided: rejection upheld', 'After checking your proof for "' . mb_substr((string) $a['campaign_title'], 0, 90) . '", the rejection stands.', $earnerUrl,
+                    'Your appeal was reviewed', 'Rejection upheld', [
                     ($override ? 'A YOLOTASK admin reviewed your appeal again. ' : '') . 'After checking your proof for "' . $a['campaign_title'] . '" against the instructions, the rejection stands.',
                     'Reviewer note: ' . $note,
                     'This decision is final. There are many more tasks waiting in your feed.',
@@ -454,13 +468,11 @@ final class Appeals
         }
     }
 
-    private static function mail(string $to, string $subject, string $heading, array $lines, string $label, string $url): void
+    /** Inbox item + email (per the user's "appeals" email switch); never throws. */
+    private static function tell(PDO $pdo, int $userId, string $dedupe, string $title, string $body, string $inboxUrl, string $subject, string $heading, array $lines, string $label, string $url): void
     {
-        try {
-            Mailer::send($to, $subject, $heading, $lines, ['label' => $label, 'url' => $url]);
-        } catch (\Throwable $e) {
-            Logger::error('appeal.mail_failed', ['exception' => get_class($e)]);
-        }
+        Notifications::notify($pdo, $userId, 'appeals', $title, $body, $inboxUrl, $dedupe,
+            ['subject' => $subject, 'heading' => $heading, 'lines' => $lines, 'button' => ['label' => $label, 'url' => $url]]);
     }
 
     private static function lockAppeal(PDO $pdo, int $id): array

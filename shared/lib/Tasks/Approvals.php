@@ -7,7 +7,8 @@ use RuntimeException;
 use YoloTask\Campaigns\Campaigns;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
-use YoloTask\Messaging\Mailer;
+use YoloTask\Growth\Referrals;
+use YoloTask\Messaging\Notifications;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
@@ -57,6 +58,21 @@ final class Approvals
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
+        self::afterApproved($pdo, $s, $pay);
+    }
+
+    /**
+     * After any approval commits (advertiser, auto, admin, reviewer, appeal
+     * overturn): the earner's inbox (approvals are never emailed) and the
+     * referral milestone check. Never throws.
+     */
+    public static function afterApproved(PDO $pdo, array $s, array $pay, bool $onAppeal = false): void
+    {
+        $reward = Money::format((int) $s['unit_reward_kobo']);
+        Notifications::notify($pdo, (int) $s['earner_user_id'], 'tasks', ($onAppeal ? 'Approved on appeal: ' : 'Proof approved: ') . mb_substr((string) ($s['campaign_title'] ?? 'task'), 0, 90),
+            !empty($pay['held']) ? "Your {$reward} reward is on a short hold and then reaches your wallet." : "{$reward} was added to your wallet.",
+            'submission.php?id=' . (int) $s['id']);
+        Referrals::afterApproval($pdo, (int) $s['earner_user_id']);
     }
 
     /**
@@ -141,8 +157,11 @@ final class Approvals
             if ($can) $lines[] = 'You can fix it and resubmit once from your submissions page.';
             if ($appeal) $lines[] = 'If you followed the instructions and believe this is wrong, you can appeal to a YOLOTASK reviewer within ' . Appeals::windowHours($pdo) . ' hours' . ($can ? ' instead of resubmitting' : '') . '.';
             if (!$can && !$appeal) $lines[] = 'This task is closed for you, but there are many more waiting in your feed.';
-            Mailer::send((string) $s['earner_email'], 'Your task proof was not accepted', 'Proof not accepted', $lines,
-                ['label' => 'Open my submissions', 'url' => yolotask_portal_url('earner') . '/submission.php?id=' . $submissionId]);
+            Notifications::notify($pdo, (int) $s['earner_user_id'], 'tasks', 'Proof not accepted: ' . mb_substr((string) $s['campaign_title'], 0, 90), 'Reason: ' . $reason,
+                'submission.php?id=' . $submissionId, null, [
+                    'subject' => 'Your task proof was not accepted', 'heading' => 'Proof not accepted', 'lines' => $lines,
+                    'button' => ['label' => 'Open my submissions', 'url' => yolotask_portal_url('earner') . '/submission.php?id=' . $submissionId],
+                ]);
         } catch (\Throwable $e) {
             Logger::error('task.reject_notify_failed', ['exception' => get_class($e)]);
         }
