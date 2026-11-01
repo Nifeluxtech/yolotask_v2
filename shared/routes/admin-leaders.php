@@ -51,7 +51,7 @@ ob_start();
 <?= yolotask_admin_growth_tabs($pdo, 'leaders') ?>
 <section class="card" aria-labelledby="leaders-title">
   <div class="card-header"><h2 id="leaders-title">Leaderboard · <?= $board === 'referrers' ? 'Top Referrers' : 'Top Workers' ?></h2><span class="badge badge-info"><?= h($lb['label']) ?></span></div>
-  <p class="text-sm text-faint">Since <?= h($lb['since']) ?>, 12:00 AM WAT. <?= $board === 'referrers' ? 'Paid referral milestone bonuses and deposit commissions (reversed payouts excluded).' : 'Tasks approved in the period and the rewards they paid.' ?> Staff and suspended accounts are left out. Earners see first name + last initial only.</p>
+  <p class="text-sm text-faint"><?= $period === 'all' ? 'All time.' : 'Since ' . h($lb['since']) . ', 12:00 AM WAT.' ?> <?= $board === 'referrers' ? 'People each user referred who joined in the period (flagged and rejected referrals excluded; imported v1 referrals included), with referral bonuses and commissions paid in the period.' : 'Tasks approved in the period and the rewards they paid.' ?> Staff and suspended accounts are left out. Earners see first name + last initial only.</p>
 </section>
 <?= yolotask_leaderboard_toggles('leaders.php', $board, $period) ?>
 

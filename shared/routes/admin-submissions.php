@@ -72,7 +72,7 @@ ob_start();
     <ul class="user-list">
       <?php foreach ($list['rows'] as $s): ?>
         <li class="user-row submission-row" data-submission="<?= (int) $s['id'] ?>">
-          <?= yolotask_proof_thumb($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null) ?>
+          <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? '')) ?>
           <div class="user-meta">
             <strong>#<?= (int) $s['id'] ?> · <a href="campaign.php?id=<?= (int) $s['campaign_id'] ?>"><?= h((string) $s['campaign_title']) ?></a></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $s['earner_name']) ?> · <?= h((string) $s['earner_email']) ?> · <?= h((string) $s['platform_name']) ?> <?= h((string) $s['task_type_name']) ?></span>

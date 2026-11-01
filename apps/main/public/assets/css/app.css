@@ -1310,6 +1310,9 @@ body.auth-page, body { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-
 .proof-grid figure { margin: 0; display: grid; gap: 4px; }
 .proof-grid .proof-thumb { width: 100%; height: auto; aspect-ratio: 3 / 4; }
 .submission-row { align-items: flex-start; }
+.proof-cell { flex: none; display: grid; gap: 6px; width: 88px; justify-items: start; }
+.task-link { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+a.task-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
 .instructions { white-space: normal; line-height: 1.6; }
 .steps-list { margin: 0 0 1rem; padding-left: 1.2rem; display: grid; gap: 4px; color: var(--text-muted); }
 .form-pair { gap: 12px; }
@@ -1329,6 +1332,7 @@ body.auth-page, body { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-
   .tier-choice { grid-template-columns: 1fr; }
   .price-grid { grid-template-columns: 1fr 1fr; }
   .submission-row .proof-thumb { width: 100%; height: 180px; }
+  .submission-row .proof-cell { width: 100%; }
 }
 
 /* Wallet receipts (Phase 3 addition) */

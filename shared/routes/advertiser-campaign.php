@@ -110,7 +110,7 @@ ob_start();
     <div class="wallet-sub"><?= yolotask_campaign_badge((string) $c['status']) ?><span><strong><?= number_format((int) $c['approved_count']) ?></strong> of <?= number_format((int) $c['quantity']) ?> done</span></div>
     <?= yolotask_progress((int) $c['approved_count'], (int) $c['pending_count'], (int) $c['quantity']) ?>
     <?php if ($c['status_reason'] && in_array((string) $c['status'], ['rejected', 'cancelled', 'ended'], true)): ?><p class="text-sm text-faint">Reason: <?= h((string) $c['status_reason']) ?></p><?php endif; ?>
-    <p class="text-sm text-break"><a href="<?= h((string) $c['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $c['link_url']) ?></a></p>
+    <p class="text-sm text-break"><?php if (yolotask_safe_task_url((string) $c['link_url']) !== null): ?><a href="<?= h((string) $c['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $c['link_url']) ?></a><?php else: ?><span class="text-faint"><?= h((string) $c['link_url']) ?: 'No task link' ?></span><?php endif; ?></p>
     <div class="hero-actions">
       <?php if ($c['status'] === 'draft'): ?>
         <form method="post" action="<?= h($back) ?>"><?= $hidden ?><button class="btn btn-primary btn-sm" type="submit" name="action" value="submit"<?= $wallet['available_kobo'] < (int) $c['budget_kobo'] ? ' disabled' : '' ?> data-confirm="Pay <?= h(yolotask_money($c['budget_kobo'])) ?> from your wallet into escrow and send for approval?">Pay <?= h(yolotask_money($c['budget_kobo'])) ?> and submit</button></form>
@@ -156,7 +156,7 @@ ob_start();
       <ul class="user-list">
         <?php foreach ($subs['rows'] as $s): ?>
           <li class="user-row submission-row" data-submission="<?= (int) $s['id'] ?>">
-            <?= yolotask_proof_thumb($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, 'Proof from ' . CampaignMembers::publicName((string) $s['earner_name'])) ?>
+            <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? $c['link_url'] ?? ''), 'Proof from ' . CampaignMembers::publicName((string) $s['earner_name'])) ?>
             <div class="user-meta">
               <strong><?= h(CampaignMembers::publicName((string) $s['earner_name'])) ?> · #<?= (int) $s['id'] ?></strong>
               <span class="text-xs text-faint">Submitted <?= h(yolotask_wat((string) $s['submitted_at'])) ?><?= (int) $s['attempts'] > 1 ? ' · resubmission' : '' ?><?= $s['status'] === 'pending' ? ' · auto-approves in ' . h(yolotask_until((string) $s['auto_approve_at'])) : '' ?></span>

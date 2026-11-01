@@ -17,10 +17,13 @@ use YoloTask\Security\Audit;
  *  - "workers": earners ranked by tasks approved in the period (by the
  *    submission's approval time, submissions.decided_at), with the rewards of
  *    those tasks (unit_reward_kobo).
- *  - "referrers": earners and advertisers ranked by referral payouts credited
- *    in the period (milestone bonuses + deposit commissions, status 'paid';
- *    reversed and skipped payouts never count), with their total.
- * "week" runs from Monday 00:00 WAT to now; "month" from the 1st 00:00 WAT.
+ *  - "referrers": earners and advertisers ranked by the people they referred
+ *    who joined in the period (referrals.created_at; 'flagged' and 'rejected'
+ *    referrals never count; imported v1 referrals count like any other), with
+ *    the referral earnings paid to them in the period (milestone bonuses +
+ *    deposit commissions, status 'paid'; reversed/skipped never count).
+ * "week" runs from Monday 00:00 WAT to now; "month" from the 1st 00:00 WAT;
+ * "all" is all time.
  * Staff (reviewers, admins) and suspended or closed accounts are left out.
  * Ties go to whoever got there first (earliest latest-qualifying event), then
  * the lower user id. Earners see masked names (first name + last initial).
@@ -37,7 +40,7 @@ final class Leaderboard
 {
     public const LIMIT = 50;
     public const BOARDS = ['workers', 'referrers'];
-    public const PERIODS = ['week', 'month'];
+    public const PERIODS = ['week', 'month', 'all'];
     public const REWARD_MIN_KOBO = 100;          // ₦1
     public const REWARD_MAX_KOBO = 10000000;     // ₦100,000
     public const NOTE_MAX = 140;
@@ -66,7 +69,10 @@ final class Leaderboard
     public static function bounds(string $period, ?DateTimeImmutable $now = null): array
     {
         $now = ($now ?? new DateTimeImmutable('now'))->setTimezone(self::tz());
-        if (self::period($period) === 'month') {
+        if (self::period($period) === 'all') {
+            $start = new DateTimeImmutable('2020-01-01 00:00:00', self::tz());
+            $label = 'All time';
+        } elseif (self::period($period) === 'month') {
             $start = $now->setDate((int) $now->format('Y'), (int) $now->format('n'), 1)->setTime(0, 0, 0);
             $label = $start->format('F Y');
         } else {
@@ -113,11 +119,15 @@ final class Leaderboard
     private static function aggregateSql(string $board): string
     {
         if ($board === 'referrers') {
-            return "SELECT p.referrer_user_id uid, COUNT(*) cnt, COALESCE(SUM(p.amount_kobo), 0) total, MAX(p.created_at) last_at
-                FROM referral_payouts p JOIN users u ON u.id = p.referrer_user_id
-                WHERE p.status = 'paid' AND p.amount_kobo > 0 AND p.created_at >= :from AND p.created_at <= :to
+            // Ranked by referrals made in the period; earnings are shown beside the count.
+            return "SELECT r.referrer_user_id uid, COUNT(*) cnt,
+                    COALESCE((SELECT SUM(p.amount_kobo) FROM referral_payouts p WHERE p.referrer_user_id = r.referrer_user_id
+                        AND p.status = 'paid' AND p.amount_kobo > 0 AND p.created_at >= :pfrom AND p.created_at <= :pto), 0) total,
+                    MAX(r.created_at) last_at
+                FROM referrals r JOIN users u ON u.id = r.referrer_user_id
+                WHERE r.status = 'active' AND r.created_at >= :from AND r.created_at <= :to
                   AND u.role IN ('earner', 'advertiser') AND u.status = 'active'
-                GROUP BY p.referrer_user_id";
+                GROUP BY r.referrer_user_id";
         }
         return "SELECT s.earner_user_id uid, COUNT(*) cnt, COALESCE(SUM(s.unit_reward_kobo), 0) total, MAX(s.decided_at) last_at
             FROM submissions s JOIN users u ON u.id = s.earner_user_id
@@ -140,7 +150,7 @@ final class Leaderboard
         $agg = self::aggregateSql($board);
         $stmt = $pdo->prepare("SELECT a.uid, a.cnt, a.total, a.last_at, u.display_name FROM ($agg) a JOIN users u ON u.id = a.uid
             ORDER BY a.cnt DESC, a.last_at ASC, a.uid ASC LIMIT " . max(1, min(500, $limit)));
-        $stmt->execute(['from' => $b['from'], 'to' => $b['to']]);
+        $stmt->execute(self::params($board, $b));
         $rows = [];
         $viewerIn = false;
         foreach ($stmt->fetchAll() ?: [] as $i => $r) {
@@ -150,14 +160,14 @@ final class Leaderboard
         $viewer = null;
         if ($viewerId !== null && !$viewerIn) {
             $mine = $pdo->prepare("SELECT a.uid, a.cnt, a.total, a.last_at FROM ($agg) a WHERE a.uid = :me");
-            $mine->execute(['from' => $b['from'], 'to' => $b['to'], 'me' => $viewerId]);
+            $mine->execute(self::params($board, $b) + ['me' => $viewerId]);
             $m = $mine->fetch();
             $name = $pdo->prepare('SELECT display_name FROM users WHERE id = :id');
             $name->execute(['id' => $viewerId]);
             $display = (string) ($name->fetchColumn() ?: '');
             if (is_array($m)) {
                 $ahead = $pdo->prepare("SELECT COUNT(*) FROM ($agg) a WHERE a.cnt > :c OR (a.cnt = :c2 AND (a.last_at < :t OR (a.last_at = :t2 AND a.uid < :me)))");
-                $ahead->execute(['from' => $b['from'], 'to' => $b['to'], 'c' => (int) $m['cnt'], 'c2' => (int) $m['cnt'], 't' => $m['last_at'], 't2' => $m['last_at'], 'me' => $viewerId]);
+                $ahead->execute(self::params($board, $b) + ['c' => (int) $m['cnt'], 'c2' => (int) $m['cnt'], 't' => $m['last_at'], 't2' => $m['last_at'], 'me' => $viewerId]);
                 $viewer = self::row((int) $ahead->fetchColumn() + 1, $m + ['display_name' => $display], $viewerId);
             } else {
                 $viewer = self::row(0, ['uid' => $viewerId, 'cnt' => 0, 'total' => 0, 'last_at' => null, 'display_name' => $display], $viewerId);
@@ -165,6 +175,13 @@ final class Leaderboard
             }
         }
         return ['board' => $board, 'period' => $period, 'label' => $b['label'], 'since' => $b['start_wat']->format('D j M Y'), 'from' => $b['from'], 'to' => $b['to'], 'rows' => $rows, 'viewer' => $viewer];
+    }
+
+    /** Query parameters for a board's aggregate (the referrers board binds the window twice). */
+    private static function params(string $board, array $b): array
+    {
+        $p = ['from' => $b['from'], 'to' => $b['to']];
+        return $board === 'referrers' ? $p + ['pfrom' => $b['from'], 'pto' => $b['to']] : $p;
     }
 
     private static function row(int $rank, array $r, ?int $viewerId): array

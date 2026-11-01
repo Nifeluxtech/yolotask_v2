@@ -99,7 +99,7 @@ if ($id > 0) {
   </section>
   <section class="card" aria-labelledby="pf-title">
     <div class="card-header"><h2 id="pf-title">Proof</h2></div>
-    <div class="proof-grid"><?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Added with the appeal' : 'Attempt ' . (int) $p['attempt'] ?></figcaption></figure><?php endforeach; ?></div>
+    <div class="proof-grid"><?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Added with the appeal' : 'Attempt ' . (int) $p['attempt'] ?><br><?= yolotask_task_link((string) ($a['link_url'] ?? '')) ?></figcaption></figure><?php endforeach; ?></div>
     <?php if ($a['earner_note']): ?><p class="text-sm text-break">Earner's note: “<?= h((string) $a['earner_note']) ?>”</p><?php endif; ?>
   </section>
   <section class="card" aria-labelledby="hs-title">
@@ -228,7 +228,7 @@ ob_start();
     <ul class="user-list">
       <?php foreach ($list['rows'] as $a): ?>
         <li class="user-row submission-row" data-appeal="<?= (int) $a['id'] ?>">
-          <?= yolotask_proof_thumb($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null) ?>
+          <?= yolotask_proof_cell($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null, (string) ($a['link_url'] ?? '')) ?>
           <div class="user-meta">
             <strong><a href="appeals.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $a['earner_email']) ?> → <?= h((string) $a['advertiser_email']) ?> · filed <?= h(yolotask_wat((string) $a['created_at'])) ?> · rejected by <?= h(yolotask_rejection_source((string) $a['rejection_source'])) ?></span>
