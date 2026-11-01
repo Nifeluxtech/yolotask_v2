@@ -14,7 +14,8 @@ settings, or Money settings) until the product owner decides otherwise.
 | Proof file size | 2 MB | `tasks.proof_max_bytes` |
 | Campaign quantity | 1–100,000 | `campaigns.min_quantity`, `campaigns.max_quantity` |
 | Campaign approval | Every campaign is approved by an admin before going live | — |
-| Targeting | No user gender/interest data yet: "targeted" = premium price + reward + first in feed | — |
+| Targeting | Premium ("targeted") = premium price + reward + first in feed + interest match: shown/reservable only when the earner shares ≥ 1 active interest with the campaign and their level allows premium. Earners with no interests see no premium tasks. Campaigns with no active interest (legacy, or all disabled) match every earner who has chosen interests (Hark reading of "match all") | Admin → Growth → Interests |
+| Interests | Earners pick 1–3; every new campaign picks 1–3 (required; editable by the advertiser while draft/pending, by admins while pending/live/paused). 12 seeded; admin adds/renames/reorders/disables, never deletes; at least 3 stay active | — |
 | Same target twice | One open campaign per normalised link + task type; earners never see a repeat of a target they did | — |
 | Path after a rejection | Earner may resubmit (cap above) **or** appeal once — never both | — |
 | Appeal window | 72 h after the rejection (approved by the product owner) | `appeals.window_hours` |
@@ -27,4 +28,13 @@ settings, or Money settings) until the product owner decides otherwise.
 | Advertiser quality flag | ≥ 3 overturned **and** ≥ 30 % of decided appeals against the advertiser's own rejections, last 30 days; admin-only, no automatic penalty. Rate = overturned ÷ decided appeals (Hark interpretation) | `appeals.flag_min_overturns`, `appeals.flag_rate_percent`, `appeals.flag_window_days` |
 | Stale-proof reviews | Reviewers may approve/reject stale proofs before auto-approve (same money path, reviewer recorded) | `tasks.stale_hours` |
 | Reviewer pay | Later phase; every reviewer decision is logged (`reviewer_actions`) | — |
-| Referral, levels, virtual numbers | Later phases | — |
+| Referral bonus for referred earners | Milestones on the referee's approved tasks after the referral: 10 = ₦100, 25 = ₦200 (approved by the product owner), stacking, once per referee; admin adds/edits/disables unlimited milestones; a milestone that already paid can be disabled, not deleted | Admin → Money → Referrals |
+| Referral commission for referred advertisers | 5 % of every confirmed AfrStar deposit for life (approved); admin 0–50 % in basis points; reviewed AfrStar payments count, admin credits/bonuses never | `referrals.commission_bps` |
+| Referral abuse | Not recorded: self-referral by normalised email (Gmail dots, `+tag`) or an alias of any existing account. Allowance per referrer (approved by the product owner, Nov 2026): up to `referrals.ip_allowance` (default 3) referred sign-ups from one IP address are accepted and paid as usual — the referrer's own IP counts as that IP (it gets the same allowance, it does not use a slot); the 4th and later from that IP are flagged (nothing paid until an admin approves). The same allowance applies per device (browser user-agent hash, the only device signal a web app has; common phone models can share one). A sign-up on the referrer's own device — same device AND network as one of the referrer's sessions in the last 30 days — is always flagged as a likely self-referral. Earlier referees count whatever their status, for all time. Changing the allowance never re-checks earlier sign-ups | Admin → Growth → Referrals (`referrals.ip_allowance`, 1–100) |
+| Reversed approval after a milestone paid | No automatic claw-back; the payout is flagged and an admin may reverse it (ledger reversal, reason required; refused if the referrer already spent it) | — |
+| Referral programme switched off | No new referrals recorded and nothing paid; when switched back on the hourly catch-up pays what was earned meanwhile (Hark choice) | `referrals.enabled` |
+| Earner levels | Starter 0, Bronze 50 / 80 %, Silver 200 / 85 %, Gold 500 / 90 %; hold 3/4/5/6 tasks; premium feed on for every level by default so premium campaigns are not starved at launch (Hark choice; switch off per level) | Admin → Tasks → Earner levels, `levels.enabled` |
+| Notification emails | Every category emails by default except task approvals, which stay in the inbox (one email per approved task would be noise; Hark choice). Announcements are inbox + banner only. Security emails are always sent | per user, `notifications.php` |
+| Notification retention | Read notifications deleted after 90 days; unread kept | `notifications.retention_days` |
+| Admin bonus | Separate from wallet adjustments: expense account `system:bonuses`, reason required, user notified | — |
+| Virtual numbers | Later phase | — |
