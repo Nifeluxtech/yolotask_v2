@@ -6,7 +6,6 @@ use PDO;
 use RuntimeException;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
-use YoloTask\Messaging\Mailer;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
@@ -109,7 +108,8 @@ final class Campaigns
         }
         $unit = Pricing::unit($type, $tier);
         if ($unit['reward'] <= 0 || $unit['margin'] <= 0) throw new RuntimeException('This task type is not priced yet. Choose another.');
-        return ['title' => $title, 'platform' => $platform, 'type' => $type, 'tier' => $tier, 'link' => $link, 'instructions' => $text['instructions'],
+        $interests = Interests::parseSelection($pdo, $in['interests'] ?? null); // 1-3 active interests, required on every new campaign
+        return ['interests' => $interests, 'title' => $title, 'platform' => $platform, 'type' => $type, 'tier' => $tier, 'link' => $link, 'instructions' => $text['instructions'],
             'proof' => $text['proof'], 'quantity' => $qty, 'ends_at' => $endsAt, 'price' => $unit['price'], 'reward' => $unit['reward'], 'budget' => $unit['price'] * $qty];
     }
 
@@ -128,6 +128,7 @@ final class Campaigns
                     'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'],
                     'aa' => self::advertiserAutoApproveHours($pdo, $uid), 'e' => $v['ends_at']]);
             $id = (int) $pdo->lastInsertId();
+            Interests::setForCampaign($pdo, $id, $v['interests']);
             Instructions::record($pdo, $id, 1, $v['instructions'], $v['proof'], $uid);
             Audit::record($pdo, $uid, 'campaign.created', 'campaign', $id);
             $pdo->commit();
@@ -151,6 +152,7 @@ final class Campaigns
             $upd->execute(['p' => $v['platform']['id'], 't' => $v['type']['id'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
                 'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'], 'e' => $v['ends_at'], 'id' => $id]);
             Instructions::replaceDraft($pdo, $id, $v['instructions'], $v['proof']);
+            Interests::setForCampaign($pdo, $id, $v['interests']);
             Audit::record($pdo, (int) $user['id'], 'campaign.updated', 'campaign', $id);
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -175,6 +177,37 @@ final class Campaigns
             $pdo->prepare('UPDATE campaigns SET instructions = :i, proof_requirements = :p, instructions_version = :v WHERE id = :id')
                 ->execute(['i' => $text['instructions'], 'p' => $text['proof'], 'v' => $version, 'id' => $id]);
             Audit::record($pdo, $uid, 'campaign.instructions_updated', 'campaign', $id);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /** Advertiser: change the interests while the campaign is a draft or waiting for approval. */
+    public static function updateInterests(PDO $pdo, array $user, int $id, mixed $input): void
+    {
+        $uid = (int) $user['id'];
+        self::ownedBy($pdo, $id, $uid);
+        $ids = Interests::parseSelection($pdo, $input);
+        self::writeInterests($pdo, $id, $ids, ['draft', 'pending_approval'], $uid, 'campaign.interests_updated', 'Interests can only be changed while the campaign is a draft or waiting for approval.');
+    }
+
+    /** Admin: view/edit interests during approval (and while the campaign runs). */
+    public static function adminUpdateInterests(PDO $pdo, int $adminId, int $id, mixed $input): void
+    {
+        $ids = Interests::parseSelection($pdo, $input);
+        self::writeInterests($pdo, $id, $ids, ['pending_approval', 'live', 'paused'], $adminId, 'admin.campaign_interests_updated', 'Interests can be changed while the campaign is waiting for approval, live or paused.');
+    }
+
+    private static function writeInterests(PDO $pdo, int $id, array $ids, array $states, int $actorId, string $event, string $closedMessage): void
+    {
+        $pdo->beginTransaction();
+        try {
+            $c = self::lockRow($pdo, $id);
+            if (!in_array((string) $c['status'], $states, true)) throw new RuntimeException($closedMessage);
+            Interests::setForCampaign($pdo, $id, $ids);
+            Audit::record($pdo, $actorId, $event, 'campaign', $id);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -215,6 +248,7 @@ final class Campaigns
             if ((string) $c['status'] !== 'draft') throw new RuntimeException('This campaign has already been submitted.');
             if ($c['ends_at'] !== null && strtotime((string) $c['ends_at'] . ' UTC') <= time()) throw new RuntimeException('The end date has passed. Edit the campaign first.');
             if (CampaignLinks::duplicateOpen($pdo, (string) $c['link_hash'], (int) $c['task_type_id'], $id)) throw new RuntimeException('A campaign for this link and task type is already running.');
+            if (Interests::forCampaign($pdo, $id) === []) throw new RuntimeException('Choose 1 to ' . Interests::MAX . ' interests for this campaign before funding it.');
             if ($wallet['status'] !== 'active') throw new RuntimeException('Your wallet is on hold. Contact support.');
             $budget = (int) $c['budget_kobo'];
             if ($wallet['available_kobo'] < $budget) {
@@ -282,7 +316,7 @@ final class Campaigns
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
-        self::notifyAdvertiser($pdo, $c, 'Your campaign is live', 'Campaign approved', ['"' . $c['title'] . '" has been approved and is now live. Earners can start working on it right away.']);
+        self::notifyAdvertiser($pdo, $c, 'campaign-approved', 'Your campaign is live', 'Campaign approved', ['"' . $c['title'] . '" has been approved and is now live. Earners can start working on it right away.']);
     }
 
     public static function adminReject(PDO $pdo, int $adminId, int $id, string $reason): int
@@ -290,7 +324,7 @@ final class Campaigns
         $reason = self::reason($reason);
         $refund = self::closeWith($pdo, $adminId, $id, 'rejected', ['pending_approval'], $reason, 'admin.campaign_rejected', 'rejected by YOLOTASK');
         $c = self::find($pdo, $id);
-        if ($c !== null) self::notifyAdvertiser($pdo, $c, 'Your campaign was not approved', 'Campaign not approved', ['"' . $c['title'] . '" was not approved.', 'Reason: ' . $reason, Money::format($refund) . ' has been returned to your wallet.']);
+        if ($c !== null) self::notifyAdvertiser($pdo, $c, 'campaign-rejected', 'Your campaign was not approved', 'Campaign not approved', ['"' . $c['title'] . '" was not approved.', 'Reason: ' . $reason, Money::format($refund) . ' has been returned to your wallet.']);
         return $refund;
     }
 
@@ -491,16 +525,15 @@ final class Campaigns
         return $reason;
     }
 
-    private static function notifyAdvertiser(PDO $pdo, array $c, string $subject, string $heading, array $paragraphs): void
+    /** Inbox item + email (per the advertiser's "campaigns" email switch); never fails the decision. */
+    private static function notifyAdvertiser(PDO $pdo, array $c, string $event, string $subject, string $heading, array $paragraphs): void
     {
         try {
-            $email = (string) ($c['advertiser_email'] ?? '');
-            if ($email === '') {
-                $stmt = $pdo->prepare('SELECT email FROM users WHERE id = :id');
-                $stmt->execute(['id' => (int) $c['advertiser_user_id']]);
-                $email = (string) $stmt->fetchColumn();
-            }
-            Mailer::send($email, $subject, $heading, $paragraphs, ['label' => 'Open campaign', 'url' => yolotask_portal_url('advertiser') . '/campaign.php?id=' . (int) $c['id']]);
+            \YoloTask\Messaging\Notifications::notify($pdo, (int) $c['advertiser_user_id'], 'campaigns', $heading . ': ' . mb_substr((string) $c['title'], 0, 80),
+                implode(' ', $paragraphs), 'campaign.php?id=' . (int) $c['id'], $event . ':' . (int) $c['id'], [
+                    'subject' => $subject, 'heading' => $heading, 'lines' => $paragraphs,
+                    'button' => ['label' => 'Open campaign', 'url' => yolotask_portal_url('advertiser') . '/campaign.php?id=' . (int) $c['id']],
+                ]);
         } catch (\Throwable $e) {
             Logger::error('campaign.notify_failed', ['exception' => get_class($e)]);
         }
