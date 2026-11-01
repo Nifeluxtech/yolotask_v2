@@ -31,7 +31,7 @@ Catalog and prices, campaigns with escrow, the earner task feed, slot reservatio
 
 MFA, database integration tests in CI, and a full independent security review are not yet done. The first migration has not been tested against the target cPanel MySQL/MariaDB version; apply it to staging only after review.
 
-Appeals and the reviewer queue (Phase 5), growth, virtual numbers and notifications beyond email remain unimplemented. Migration files after 0006 (and 0002_settings_catalog_interests.sql) and the remaining feature-area PHP files are explicit placeholders.
+Appeals and the reviewer queue (Phase 5), growth, virtual numbers and notifications beyond email remain unimplemented. Placeholder migrations (0010, 0011) and the remaining feature-area PHP files are explicit placeholders.
 
 Before production, resolve the roadmap's open choices (reviewer compensation, virtual-number eligibility, referral qualification, level/check-in rules, stale/hold/resubmission periods, final appeal path, Afrstar status-query/IP rules, fee treatment). Review provider API contracts, cPanel public roots, storage, cron, SSL, database and restore capabilities. The primary domain may be fixed to `public_html`; confirm the apex mapping with the host.
 
