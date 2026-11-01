@@ -77,6 +77,45 @@ reconciliation. It briefly renames `system:deposit_cashback` to force a
 failure and restores it; settings are put back to 0 / 0 at the end. About
 30 s.
 
+## Withdrawal fee integration test
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/WithdrawalLifecycle/withdrawal_fee_test.py
+
+Needs migration 0014 and the fake AfrStar gateway on 8499 (writes
+payments.local.php + afrstar.key like the Phase 3 suite). Covers the
+migration/backfill, rounding down, the server-side preview, per-level rates
+(override, refused above base, capped, levels off), the rate locked at
+request (admin change between preview and confirm refused; queued
+withdrawals unaffected; net payout amount), pre-0014 withdrawals free, full
+gross refund on reject and on a failed payout, the minimum on the gross,
+CSRF/authorization/audit, display and reconciliation incl. tampering and
+`database/verify/withdrawal_fee_checkin_reconciliation.sql`. Restores the
+fee to 10 %, the daily count to 3 and clears level overrides. About 15 s.
+
+## Daily check-in integration test
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/checkin_test.py
+
+Needs migration 0014. The midnight WAT boundary and streaks run through
+`tests/Integration/Growth/checkin_cli.php`, which pins `Core\Clock` to a
+fixed time (dates in December 2026 for a dedicated test earner). Covers off
+by default, the admin switch, per-level amounts (₦0 = off), once per Lagos
+day (incl. five simultaneous POSTs), unverified email, streak count/reset,
+ledger idempotency, CSRF/authorization/audit and reconciliation. Restores the
+switch to off and every level to ₦0. About 15 s.
+
+The Phase 3 and Phase 6 suites withdraw in two steps (preview, then confirm
+with the quoted fee) and expect the default 10 % fee: AfrStar is paid the
+net amount and clearing = top-ups − net payouts.
+
+The `database/verify/*.sql` checks are run by the suites against a database
+named `yt` (the files are piped into `mariadb … yt`), so name the test
+database `yt`; `tests/Integration/TaskSubmissions/phase4_test.py` expects
+private storage at `/tmp/ytrt` (`YT_STORAGE`), i.e. `storage.private_root`
+= `/tmp/ytrt` in app.local.php, and mail logs at `/tmp/ytrt/logs/mail.log`.
+
 Run every suite one at a time (each needs the servers; rate limits are reset
 by the runner). The forwarder test needs `afrstar.key` in the config dir,
 which the Phase 3/5/6 suites write, so run it after one of them. Reset `rate_limits` and

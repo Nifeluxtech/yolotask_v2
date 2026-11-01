@@ -51,7 +51,7 @@ ob_start();
 <?php if ($info['enabled'] && $levels !== []): ?>
 <section class="card" aria-labelledby="lv-all-title">
   <div class="card-header"><h2 id="lv-all-title">All levels</h2><span class="badge badge-info"><?= count($levels) ?></span></div>
-  <?= yolotask_levels_list($levels, $currentId) ?>
+  <?= yolotask_levels_list($levels, $currentId, ['base_fee' => \YoloTask\Money\Fees::withdrawalBaseBps($pdo), 'checkin_on' => \YoloTask\Growth\Checkin::enabled($pdo)]) ?>
 </section>
 <?php endif; ?>
 

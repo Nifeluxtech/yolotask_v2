@@ -72,7 +72,7 @@ ob_start();
 <?= yolotask_admin_money_tabs($pdo, 'reports') ?>
 <section class="grid grid-4 dash-stats money-stats" aria-label="Period totals">
   <article class="stat-card stat-success"><span class="stat-label">Top-ups</span><span class="stat-value"><?= h(yolotask_money($totals['topup'])) ?></span><span class="text-xs text-faint">Credited to advertisers</span></article>
-  <article class="stat-card"><span class="stat-label">Paid out</span><span class="stat-value"><?= h(yolotask_money($totals['withdrawal_paid'])) ?></span><span class="text-xs text-faint">Withdrawals confirmed by AfrStar</span></article>
+  <article class="stat-card"><span class="stat-label">Paid out</span><span class="stat-value"><?= h(yolotask_money($totals['withdrawal_paid'])) ?></span><span class="text-xs text-faint">Withdrawals confirmed by AfrStar (gross, incl. withdrawal fees)</span></article>
   <article class="stat-card"><span class="stat-label">Tasks approved</span><span class="stat-value"><?= h(yolotask_money($totals['task_reward'])) ?></span><span class="text-xs text-faint">Advertiser spend on tasks</span></article>
   <article class="stat-card stat-success"><span class="stat-label">Task revenue</span><span class="stat-value" data-revenue><?= h(yolotask_money($revenue)) ?></span><span class="text-xs text-faint">Margins kept by YOLOTASK</span></article>
 </section>

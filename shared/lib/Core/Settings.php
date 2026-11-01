@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) and deposit cashback (migration 0013). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) and the withdrawal fee / daily check-in (migration 0014). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -51,6 +51,9 @@ final class Settings
         // Advertiser deposit cashback (rows seeded by migration 0013).
         'cashback.rate_bps' => '0',            // % of each confirmed AfrStar deposit paid back to the advertiser (0 = off, 0-5000 bps)
         'cashback.min_deposit_kobo' => '0',    // deposits below this get no cashback (0 = no minimum)
+        // Earner withdrawal fee and daily check-in (rows seeded by migration 0014).
+        'money.withdraw_fee_bps' => '1000',    // base earner withdrawal fee, 10% (0-5000 bps); levels may set a lower rate
+        'checkin.enabled' => '0',              // daily check-in switch; amounts are set per level (0 = off for that level)
     ];
 
     private static ?array $cache = null;

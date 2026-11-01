@@ -66,7 +66,7 @@ ob_start();
       <?php foreach ($result['rows'] as $w): ?>
         <li class="user-row" data-withdrawal="<?= (int) $w['id'] ?>">
           <div class="user-meta">
-            <strong>#<?= (int) $w['id'] ?> · <?= h(yolotask_money($w['amount_kobo'])) ?> · <?= h((string) $w['display_name']) ?></strong>
+            <strong>#<?= (int) $w['id'] ?> · <?= h(yolotask_money($w['amount_kobo'])) ?> · <?= h((string) $w['display_name']) ?></strong><?php if ((int) $w['fee_kobo'] > 0): ?> <span class="text-xs text-faint" data-wd-fee="<?= (int) $w['fee_kobo'] ?>">fee <?= h(yolotask_money($w['fee_kobo'])) ?> (<?= h(\YoloTask\Money\Fees::percent((int) $w['fee_bps'])) ?>) · pays <?= h(yolotask_money((int) $w['amount_kobo'] - (int) $w['fee_kobo'])) ?></span><?php endif; ?>
             <span class="text-xs text-faint text-break"><?= h((string) $w['email']) ?> · <?= h((string) $w['bank_name']) ?> <?= h((string) $w['account_number']) ?> · <?= h((string) $w['account_name']) ?></span>
             <span class="user-tags">
               <?= yolotask_money_badge((string) $w['status']) ?>
@@ -78,7 +78,7 @@ ob_start();
               <div class="review-actions">
                 <form method="post" action="withdrawals.php">
                   <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="back" value="<?= h($query([])) ?>"><input type="hidden" name="withdrawal_id" value="<?= (int) $w['id'] ?>">
-                  <button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve"<?= $configured ? '' : ' disabled' ?> data-confirm="Send <?= h(yolotask_money($w['amount_kobo'])) ?> to <?= h((string) $w['account_name']) ?> through AfrStar?">Approve and pay</button>
+                  <button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve"<?= $configured ? '' : ' disabled' ?> data-confirm="Send <?= h(yolotask_money((int) $w['amount_kobo'] - (int) $w['fee_kobo'])) ?> to <?= h((string) $w['account_name']) ?> through AfrStar?">Approve and pay</button>
                 </form>
                 <form method="post" action="withdrawals.php" class="inline-form">
                   <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="back" value="<?= h($query([])) ?>"><input type="hidden" name="withdrawal_id" value="<?= (int) $w['id'] ?>">

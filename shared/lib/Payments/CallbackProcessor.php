@@ -153,12 +153,17 @@ final class CallbackProcessor
                 $pdo->commit();
                 return self::finish($pdo, $logId, 200, 'conflict', true);
             }
-            $amount = (int) $w['amount_kobo']; // the held amount (fees are zero today; a fee would get its own leg)
+            $amount = (int) $w['amount_kobo']; // the held (gross) amount
+            $fee = (int) $w['fee_kobo'];         // fixed when the withdrawal was requested (0 before migration 0014)
             if ($status === '1') {
-                $tx = Ledger::post($pdo, 'wd-paid:' . $w['id'], 'withdrawal_paid', 'Withdrawal ' . $orderSn . ' paid by AfrStar', [
+                // Paid: the held gross leaves the wallet; the net went out through AfrStar
+                // (clearing) and the fee is platform revenue (system:withdrawal_fees).
+                $legs = [
                     [$wallet['held_account_id'], 'debit', $amount],
-                    [Ledger::systemAccountId($pdo, Ledger::CLEARING), 'credit', $amount],
-                ], 'withdrawal', (int) $w['id']);
+                    [Ledger::systemAccountId($pdo, Ledger::CLEARING), 'credit', $amount - $fee],
+                ];
+                if ($fee > 0) $legs[] = [Ledger::systemAccountId($pdo, \YoloTask\Money\Fees::WITHDRAWAL_FEE_ACCOUNT), 'credit', $fee];
+                $tx = Ledger::post($pdo, 'wd-paid:' . $w['id'], 'withdrawal_paid', 'Withdrawal ' . $orderSn . ' paid by AfrStar' . ($fee > 0 ? ' (fee ' . Money::format($fee) . ')' : ''), $legs, 'withdrawal', (int) $w['id']);
                 $pdo->prepare("UPDATE withdrawals SET status = 'paid', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::notifyLater($pdo, (int) $w['user_id'], 'wd-paid:' . $w['id'], 'Withdrawal paid: ' . Money::format($payoutAmount),
@@ -173,7 +178,7 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE withdrawals SET status = 'failed', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::notifyLater($pdo, (int) $w['user_id'], 'wd-failed:' . $w['id'], 'Withdrawal failed: money returned',
-                    'Your withdrawal of ' . Money::format($payoutAmount) . ' could not be completed. The full amount is back in your wallet.', 'wallet.php',
+                    'Your withdrawal of ' . Money::format($payoutAmount) . ' could not be completed. The full amount' . ($fee > 0 ? ' (' . Money::format($amount) . ', fee included)' : '') . ' is back in your wallet.', 'wallet.php',
                     'Your YOLOTASK withdrawal could not be paid', 'Withdrawal failed',
                     ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
                 $outcome = 'failed_refunded';

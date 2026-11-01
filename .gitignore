@@ -25,3 +25,7 @@ error_log
 # Private config directory and provider key files (never in Git)
 /config-private/
 *.key
+
+# Server-only files carried between releases by scripts/deploy/cpanel-release.sh
+/apps/main/public/mgm-relay.php
+/apps/main/public/mgm-forward.php

@@ -63,6 +63,54 @@ if [[ -f "$RELEASE/scripts/migrate.php" ]]; then
   tail -n 5 "$MIGRATE_LOG"
 fi
 
+# Carry user-managed files that live only on the server (not in Git) into
+# the new release's main public root before traffic moves, so a release never
+# drops them. Source: the release ~/public_html currently resolves to (the
+# live site), falling back to $BASE/current. Names are configurable
+# (space-separated, plain names only); missing ones are skipped and nothing
+# here can fail the deploy.
+CARRY_FILES="${YOLOTASK_CARRY_PUBLIC_FILES-mgm-relay.php mgm-forward.php}"
+CARRY_LOG="$BASE/runtime/logs/deploy-carry.log"
+carry_public_files() {
+  local src_root="" dst_root="$RELEASE/apps/main/public" candidate name src dst tmp
+  local -a names=()
+  read -r -a names <<< "$CARRY_FILES" || true
+  local public_html="${YOLOTASK_PUBLIC_HTML:-$HOME/public_html}"
+  for candidate in "$public_html" "$BASE/current/apps/main/public"; do
+    if [[ -n "$candidate" && -d "$candidate" ]]; then
+      src_root="$(cd "$candidate" 2>/dev/null && pwd -P)" || src_root=""
+      [[ -n "$src_root" ]] && break
+    fi
+  done
+  if [[ -z "$src_root" ]]; then
+    echo "[$(date -u +%FT%TZ)] $COMMIT carry: no live public root found; nothing copied" >> "$CARRY_LOG"
+    return 0
+  fi
+  if [[ "$src_root" == "$(cd "$dst_root" && pwd -P)" ]]; then
+    echo "[$(date -u +%FT%TZ)] $COMMIT carry: live root is this release; nothing to copy" >> "$CARRY_LOG"
+    return 0
+  fi
+  for name in "${names[@]}"; do
+    case "$name" in
+      ""|.|..|*/*|*[!A-Za-z0-9._-]*) echo "[$(date -u +%FT%TZ)] $COMMIT carry: skipped unsafe name '$name'" >> "$CARRY_LOG"; continue;;
+    esac
+    src="$src_root/$name"; dst="$dst_root/$name"
+    if [[ ! -e "$src" ]]; then
+      echo "[$(date -u +%FT%TZ)] $COMMIT carry: $name not present in $src_root; skipped" >> "$CARRY_LOG"
+      continue
+    fi
+    tmp="$dst_root/.carry.$name.$$"
+    if rm -rf "$tmp" && cp -a "$src" "$tmp" && rm -rf "$dst" && mv "$tmp" "$dst"; then
+      echo "[$(date -u +%FT%TZ)] $COMMIT carry: copied $name from $src_root" | tee -a "$CARRY_LOG"
+    else
+      rm -rf "$tmp" 2>/dev/null || true
+      echo "[$(date -u +%FT%TZ)] $COMMIT carry: WARNING could not copy $name from $src_root" | tee -a "$CARRY_LOG" >&2
+    fi
+  done
+  return 0
+}
+carry_public_files || true
+
 TEMP_LINK="$BASE/current.next"
 rm -f "$TEMP_LINK"
 ln -s "$RELEASE" "$TEMP_LINK"
@@ -74,3 +122,10 @@ fi
 mv -Tf "$TEMP_LINK" "$BASE/current"
 echo "Published YOLOTASK V2 scaffold commit $COMMIT to $BASE/current"
 echo "Database migrations are applied by scripts/migrate.php during each release."
+if [[ -L "${YOLOTASK_PUBLIC_HTML:-$HOME/public_html}" ]]; then
+  live_target="$(readlink "${YOLOTASK_PUBLIC_HTML:-$HOME/public_html}")"
+  case "$live_target" in
+    "$BASE/current/apps/main/public"|"$BASE/current/apps/main/public/") ;;
+    *) echo "NOTE: public_html points at $live_target, not $BASE/current/apps/main/public; re-point it once (docs/cpanel-setup.md) so releases go live automatically.";;
+  esac
+fi

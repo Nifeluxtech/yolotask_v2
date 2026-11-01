@@ -23,6 +23,10 @@ Wallets, the double-entry ledger, AfrStar top-ups and withdrawals, signed callba
 
 Phase 3 hardening added with Phase 4: encrypted bank details, withdrawal velocity limits and bank-change cooldown, five-minute payments cron (callback retry, stale top-ups, stuck payouts), receipts, money reports, read-only verification SQL.
 
+## Withdrawal fee and daily check-in (migration 0014)
+
+Earner withdrawal fee (10 % default, per-level lower rates, server-side preview, rate locked at request, full refund on reject/failure) and the daily check-in (once per Lagos day, per-level reward, admin switch, streak) are implemented and tested locally. See docs/payments.md, docs/ledger-and-money.md and docs/decisions/open-product-decisions.md.
+
 ## Phase 4 (campaigns, tasks, proofs)
 
 Catalog and prices, campaigns with escrow, the earner task feed, slot reservations, private proof storage, submissions, advertiser/admin review, auto-approval, reward hold and the related cron jobs are implemented and tested locally. See docs/campaigns-and-tasks.md, docs/file-uploads-and-proof-storage.md and docs/decisions/open-product-decisions.md (defaults chosen).
@@ -33,6 +37,6 @@ MFA, database integration tests in CI, and a full independent security review ar
 
 Appeals and the reviewer queue (Phase 5), growth, virtual numbers and notifications beyond email remain unimplemented. Placeholder migrations (0010, 0011) and the remaining feature-area PHP files are explicit placeholders.
 
-Before production, resolve the roadmap's open choices (reviewer compensation, virtual-number eligibility, referral qualification, level/check-in rules, stale/hold/resubmission periods, final appeal path, Afrstar status-query/IP rules, fee treatment). Review provider API contracts, cPanel public roots, storage, cron, SSL, database and restore capabilities. The primary domain may be fixed to `public_html`; confirm the apex mapping with the host.
+Before production, resolve the roadmap's open choices (reviewer compensation, virtual-number eligibility, referral qualification, stale/hold/resubmission periods, final appeal path, Afrstar status-query/IP rules). Review provider API contracts, cPanel public roots, storage, cron, SSL, database and restore capabilities. The primary domain may be fixed to `public_html`; confirm the apex mapping with the host.
 
 Do not use public registration with live users or real data until email verification, abuse controls, password reset, account protections, integration tests, and independent security review are complete.
