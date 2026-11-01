@@ -65,6 +65,7 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
         'appeals' => ['Appeals', 'appeals.php', $appeals],
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
+        'levels' => ['Earner levels', 'levels.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Marketplace sections">';
     foreach ($tabs as $key => [$label, $url, $count]) {
@@ -94,4 +95,36 @@ function yolotask_proof_thumb(?int $proofId, string $label = 'Proof screenshot')
 function yolotask_post_str(string $key): string
 {
     return is_string($_POST[$key] ?? null) ? $_POST[$key] : '';
+}
+
+/**
+ * Mobile-first chip picker for interests (checkboxes styled as chips).
+ * data-chip-min/max drive the counter and lock in yolotask.js; the server
+ * validates again (Campaigns\Interests::parseSelection).
+ * @param array<int,string> $options active interests id => name
+ * @param list<int|string> $selected selected interest ids
+ */
+function yolotask_interest_chips(array $options, array $selected, string $legend, string $hint, string $idPrefix = 'interest'): string
+{
+    $min = \YoloTask\Campaigns\Interests::MIN;
+    $max = \YoloTask\Campaigns\Interests::MAX;
+    $sel = [];
+    foreach ($selected as $v) if (is_int($v) || (is_string($v) && ctype_digit($v))) $sel[(int) $v] = true;
+    $html = '<fieldset class="field chip-select" data-chip-select data-chip-min="' . $min . '" data-chip-max="' . $max . '">'
+        . '<legend class="label">' . h($legend) . ' <span class="chip-count text-faint" data-chip-count>' . count(array_intersect_key($sel, $options)) . ' / ' . $max . '</span></legend>'
+        . '<p class="input-hint">' . h($hint) . '</p><div class="chip-grid">';
+    foreach ($options as $id => $name) {
+        $iid = h($idPrefix . '-' . (int) $id);
+        $html .= '<label class="chip" for="' . $iid . '"><input type="checkbox" id="' . $iid . '" name="interests[]" value="' . (int) $id . '"' . (isset($sel[(int) $id]) ? ' checked' : '') . '><span>' . h($name) . '</span></label>';
+    }
+    return $html . '</div></fieldset>';
+}
+
+/** Read-only interest chips. @param array<int|string,string> $names */
+function yolotask_interest_tags(array $names, string $empty = 'No interests chosen'): string
+{
+    if ($names === []) return '<span class="text-xs text-faint">' . h($empty) . '</span>';
+    $html = '<ul class="milestone-chips interest-tags">';
+    foreach ($names as $n) $html .= '<li>' . h((string) $n) . '</li>';
+    return $html . '</ul>';
 }

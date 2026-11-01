@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use YoloTask\Campaigns\CampaignMembers;
 use YoloTask\Campaigns\Campaigns;
+use YoloTask\Campaigns\Interests;
 use YoloTask\Campaigns\Instructions;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
@@ -44,6 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'cancel':
                 $r = Campaigns::adminCancel($pdo, $adminId, $id, yolotask_post_str('reason'));
                 yolotask_flash('Campaign cancelled; ' . yolotask_money($r) . ' refunded to the advertiser.');
+                break;
+            case 'interests':
+                Campaigns::adminUpdateInterests($pdo, $adminId, $id, $_POST['interests'] ?? null);
+                yolotask_flash('Campaign interests saved.');
                 break;
             case 'approve_submission':
                 Approvals::approve($pdo, (int) ($_POST['submission_id'] ?? 0), 'admin', $adminId);
@@ -110,6 +115,18 @@ if ($detail) {
     <article class="stat-card stat-success"><span class="stat-label">Approved</span><span class="stat-value"><?= (int) $members['approved'] ?></span><span class="text-xs text-faint"><?= (int) $members['auto_approved'] ?> automatically</span></article>
     <article class="stat-card stat-warning"><span class="stat-label">Pending</span><span class="stat-value"><?= (int) $members['pending'] ?></span><span class="text-xs text-faint"><?= (int) $members['working'] ?> working · <?= (int) $members['rejected'] ?> rejected</span></article>
   </section>
+  <?php $cInterests = Interests::forCampaign($pdo, $id); $cEditable = in_array((string) $c['status'], ['pending_approval', 'live', 'paused'], true); ?>
+  <section class="card" id="interests" aria-labelledby="int-title">
+    <div class="card-header"><h2 id="int-title">Audience interests</h2><span class="badge badge-info"><?= count($cInterests) ?> / <?= Interests::MAX ?></span></div>
+    <?= yolotask_interest_tags($cInterests, 'None: matches every earner who has chosen interests (campaign made before interests existed, or all its interests were disabled).') ?>
+    <?php if ($cEditable): ?>
+      <details class="danger-details"<?= $c['status'] === 'pending_approval' ? ' open' : '' ?>><summary class="btn btn-ghost btn-sm">Edit interests</summary>
+        <form method="post" action="campaigns.php" class="stack"><input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="campaign_id" value="<?= $id ?>"><input type="hidden" name="back" value="<?= h($back) ?>">
+          <?= yolotask_interest_chips(Interests::options($pdo), array_keys($cInterests), 'Interests', 'Pick 1 to ' . Interests::MAX . '. Premium tasks are shown only to earners sharing one.', 'adi') ?>
+          <button class="btn btn-secondary btn-sm" type="submit" name="action" value="interests">Save interests</button>
+        </form></details>
+    <?php endif; ?>
+  </section>
   <section class="card" aria-labelledby="i-title">
     <div class="card-header"><h2 id="i-title">Instructions</h2><span class="badge badge-info">v<?= (int) $c['instructions_version'] ?></span></div>
     <div class="instructions text-break"><?= nl2br(h((string) $c['instructions'])) ?></div>
@@ -147,6 +164,7 @@ $q = trim(is_string($_GET['q'] ?? null) ? $_GET['q'] : '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $list = Campaigns::listForAdmin($pdo, $status, $q, $page);
 $counts = Campaigns::adminCounts($pdo);
+$listInterests = Interests::namesForCampaigns($pdo, array_map(static fn (array $r): int => (int) $r['id'], $list['rows']));
 $query = static fn (array $over): string => '?' . http_build_query(array_filter(array_merge(['status' => $status, 'q' => $q, 'page' => $page], $over), static fn ($v) => $v !== '' && $v !== null));
 $filters = ['pending_approval' => 'Approval queue', 'live' => 'Live', 'paused' => 'Paused', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'ended' => 'Ended', 'rejected' => 'Rejected', 'draft' => 'Drafts', 'all' => 'All'];
 ob_start();
@@ -172,6 +190,7 @@ ob_start();
             <strong><a href="campaign.php?id=<?= (int) $c['id'] ?>">#<?= (int) $c['id'] ?> · <?= h((string) $c['title']) ?></a></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format((int) $c['quantity']) ?> × <?= h(yolotask_money($c['unit_price_kobo'])) ?> = <?= h(yolotask_money($c['budget_kobo'])) ?> · <?= h((string) $c['advertiser_email']) ?></span>
             <span class="text-xs text-faint text-break"><?= h((string) $c['link_url']) ?></span>
+            <span class="text-xs text-faint" data-interests>Interests: <?= h(implode(', ', $listInterests[(int) $c['id']] ?? ['all (none set)'])) ?></span>
             <span class="user-tags"><?= yolotask_campaign_badge((string) $c['status']) ?><?= yolotask_tier_badge((string) $c['tier']) ?><span class="text-xs text-faint"><?= (int) $c['approved_count'] ?>/<?= (int) $c['quantity'] ?> done<?= $c['submitted_at'] ? ' · submitted ' . h(yolotask_wat((string) $c['submitted_at'])) : '' ?></span></span>
             <?= $reviewForms($c, 'campaigns.php' . $query([])) ?>
           </div>

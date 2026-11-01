@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
+use YoloTask\Growth\Referrals;
 use YoloTask\Security\AbuseGuard;
 use YoloTask\Security\Auth;
 use YoloTask\Security\Crypto;
@@ -16,6 +17,9 @@ yolotask_private_headers();
 $error = null;
 $name = is_string($_POST['display_name'] ?? null) ? $_POST['display_name'] : '';
 $email = is_string($_POST['email'] ?? null) ? $_POST['email'] : '';
+// Phase 6 referrals: ?ref=CODE is remembered for this browser session and posted with the form.
+$refCode = Referrals::cleanCode($_POST['ref'] ?? ($_GET['ref'] ?? null)) ?? Referrals::cleanCode($_SESSION['_ref_code'] ?? null);
+if ($refCode !== null) $_SESSION['_ref_code'] = $refCode;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Csrf::verify(is_string($_POST['_csrf'] ?? null) ? $_POST['_csrf'] : null)) {
         $error = 'Your form expired. Refresh the page and try again.';
@@ -34,6 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     Throttle::hit($pdo, 'register_ip', Crypto::clientIp());
                     $userId = Auth::register($pdo, $name, $email, $password, $role);
+                    Referrals::onRegistered($pdo, $userId, $role, $email, $refCode);
+                    unset($_SESSION['_ref_code']);
                     Auth::signInNewAccount($pdo, $userId);
                     try {
                         $sent = EmailVerification::send($pdo, ['id' => $userId, 'display_name' => trim($name), 'email' => strtolower(trim($email))], yolotask_portal_url($role));
@@ -51,4 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-yolotask_render_auth('register', ['error' => $error, 'nameValue' => $name, 'emailValue' => $email, 'formStamp' => AbuseGuard::formStamp('register')]);
+$referrerLabel = null;
+if ($refCode !== null) {
+    try {
+        $ref = Referrals::enabled(Database::connection()) ? Referrals::referrerByCode(Database::connection(), $refCode) : null;
+        $referrerLabel = $ref !== null ? Referrals::maskName((string) $ref['display_name']) : null;
+    } catch (Throwable) {
+        $referrerLabel = null;
+    }
+}
+yolotask_render_auth('register', ['error' => $error, 'nameValue' => $name, 'emailValue' => $email, 'formStamp' => AbuseGuard::formStamp('register'),
+    'refCode' => $referrerLabel !== null ? $refCode : null, 'referrerLabel' => $referrerLabel]);

@@ -22,7 +22,7 @@ try {
 // key => [label, min, max, hint]
 $fields = [
     'tasks.reservation_minutes' => ['Slot hold after an earner starts (minutes)', 5, 1440, 'Expired holds free the slot again.'],
-    'tasks.max_active_reservations' => ['Tasks an earner can hold at once', 1, 20, 'Stops slot hoarding.'],
+    'tasks.max_active_reservations' => ['Tasks an earner can hold at once', 1, 20, 'Stops slot hoarding. When earner levels are on, each level sets its own limit (Growth → Levels).'],
     'tasks.reward_hold_hours' => ['Reward hold after approval (hours)', 0, 720, '0 = rewards reach the earner wallet immediately.'],
     'tasks.resubmission_cap' => ['Resubmissions allowed after a rejection', 0, 5, ''],
     'tasks.stale_hours' => ['A pending proof is stale after (hours)', 1, 336, 'Stale proofs go to the reviewer queue and Submissions → Stale.'],

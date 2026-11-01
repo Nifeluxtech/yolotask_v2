@@ -69,6 +69,7 @@ function yolotask_admin_money_tabs(PDO $pdo, string $active): string
         'transactions' => ['Ledger', 'transactions.php', 0],
         'reports' => ['Reports', 'reports.php', 0],
         'settings' => ['Money settings', 'payment-settings.php', 0],
+        'referrals' => ['Referrals', 'referrals.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Money sections">';
     foreach ($tabs as $key => [$label, $url, $count]) {

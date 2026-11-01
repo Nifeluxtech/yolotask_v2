@@ -111,6 +111,30 @@ $eventLabels = [
     'reviewer.claimed_submission' => 'Claimed a stale proof',
     'admin.advertiser_debt_collected' => 'Collected an advertiser debt',
     'admin.advertiser_debt_written_off' => 'Wrote off an advertiser debt',
+    'referral.recorded' => 'Joined with a referral link',
+    'referral.flagged' => 'Joined with a referral link',
+    'account.notification_settings_updated' => 'Notification settings updated',
+    'admin.referral_milestone_added' => 'Added a referral milestone',
+    'admin.referral_milestone_updated' => 'Updated a referral milestone',
+    'admin.referral_milestone_deleted' => 'Deleted a referral milestone',
+    'admin.referral_approved' => 'Approved a flagged referral',
+    'admin.referral_rejected' => 'Rejected a flagged referral',
+    'admin.referral_payout_reversed' => 'Reversed a referral payout',
+    'admin.level_added' => 'Added an earner level',
+    'admin.interest_added' => 'Added an interest',
+    'admin.interest_updated' => 'Renamed an interest',
+    'admin.interest_disabled' => 'Disabled an interest',
+    'admin.interest_enabled' => 'Enabled an interest',
+    'admin.interest_reordered' => 'Reordered interests',
+    'admin.campaign_interests_updated' => 'Changed a campaign\'s interests',
+    'admin.referral_ip_allowance_changed' => 'Changed the referral network allowance',
+    'account.interests_updated' => 'Updated interests',
+    'campaign.interests_updated' => 'Changed campaign interests',
+    'admin.level_updated' => 'Updated an earner level',
+    'admin.level_deleted' => 'Deleted an earner level',
+    'admin.bonus_granted' => 'Gave a bonus',
+    'admin.announcement_created' => 'Published an announcement',
+    'admin.announcement_withdrawn' => 'Withdrew an announcement',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -220,6 +244,18 @@ try {
     Logger::error('dashboard.market_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
 }
 
+// Phase 6: earner level badge/progress and the admin's referral review count.
+$levelInfo = null;
+$refFlagged = 0;
+$needsInterests = false;
+try {
+    if ($role === 'earner') $levelInfo = \YoloTask\Growth\Levels::forEarner($pdo, $userId);
+    if ($role === 'earner') $needsInterests = \YoloTask\Campaigns\Interests::forUser($pdo, $userId) === [];
+    if ($role === 'admin') $refFlagged = (int) \YoloTask\Growth\Referrals::adminStats($pdo)['flagged'];
+} catch (Throwable $e) {
+    Logger::error('dashboard.growth_failed', ['exception' => get_class($e)]);
+}
+
 $adminMoney = ['withdrawals' => 0, 'reviews' => 0];
 $adminCounts = null;
 $platformActivity = [];
@@ -263,13 +299,36 @@ ob_start();
       default => 'Here is an overview of your earner account and its security.',
   }) ?></p>
   <div class="hero-actions">
-    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="appeals.php">Appeals<?= ($adminAppeals ?? 0) > 0 ? ' (' . $adminAppeals . ')' : '' ?></a>
-    <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="tasks.php">Find tasks</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a>
-    <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="campaign-new.php">New campaign</a><a class="btn btn-secondary btn-sm" href="campaigns.php">My campaigns</a><a class="btn btn-secondary btn-sm" href="topup.php">Top up wallet</a>
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="appeals.php">Appeals<?= ($adminAppeals ?? 0) > 0 ? ' (' . $adminAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="referrals.php">Referrals<?= ($refFlagged ?? 0) > 0 ? ' (' . $refFlagged . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="announcements.php">Announcements</a>
+    <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="tasks.php">Find tasks</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a><a class="btn btn-secondary btn-sm" href="referrals.php">Invite &amp; earn</a>
+    <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="campaign-new.php">New campaign</a><a class="btn btn-secondary btn-sm" href="campaigns.php">My campaigns</a><a class="btn btn-secondary btn-sm" href="topup.php">Top up wallet</a><a class="btn btn-secondary btn-sm" href="referrals.php">Invite &amp; earn</a>
     <?php elseif ($role === 'reviewer'): ?><a class="btn btn-primary btn-sm" href="appeals.php">Appeal queue<?= ($openAppeals ?? 0) > 0 ? ' (' . $openAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="stale.php">Stale proofs<?= ($staleCount ?? 0) > 0 ? ' (' . $staleCount . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="history.php">My decisions</a>
     <?php else: ?><a class="btn btn-secondary btn-sm" href="account.php">Account settings</a><?php endif; ?>
   </div>
 </section>
+
+<?php if ($needsInterests): ?>
+<section class="card notice-card interest-prompt" role="status" data-interest-prompt>
+  <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
+  <div><strong>Pick your interests</strong><p class="text-sm text-faint">Choose 1 to <?= \YoloTask\Campaigns\Interests::MAX ?> interests to unlock premium tasks matched to you. It takes ten seconds.</p></div>
+  <a class="btn btn-primary btn-sm" href="interests.php">Choose interests</a>
+</section>
+<?php endif; ?>
+
+<?php if ($levelInfo !== null && $levelInfo['enabled'] && $levelInfo['level'] !== null): $lv = $levelInfo; ?>
+<section class="card level-card" aria-labelledby="level-title">
+  <div class="level-head">
+    <span class="level-badge level-<?= h(strtolower(preg_replace('/[^a-z]/i', '', (string) $lv['level']['name']))) ?>"><?= yolotask_nav_icon('sparkle') ?><span id="level-title"><?= h((string) $lv['level']['name']) ?></span></span>
+    <span class="text-xs text-faint"><?= number_format($lv['approved']) ?> approved · <?= h(rtrim(rtrim(number_format($lv['rate'], 1), '0'), '.')) ?>% approval rate · hold up to <?= (int) $lv['max_active'] ?> tasks<?= $lv['premium'] ? ' · premium tasks unlocked' : '' ?></span>
+  </div>
+  <?php if ($lv['next'] !== null): $need = max(0, (int) $lv['next']['min_approved'] - $lv['approved']); ?>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= (int) $lv['progress'] ?>" aria-label="Progress to <?= h((string) $lv['next']['name']) ?>"><span class="progress-bar" style="width:<?= (int) $lv['progress'] ?>%"></span></div>
+    <p class="text-xs text-faint"><?= $need > 0 ? number_format($need) . ' more approved task' . ($need === 1 ? '' : 's') : 'Task count reached' ?><?= (int) $lv['next']['min_approval_rate'] > 0 ? ' and a ' . (int) $lv['next']['min_approval_rate'] . '% approval rate' : '' ?> to reach <strong><?= h((string) $lv['next']['name']) ?></strong> (hold up to <?= (int) $lv['next']['max_active_reservations'] ?> tasks).</p>
+  <?php else: ?>
+    <p class="text-xs text-faint">Top level reached. Keep your approval rate up to stay here.</p>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
 
 <section class="grid grid-4 dash-stats" aria-label="Account overview">
   <?php foreach ($stats as $stat): ?>

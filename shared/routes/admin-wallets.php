@@ -29,8 +29,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'adjust') {
             $amount = yolotask_parse_naira(is_string($_POST['amount'] ?? null) ? $_POST['amount'] : '');
             if ($amount === null) throw new RuntimeException('Enter an amount in naira.');
-            Wallet::adjust($pdo, $adminId, (int) ($_POST['user_id'] ?? 0), (string) ($_POST['direction'] ?? ''), $amount, (string) ($_POST['reason'] ?? ''), (string) ($_POST['idem'] ?? ''));
-            yolotask_flash('Adjustment posted to the ledger.');
+            if ((string) ($_POST['direction'] ?? '') === 'bonus') {
+                // Phase 6: one-off bonus, booked as an expense (system:bonuses) and announced to the user.
+                \YoloTask\Growth\Bonuses::grant($pdo, $adminId, (int) ($_POST['user_id'] ?? 0), $amount, (string) ($_POST['reason'] ?? ''), (string) ($_POST['idem'] ?? ''));
+                yolotask_flash('Bonus paid and posted to the ledger.');
+            } else {
+                Wallet::adjust($pdo, $adminId, (int) ($_POST['user_id'] ?? 0), (string) ($_POST['direction'] ?? ''), $amount, (string) ($_POST['reason'] ?? ''), (string) ($_POST['idem'] ?? ''));
+                yolotask_flash('Adjustment posted to the ledger.');
+            }
         } elseif ($action === 'reconcile') {
             $problems = Ledger::reconcile($pdo);
             yolotask_flash($problems === [] ? 'Reconciliation passed: every balance matches the ledger.' : 'Reconciliation found ' . count($problems) . ' problem(s): ' . $problems[0], $problems === [] ? 'success' : 'error');
@@ -98,12 +104,12 @@ ob_start();
               <?php if ((int) $u['held_kobo'] > 0): ?><span class="badge badge-warning">On hold <?= h(yolotask_money($u['held_kobo'])) ?></span><?php endif; ?>
             </span>
             <details class="danger-details" style="margin-top:8px">
-              <summary class="btn btn-ghost btn-sm">Adjust balance</summary>
+              <summary class="btn btn-ghost btn-sm">Adjust balance or give bonus</summary>
               <form method="post" action="wallets.php" class="stack">
                 <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="adjust"><input type="hidden" name="back" value="<?= h($query([])) ?>">
                 <input type="hidden" name="user_id" value="<?= (int) $u['id'] ?>"><input type="hidden" name="idem" value="<?= h(bin2hex(random_bytes(16))) ?>">
                 <div class="inline-form">
-                  <select class="input" name="direction" aria-label="Direction"><option value="credit">Credit (add)</option><option value="debit">Debit (remove)</option></select>
+                  <select class="input" name="direction" aria-label="Direction"><option value="credit">Credit (add)</option><option value="debit">Debit (remove)</option><option value="bonus">Bonus (reward, notifies user)</option></select>
                   <input class="input" name="amount" inputmode="decimal" placeholder="Amount ₦" required aria-label="Amount">
                 </div>
                 <input class="input" name="reason" maxlength="200" minlength="5" required placeholder="Reason (required, kept in the ledger)" aria-label="Reason">

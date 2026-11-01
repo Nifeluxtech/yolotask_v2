@@ -62,6 +62,8 @@ $res = Tasks::reservation($pdo, $id, $uid);
 $working = $res !== null && (string) $res['status'] === 'active' && (int) $res['still_valid'] === 1 && in_array((string) $c['status'], ['live', 'paused'], true);
 $left = Campaigns::slotsLeft($c);
 $canStart = !$working && $submission === null && (string) $c['status'] === 'live' && $left > 0 && !empty($user['email_verified_at']);
+$interestBlock = (!$working && $submission === null) ? \YoloTask\Campaigns\Interests::premiumBlock($pdo, $uid, $c) : null;
+if ($interestBlock !== null) $canStart = false;
 $maxMb = round(Settings::int($pdo, 'tasks.proof_max_bytes') / 1048576, 1);
 $csrf = Csrf::token();
 ob_start();
@@ -77,6 +79,14 @@ ob_start();
       <?= yolotask_tier_badge((string) $c['tier']) ?>
     </div>
   </section>
+
+  <?php if ($interestBlock !== null): ?>
+    <section class="card notice-card notice-warning" role="status" data-interest-block>
+      <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
+      <div><strong>Premium task for matching interests</strong><p class="text-sm text-faint"><?= h($interestBlock) ?></p></div>
+      <a class="btn btn-primary btn-sm" href="interests.php">Interests</a>
+    </section>
+  <?php endif; ?>
 
   <?php if ($submission !== null): ?>
     <section class="card notice-card" role="status">

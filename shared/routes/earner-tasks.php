@@ -21,6 +21,7 @@ try {
     $working = Tasks::inProgress($pdo, $uid);
     $platforms = Pricing::platforms($pdo);
     $stats = Tasks::earnerStats($pdo, $uid);
+    $hasInterests = \YoloTask\Campaigns\Interests::forUser($pdo, $uid) !== [];
 } catch (Throwable $e) {
     Logger::error('tasks.feed_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     yolotask_error_page(500);
@@ -34,6 +35,14 @@ ob_start();
       <span class="verify-icon"><?= yolotask_nav_icon('bell') ?></span>
       <div><strong>Confirm your email to start earning</strong><p class="text-sm text-faint">You can browse tasks now. Starting one needs a confirmed email.</p></div>
       <a class="btn btn-primary btn-sm" href="verify.php">Confirm now</a>
+    </section>
+  <?php endif; ?>
+
+  <?php if (!$hasInterests): ?>
+    <section class="card notice-card interest-prompt" role="status" data-interest-prompt>
+      <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
+      <div><strong>Choose your interests to see premium tasks</strong><p class="text-sm text-faint">Premium tasks pay more and are matched to your interests. Standard tasks below are open to you now.</p></div>
+      <a class="btn btn-primary btn-sm" href="interests.php">Choose</a>
     </section>
   <?php endif; ?>
 

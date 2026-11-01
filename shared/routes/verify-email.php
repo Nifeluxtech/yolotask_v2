@@ -8,6 +8,16 @@ use YoloTask\Security\Csrf;
 use YoloTask\Security\EmailVerification;
 use YoloTask\Security\Throttle;
 
+/** Onboarding: a new earner with no interests picks them right after confirming the email. */
+function yolotask_after_verify(PDO $pdo, string $role, int $userId): string
+{
+    try {
+        if ($role === 'earner' && \YoloTask\Campaigns\Interests::forUser($pdo, $userId) === []) return 'interests.php?welcome=1';
+    } catch (Throwable) {
+    }
+    return 'dashboard.php';
+}
+
 $role = yolotask_role();
 if (!in_array($role, Auth::registerableRoles(), true)) yolotask_error_page(404);
 yolotask_private_headers();
@@ -26,7 +36,7 @@ if ($token !== '' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $user = Auth::currentUser($pdo);
     if ($verifiedId !== null && is_array($user) && (int) $user['id'] === $verifiedId) {
         yolotask_flash('Email confirmed. Your account is fully active.');
-        yolotask_redirect('dashboard.php');
+        yolotask_redirect(yolotask_after_verify($pdo, $role, $verifiedId));
     }
     if ($verifiedId !== null) {
         yolotask_render_auth('done', ['doneHeading' => 'Email confirmed', 'doneBody' => 'Thanks. Your email is confirmed and your account is fully active.', 'doneLabel' => 'Sign in', 'doneUrl' => 'login.php']);
@@ -53,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $code = is_string($_POST['code'] ?? null) ? $_POST['code'] : '';
         if (EmailVerification::verifyCode($pdo, $userId, $code)) {
             yolotask_flash('Email confirmed. Your account is fully active.');
-            yolotask_redirect('dashboard.php');
+            yolotask_redirect(yolotask_after_verify($pdo, $role, $userId));
         }
         $error = 'That code is incorrect or has expired. Check the latest email, or send a new code.';
     }

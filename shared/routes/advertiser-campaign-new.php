@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use YoloTask\Campaigns\Campaigns;
+use YoloTask\Campaigns\Interests;
 use YoloTask\Campaigns\Pricing;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
@@ -41,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     yolotask_csrf_or_back($self);
     $in = [];
     foreach ($fields as $f) $in[$f] = yolotask_post_str($f);
+    $in['interests'] = is_array($_POST['interests'] ?? null) ? array_values(array_filter($_POST['interests'], 'is_string')) : (is_string($_POST['interests'] ?? null) ? [$_POST['interests']] : []);
     try {
         if ($draft === null) {
             if (Throttle::tooMany($pdo, 'campaign_create', (string) $uid, 20, 3600)) throw new RuntimeException('You have created many campaigns in the last hour. Please wait a little.');
@@ -75,6 +77,14 @@ $val = static function (string $k) use ($old, $draft): string {
     }
     return $k === 'tier' ? 'basic' : '';
 };
+$interestOptions = Interests::options($pdo);
+if ($old !== null) {
+    $chosenInterests = is_array($old['interests'] ?? null) ? $old['interests'] : [];
+} elseif ($draft !== null) {
+    $chosenInterests = array_keys(Interests::forCampaign($pdo, (int) $draft['id']));
+} else {
+    $chosenInterests = [];
+}
 $platforms = Pricing::platforms($pdo);
 $types = Pricing::taskTypes($pdo);
 $wallet = Wallet::forUser($pdo, $uid);
@@ -111,6 +121,7 @@ ob_start();
         <label class="radio-card"><input type="radio" name="tier" value="basic"<?= $val('tier') !== 'targeted' ? ' checked' : '' ?>><span><strong>Standard</strong><span class="text-xs text-faint">Any verified earner can take it.</span></span></label>
         <label class="radio-card"><input type="radio" name="tier" value="targeted"<?= $val('tier') === 'targeted' ? ' checked' : '' ?>><span><strong>Premium</strong><span class="text-xs text-faint">Shown first in the feed, higher reward for earners. 1.5× price.</span></span></label>
       </fieldset>
+      <?= yolotask_interest_chips($interestOptions, $chosenInterests, 'Audience interests', 'Pick 1 to ' . Interests::MAX . '. Premium tasks are shown only to earners who share at least one of these.', 'ci') ?>
       <div class="field"><label class="label" for="link_url">Link</label>
         <input class="input" id="link_url" name="link_url" type="url" required maxlength="500" inputmode="url" value="<?= h($val('link_url')) ?>" placeholder="https://instagram.com/yourpage">
         <p class="input-hint">Must be an https:// link on the platform you chose.</p></div>
