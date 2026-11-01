@@ -17,7 +17,8 @@ use YoloTask\Money\Wallet;
  * verify or persist gets a non-200 so AfrStar retries. Replays are no-ops.
  *
  * Returns ['status' => int, 'body' => string, 'after' => list<callable>];
- * `after` holds slow work (notifications, emails, referral commission) to run
+ * `after` holds slow work (notifications, emails, referral commission,
+ * deposit cashback) to run
  * once the response is sent.
  */
 final class CallbackProcessor
@@ -85,6 +86,7 @@ final class CallbackProcessor
                     ['We received your payment of ' . Money::format($orderAmount) . ' and added it to your YOLOTASK wallet.', 'Reference: ' . $order['order_sn']]);
                 $creditedOrderId = (int) $order['id'];
                 $after[] = static function () use ($pdo, $creditedOrderId): void { \YoloTask\Growth\Referrals::afterTopupCredited($pdo, $creditedOrderId); };
+                $after[] = static function () use ($pdo, $creditedOrderId): void { \YoloTask\Growth\DepositCashback::afterTopupCredited($pdo, $creditedOrderId); };
             } else {
                 $pdo->prepare("UPDATE payment_orders SET status = 'review', amount_paid_kobo = :p, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m WHERE id = :id")
                     ->execute(['p' => $paid, 'o' => $osn, 'r' => $ref, 'm' => 'Paid amount differs from the order; held for review', 'id' => (int) $order['id']]);

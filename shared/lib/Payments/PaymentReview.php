@@ -74,8 +74,9 @@ final class PaymentReview
                 'lines' => ['Your payment for top-up ' . $order['order_sn'] . ' was checked and ' . Money::format($amount) . ' (the amount you paid) was added to your wallet.'],
                 'footnote' => 'Questions? Reply to YOLOTASK support from your account email.',
             ]);
-        // A reviewed AfrStar payment is a real deposit: it earns referral commission (an admin wallet credit never does).
+        // A reviewed AfrStar payment is a real deposit: it earns referral commission and deposit cashback (an admin wallet credit never does).
         \YoloTask\Growth\Referrals::afterTopupCredited($pdo, (int) $order['id']);
+        \YoloTask\Growth\DepositCashback::afterTopupCredited($pdo, (int) $order['id']);
         return $amount;
     }
 
