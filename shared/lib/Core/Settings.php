@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) and deposit cashback (migration 0013). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -48,6 +48,9 @@ final class Settings
         'levels.enabled' => '1',
         'notifications.retention_days' => '90',
         'referrals.ip_allowance' => '3',       // referred sign-ups per IP address / device per referrer before admin review (1-100)
+        // Advertiser deposit cashback (rows seeded by migration 0013).
+        'cashback.rate_bps' => '0',            // % of each confirmed AfrStar deposit paid back to the advertiser (0 = off, 0-5000 bps)
+        'cashback.min_deposit_kobo' => '0',    // deposits below this get no cashback (0 = no minimum)
     ];
 
     private static ?array $cache = null;
