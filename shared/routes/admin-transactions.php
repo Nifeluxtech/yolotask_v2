@@ -16,7 +16,7 @@ try {
     yolotask_error_page(500);
 }
 
-$types = ['topup' => 'Top-ups', 'topup_review' => 'Reviewed top-ups', 'withdrawal_hold' => 'Withdrawal holds', 'withdrawal_release' => 'Releases', 'withdrawal_paid' => 'Payouts', 'adjustment' => 'Adjustments'];
+$types = ['topup' => 'Top-ups', 'topup_review' => 'Reviewed top-ups', 'withdrawal_hold' => 'Withdrawal holds', 'withdrawal_release' => 'Releases', 'withdrawal_paid' => 'Payouts', 'adjustment' => 'Adjustments', 'checkin_reward' => 'Daily check-ins'];
 $type = is_string($_GET['type'] ?? null) && isset($types[$_GET['type']]) ? $_GET['type'] : '';
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 25;

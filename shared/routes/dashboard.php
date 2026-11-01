@@ -136,6 +136,12 @@ $eventLabels = [
     'admin.leader_rewarded' => 'Paid a leadership bonus',
     'admin.announcement_created' => 'Published an announcement',
     'admin.announcement_withdrawn' => 'Withdrew an announcement',
+    'checkin.claimed' => 'Daily check-in',
+    'admin.withdrawal_fee_changed' => 'Changed the withdrawal fee',
+    'admin.level_withdrawal_fee_changed' => 'Changed a level withdrawal fee',
+    'admin.level_checkin_reward_changed' => 'Changed a level check-in reward',
+    'admin.checkin_enabled' => 'Switched the daily check-in on',
+    'admin.checkin_disabled' => 'Switched the daily check-in off',
 ];
 
 $firstName = trim((string) strtok((string) ($user['display_name'] ?? ''), ' '));
@@ -247,11 +253,13 @@ try {
 
 // Phase 6: earner level badge/progress and the admin's referral review count.
 $levelInfo = null;
+$checkin = null;
 $refFlagged = 0;
 $needsInterests = false;
 try {
     if ($role === 'earner') $levelInfo = \YoloTask\Growth\Levels::forEarner($pdo, $userId);
     if ($role === 'earner') $needsInterests = \YoloTask\Campaigns\Interests::forUser($pdo, $userId) === [];
+    if ($role === 'earner') $checkin = \YoloTask\Growth\Checkin::status($pdo, $user);
     if ($role === 'admin') $refFlagged = (int) \YoloTask\Growth\Referrals::adminStats($pdo)['flagged'];
 } catch (Throwable $e) {
     Logger::error('dashboard.growth_failed', ['exception' => get_class($e)]);
@@ -329,6 +337,26 @@ ob_start();
     <p class="text-xs text-faint">Top level reached. Keep your approval rate up to stay here.</p>
   <?php endif; ?>
   <a class="text-xs" href="levels.php">See all levels and benefits</a>
+</section>
+<?php endif; ?>
+
+<?php if ($checkin !== null && $checkin['show']): $ck = $checkin; ?>
+<section class="card checkin-card" id="checkin" aria-labelledby="checkin-title" data-checkin="<?= h($ck['checked_today'] ? 'done' : ($ck['available'] ? 'open' : (string) $ck['reason'])) ?>">
+  <span class="stat-icon"><?= $svg('calendar') ?></span>
+  <div class="checkin-text">
+    <h3 id="checkin-title">Daily check-in</h3>
+    <p class="text-sm"><span class="checkin-streak" data-streak="<?= (int) $ck['streak'] ?>"><?= (int) $ck['streak'] ?>-day streak</span>
+      <?php if ($ck['checked_today']): ?><span class="text-faint"> · Checked in today (+<?= h(\YoloTask\Money\Money::format($ck['today_amount'])) ?>). Come back tomorrow after midnight (WAT).</span>
+      <?php elseif ($ck['reason'] === 'unverified'): ?><span class="text-faint"> · Confirm your email to check in and earn <?= h(\YoloTask\Money\Money::format($ck['amount'])) ?> a day.</span>
+      <?php else: ?><span class="text-faint"> · Check in today for <?= h(\YoloTask\Money\Money::format($ck['amount'])) ?><?= $ck['level_name'] !== null ? ' (' . h((string) $ck['level_name']) . ' level)' : '' ?>. Miss a day and the streak starts again.</span><?php endif; ?></p>
+  </div>
+  <?php if ($ck['available']): ?>
+    <form method="post" action="checkin.php"><input type="hidden" name="_csrf" value="<?= h(\YoloTask\Security\Csrf::token()) ?>"><button class="btn btn-primary btn-sm" type="submit" data-checkin-button>Check in</button></form>
+  <?php elseif ($ck['reason'] === 'unverified'): ?>
+    <a class="btn btn-secondary btn-sm" href="verify.php">Confirm email</a>
+  <?php else: ?>
+    <span class="badge badge-success">Done today</span>
+  <?php endif; ?>
 </section>
 <?php endif; ?>
 

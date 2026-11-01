@@ -6,8 +6,9 @@ declare(strict_types=1);
 /**
  * @param list<array> $levels active levels in order (Growth\Levels::all($pdo, true))
  * @param ?int $currentId the viewer's current level id, or null (public page / no level yet)
+ * @param ?array{base_fee:int,checkin_on:bool} $perks withdrawal fee base (bps) and the check-in switch (migration 0014)
  */
-function yolotask_levels_list(array $levels, ?int $currentId = null): string
+function yolotask_levels_list(array $levels, ?int $currentId = null, ?array $perks = null): string
 {
     $html = '<ol class="level-list">';
     foreach ($levels as $i => $l) {
@@ -24,8 +25,15 @@ function yolotask_levels_list(array $levels, ?int $currentId = null): string
             . '<dl class="level-facts">'
             . '<div><dt>Requirements</dt><dd>' . h($req) . '</dd></div>'
             . '<div><dt>Tasks held at once</dt><dd>Up to ' . (int) $l['max_active_reservations'] . '</dd></div>'
-            . '<div><dt>Premium tasks</dt><dd>' . ((int) $l['premium_access'] === 1 ? 'Unlocked' : 'Not included') . '</dd></div>'
-            . '</dl></li>';
+            . '<div><dt>Premium tasks</dt><dd>' . ((int) $l['premium_access'] === 1 ? 'Unlocked' : 'Not included') . '</dd></div>';
+        if ($perks !== null) {
+            $fee = min((int) $perks['base_fee'], $l['withdrawal_fee_bps'] ?? (int) $perks['base_fee']);
+            $html .= '<div><dt>Withdrawal fee</dt><dd data-level-fee>' . ($fee > 0 ? h(\YoloTask\Money\Fees::percent($fee)) : 'Free') . '</dd></div>';
+            if ($perks['checkin_on'] && (int) ($l['checkin_reward_kobo'] ?? 0) > 0) {
+                $html .= '<div><dt>Daily check-in</dt><dd data-level-checkin>' . h(\YoloTask\Money\Money::format((int) $l['checkin_reward_kobo'])) . ' a day</dd></div>';
+            }
+        }
+        $html .= '</dl></li>';
     }
     return $html . '</ol>';
 }

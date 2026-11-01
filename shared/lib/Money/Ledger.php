@@ -24,6 +24,10 @@ final class Ledger
     public const REWARD_HOLD = 'system:reward_hold';
     /** Phase 5: appeal payouts the platform fronted for advertisers (debit-normal; equals open advertiser_debts). */
     public const ADVERTISER_RECEIVABLE = 'system:advertiser_receivable';
+    /** Migration 0014: earner withdrawal fees (credit-normal revenue; equals fees of paid withdrawals). */
+    public const WITHDRAWAL_FEES = 'system:withdrawal_fees';
+    /** Migration 0014: daily check-in rewards (debit-normal expense; equals daily_checkins). */
+    public const CHECKIN_REWARDS = 'system:checkin_rewards';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -140,6 +144,8 @@ final class Ledger
         foreach (AdvertiserDebts::reconcile($pdo) as $p) $problems[] = $p;
         foreach (\YoloTask\Growth\Referrals::reconcile($pdo) as $p) $problems[] = $p; // Phase 6
         foreach (\YoloTask\Growth\DepositCashback::reconcile($pdo) as $p) $problems[] = $p; // deposit cashback (0013)
+        foreach (Fees::reconcileWithdrawals($pdo) as $p) $problems[] = $p; // withdrawal fees (0014)
+        foreach (\YoloTask\Growth\Checkin::reconcile($pdo) as $p) $problems[] = $p; // daily check-in (0014)
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;

@@ -39,7 +39,7 @@ ob_start();
   <p>Levels are paused right now: every earner can hold up to <?= (int) $defaultHeld ?> tasks at once and premium tasks are open to everyone with matching interests.</p>
 <?php else: ?>
   <h2>Levels and benefits</h2>
-  <?= yolotask_levels_list($levels) ?>
+  <?= yolotask_levels_list($levels, null, ['base_fee' => \YoloTask\Money\Fees::withdrawalBaseBps($pdo), 'checkin_on' => \YoloTask\Growth\Checkin::enabled($pdo)]) ?>
 <?php endif; ?>
 <h2>Good to know</h2>
 <ul>

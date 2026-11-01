@@ -1446,3 +1446,12 @@ a.level-badge:focus-visible { outline: 2px solid #00D4FF; outline-offset: 2px; }
 .quick-link .stat-icon { flex: none; margin: 0; }
 .quick-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 @media (max-width: 420px) { .lb-row { gap: 8px; padding: 10px; } .lb-avatar { width: 32px; height: 32px; font-size: 12px; } .lb-amount { font-size: 13px; } }
+
+/* Daily check-in card (earner dashboard) and withdrawal fee preview */
+.checkin-card { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+.checkin-card .stat-icon { flex: none; margin: 0; }
+.checkin-card .checkin-text { flex: 1 1 200px; min-width: 0; }
+.checkin-card h3 { margin: 0 0 2px; }
+.checkin-streak { font-weight: 700; color: var(--primary); }
+.wd-preview .receipt-list { margin-top: 0; }
+.level-fee-hint { margin-top: 4px; }
