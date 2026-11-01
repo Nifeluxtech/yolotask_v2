@@ -1286,7 +1286,9 @@ check('an earner cannot sign in to the admin portal', not Client(ADM).login(ee['
 s, l, h = Client(E).get('/notifications.php')
 check('inbox needs a session', s == 303 and l == 'login.php')
 s, l, h = X['x1'].get('/levels.php')
-check('earner portal has no admin growth pages', not any(os.path.exists(ROOT + '/apps/earner/public/' + f) for f in ('levels.php', 'announcements.php')) and 'Earner levels' not in h)
+# Phase 7: earner levels.php is the read-only earner levels page (no admin editor).
+check('earner portal has no admin growth pages', not os.path.exists(ROOT + '/apps/earner/public/announcements.php') and 'Earner levels' not in h
+      and 'name="min_approved"' not in h and 'name="action" value="save"' not in h)
 s, l, h = R1.get('/referrals.php')
 check("referrer page never shows another referrer's referees", 'Ve*** V.' not in h and 'Vi*** M.' in h)
 s, l, h = R2.get('/referrals.php')
