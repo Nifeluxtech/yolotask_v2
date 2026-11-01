@@ -75,3 +75,16 @@ Min top-up ₦100, max ₦500,000; min withdrawal ₦1,000, max ₦500,000; unpa
 top-ups expire after 24 h (no money moves; a late confirmed payment still
 credits). No fees (`Money\Fees` returns 0). Top-up and withdrawal need a
 confirmed email.
+
+## Referral commission (Phase 6)
+
+When a referred advertiser's top-up is credited — by the AfrStar collection
+callback or by an admin crediting a reviewed AfrStar payment (amount
+mismatch) — the referrer earns `referrals.commission_bps` of the credited
+amount (default 500 = 5 %, admin 0–50 % in Admin → Money → Referrals). It is
+paid after the callback response is sent (with the "top-up credited"
+notification) and caught up by the hourly cron if that step was missed; a
+replayed or simultaneous callback pays once (unique per order). Admin wallet
+credits, adjustments and bonuses never earn commission. Flagged referrals
+earn nothing until an admin approves them; then earlier deposits are paid
+at the rate in force at that time.

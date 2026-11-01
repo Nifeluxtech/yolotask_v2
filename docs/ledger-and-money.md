@@ -63,3 +63,24 @@
   `extra_approved_count` = its over-budget overturned appeals and
   `system:advertiser_receivable` = open advertiser debts. Mismatches are
   logged and the cron exits 2.
+- Phase 6 (referrals and bonuses): three debit-normal expense accounts,
+  `system:referral_bonus`, `system:referral_commission` and
+  `system:bonuses` (no negative). Milestone bonus = Dr referral_bonus / Cr
+  referrer available (key `ref-milestone:<referralId>:<milestoneId>`, type
+  `referral_bonus`); deposit commission = Dr referral_commission / Cr
+  referrer available (key `ref-commission:<paymentOrderId>`, type
+  `referral_commission`, amount = floor(credited × bps / 10000)); admin
+  reversal of a payout = Dr referrer available / Cr the same expense account
+  (key `ref-reverse:<payoutId>`, refused if the referrer no longer has the
+  money); admin bonus = Dr bonuses / Cr user available (key
+  `bonus:<adminId>:<formKey>`, type `bonus`). Payouts run right after the
+  approval or top-up transaction commits (never inside it, so a referral
+  problem cannot undo an approval or a deposit) and an hourly sweep catches
+  up anything missed; every step is idempotent (unique payout rows per
+  referral + milestone and per order, plus the ledger keys). Lock order is
+  the same as everywhere: referrer wallet row, then the referral row, then
+  ledger accounts. Reconciliation adds: each referral expense account =
+  sum of its `paid` payouts, every paid/reversed payout matches its ledger
+  transactions, skipped payouts moved nothing, and commissions are based on
+  the credited amount of a paid top-up
+  (`database/verify/referral_award_reconciliation.sql`).

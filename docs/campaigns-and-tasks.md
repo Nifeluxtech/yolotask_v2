@@ -13,9 +13,41 @@ WhatsApp, Telegram, Threads; Follow ₦25/₦15, Like ₦15/₦10, Comment ₦40
 Share/Repost ₦40/₦25, Subscribe ₦30/₦20, Join group/channel ₦30/₦20, Watch
 video ₦20/₦12. Premium = base × 1.5 rounded half-up to whole naira (Follow
 ₦38/₦23, Like ₦23/₦15, Comment and Share ₦60/₦38, Subscribe and Join ₦45/₦30,
-Watch ₦30/₦18). Users have no gender or interest profile yet, so "targeted"
-(shown to earners as Premium) means premium price, higher reward and first
-place in the feed; audience filters can be added when profiles exist.
+Watch ₦30/₦18). "Targeted" (shown as Premium) means premium price, higher
+reward, first place in the feed and interest targeting (below).
+
+## Interests and premium targeting
+
+Admin → Growth → Interests keeps the list (add, rename, reorder with ↑/↓,
+disable; never deleted). Seeded by migration 0009 for the Nigerian
+social-task market: Music & Entertainment, Sports & Betting, Fashion &
+Beauty, Tech & Gadgets, Crypto & Finance, Food & Lifestyle, Education,
+Religion & Inspiration, Business & Marketing, Gaming, Comedy, News &
+Politics. At least 3 must stay active.
+
+- Earners choose 1–3 (`interests.php`, linked from Account and from a
+  dashboard / task-feed prompt while they have none). A new earner is sent to
+  the interests step (`interests.php?welcome=1`, with "Skip for now") right
+  after confirming the email.
+- Every new campaign (standard or premium) chooses 1–3, validated server-side
+  on create, draft edit and funding. The advertiser can change them while the
+  campaign is a draft or waiting for approval; an admin can view and change
+  them during approval (and while live/paused) on the admin campaign page.
+  Changes are audited (`campaign.interests_updated`,
+  `admin.campaign_interests_updated`, `account.interests_updated`).
+- A premium campaign is shown in the feed and can be started only by an
+  earner whose level allows premium **and** who has at least one active
+  interest in common with it. Enforced in `Tasks::feed()` (SQL) and again in
+  `Tasks::start()` under the campaign lock. Earners with no interests see no
+  premium tasks until they choose. Standard tasks ignore interests.
+- Campaigns with no active interest (made before interests existed, or whose
+  interests were all disabled since) match every earner who has chosen at
+  least one interest. Earners with none still see no premium tasks.
+- Disabling an interest hides it from both pickers, refuses it on save and
+  ignores it for matching; existing selections stay in the database and come
+  back when it is enabled again. An earner whose only interests are disabled
+  is treated as having none (prompted again).
+- Reservations already held are not cancelled when targeting changes.
 
 ## Campaign lifecycle
 `draft → pending_approval → live ⇄ paused → completed | cancelled | ended`,
@@ -128,3 +160,26 @@ Earner: `tasks.php`, `task.php?id=`, `submissions.php`, `submission.php?id=`,
 `submissions.php`, `catalog.php`, `task-settings.php`, `proof.php?id=`,
 `appeals.php[?id=|?view=flags|?view=debts]`. Reviewer: `dashboard.php`,
 `appeals.php`, `appeal.php?id=`, `stale.php`, `history.php`, `proof.php?id=`.
+
+## Earner levels and referral milestones (Phase 6)
+
+An earner holds the highest active level in `earner_levels` whose approved
+task count and approval rate (approved ÷ approved + rejected; 100 % with
+nothing decided) they meet. The level sets how many tasks they may hold at
+once (replacing `tasks.max_active_reservations`, which stays the fallback
+when levels are off) and whether premium (targeted) campaigns appear in their
+feed and can be started. Defaults: Starter 0 tasks (hold 3), Bronze 50 / 80 %
+(4), Silver 200 / 85 % (5), Gold 500 / 90 % (6); premium is on for every
+level by default so premium campaigns keep reaching earners at launch (admins
+can switch it off for Starter). Admin → Tasks → Earner levels; levels on/off
+is `levels.enabled`.
+
+Every approval path (advertiser, auto, admin, reviewer stale queue, appeal
+overturn) calls `Growth\Referrals::afterApproval()` after it commits, which
+pays any referral milestone the earner's referrer has now reached; an admin
+override that reverses an approval calls `afterApprovalReversed()`, which
+flags (does not claw back) milestone payouts above the new count.
+Earners and advertisers get an in-app notification for approvals,
+rejections, appeal outcomes and campaign decisions (see the inbox at
+`notifications.php`). Earner/advertiser pages: `referrals.php`,
+`notifications.php`. Admin: `referrals.php`, `levels.php`, `announcements.php`.

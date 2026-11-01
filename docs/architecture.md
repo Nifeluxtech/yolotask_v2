@@ -27,22 +27,22 @@ yolotask-v2/
 │   ├── app.example.php                # URL, environment, cookie and app settings
 │   ├── database.example.php           # MySQL/MariaDB connection settings
 │   ├── payments.example.php           # Afrstar and Paystack configuration keys
-│   ├── notifications.example.php      # Resend and OneSignal configuration keys
+│   ├── notifications.example.php      # optional OneSignal web push (absent = off)
 │   ├── virtual-numbers.example.php   # FiveSim and SMSPool configuration keys
 │   └── storage.example.php            # Private storage paths and limits
 ├── database/
 │   ├── README.md                      # Migration, seed and verification runbook
 │   ├── migrations/
 │   │   ├── 0001_users_sessions_security.sql
-│   │   ├── 0002_settings_catalog_interests.sql
 │   │   ├── 0003_wallets_ledger.sql
 │   │   ├── 0004_payments_banks_withdrawals.sql
 │   │   ├── 0005_campaigns_funding_links.sql
 │   │   ├── 0006_tasks_submissions_proofs_appeals.sql
-│   │   ├── 0007_growth_referrals_bonuses_levels.sql
-│   │   ├── 0008_notifications_announcements.sql
-│   │   ├── 0009_virtual_number_orders.sql
-│   │   └── 0010_indexes_constraints_finalization.sql
+│   │   ├── 0007_afrstar_callback_forwards.sql
+│   │   ├── 0008_appeals_reviewer_queue.sql
+│   │   ├── 0009_referrals_levels_notifications.sql
+│   │   ├── 0010_virtual_number_orders.sql          (placeholder)
+│   │   └── 0011_indexes_constraints_finalization.sql (placeholder)
 │   ├── seeds/
 │   │   ├── 001_platforms_services_interests.sql
 │   │   ├── 002_default_settings_levels.sql
