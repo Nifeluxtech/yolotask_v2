@@ -61,6 +61,22 @@ in the current week/month, checks period boundaries through
 of Monday 00:00 / the 1st 00:00 WAT, then deletes its fixtures and requires a
 clean reconciliation. Takes about 40 s.
 
+## Deposit cashback integration test
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/cashback_test.py
+
+Needs migration 0013 and the fake AfrStar gateway on 8499 (writes
+payments.local.php + afrstar.key like the Phase 3/6 suites). Covers rounding,
+0 % off, the minimum deposit, idempotency (replayed and simultaneous
+callbacks), the admin review-credit path, admin credits/bonuses excluded,
+no commission or cashback on cashback, referral commission alongside,
+failure isolation + hourly catch-up, reversal, admin validation / CSRF /
+authorization / audit, the top-up page offer and wallet history, and
+reconciliation. It briefly renames `system:deposit_cashback` to force a
+failure and restores it; settings are put back to 0 / 0 at the end. About
+30 s.
+
 Run every suite one at a time (each needs the servers; rate limits are reset
 by the runner). The forwarder test needs `afrstar.key` in the config dir,
 which the Phase 3/5/6 suites write, so run it after one of them. Reset `rate_limits` and
