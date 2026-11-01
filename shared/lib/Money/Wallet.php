@@ -157,6 +157,9 @@ final class Wallet
             'referral_commission' => 'Referral deposit commission',
             'referral_reversal' => 'Referral payout reversed',
             'bonus' => 'Bonus from YOLOTASK',
+            // The description carries the rate and the top-up: "Deposit cashback 5% on top-up YTP...".
+            'deposit_cashback' => str_starts_with((string) ($e['description'] ?? ''), 'Deposit cashback ') ? (string) $e['description'] : 'Deposit cashback',
+            'deposit_cashback_reversal' => 'Deposit cashback reversed',
             default => 'Wallet update',
         };
     }
