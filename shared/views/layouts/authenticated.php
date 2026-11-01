@@ -9,7 +9,8 @@ declare(strict_types=1);
  * Expected variables:
  *   $appName, $roleTitle, $pageTitle, $userDisplayName, $navItems,
  *   $contentHtml (trusted server HTML, echoed raw), $logoutCsrfToken,
- *   $flash (?string), $flashType ('success'|'error'|'warning')
+ *   $flash (?string), $flashType ('success'|'error'|'warning'),
+ *   Phase 6: $showBell, $unreadCount, $bellActive, $announcementBanners
  * Uses global helper h(string): string for escaping.
  */
 
@@ -93,7 +94,7 @@ $flashIcon = [
 
 <header class="site-header">
   <div class="container header-inner">
-    <a class="brand" href="<?= h($navItems[0]['url'] ?? 'index.php') ?>">
+    <a class="brand" href="<?= h(yolotask_portal_url('main')) ?>/" aria-label="YOLOTASK home">
       <span class="brand-mark" aria-hidden="true">Y</span>
       <span><?= h($appName) ?></span>
     </a>
@@ -109,6 +110,13 @@ $flashIcon = [
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
+
+      <?php if (!empty($showBell)): $unread = (int) ($unreadCount ?? 0); ?>
+        <a class="bell-link<?= !empty($bellActive) ? ' active' : '' ?>" href="notifications.php" aria-label="Notifications<?= $unread > 0 ? ' (' . $unread . ' unread)' : '' ?>" data-unread="<?= $unread ?>">
+          <?= yolotask_nav_icon('bell') ?>
+          <?php if ($unread > 0): ?><span class="bell-count" aria-hidden="true"><?= $unread > 99 ? '99+' : $unread ?></span><?php endif; ?>
+        </a>
+      <?php endif; ?>
 
       <span class="user-chip" title="<?= h($userDisplayName) ?>">
         <?= yolotask_nav_icon('user') ?>
@@ -140,6 +148,15 @@ $flashIcon = [
 <?php endif; ?>
 
 <main id="main" class="container page">
+  <?php foreach ((is_array($announcementBanners ?? null) ? $announcementBanners : []) as $ann): ?>
+    <section class="announcement-banner" role="status" data-announcement="<?= (int) $ann['id'] ?>">
+      <span class="announcement-icon" aria-hidden="true"><?= yolotask_nav_icon('megaphone') ?></span>
+      <div class="announcement-body"><strong><?= h((string) $ann['title']) ?></strong><p><?= h((string) $ann['body']) ?></p></div>
+      <button type="button" class="announcement-close" data-announcement-dismiss aria-label="Hide this announcement">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </section>
+  <?php endforeach; ?>
   <div class="page-header">
     <h1><?= h($pageTitle) ?></h1>
   </div>

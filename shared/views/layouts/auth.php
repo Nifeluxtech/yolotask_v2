@@ -5,7 +5,8 @@ declare(strict_types=1);
  * Shared sign-in, sign-up, password and verification view for every portal.
  * Expected from the route: $authMode ('login'|'register'|'forgot'|'reset'|'verify'|'done'),
  * $roleTitle, $csrfToken; optional $error, $flash, $emailValue, $nameValue,
- * $resetToken, $isInvite, $verifyEmail, $resendWait, $formStamp, $doneHeading, $doneBody.
+ * $resetToken, $isInvite, $verifyEmail, $resendWait, $formStamp, $doneHeading, $doneBody,
+ * $refCode / $referrerLabel (Phase 6: register page opened with a valid ?ref= code).
  */
 $appName = yolotask_brand_name();
 $modes = ['login', 'register', 'forgot', 'reset', 'verify', 'done'];
@@ -106,7 +107,7 @@ $botFields = $formStamp === '' ? '' :
   <a class="skip-link" href="#auth-form">Skip to form</a>
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="index.php" aria-label="<?= h($appName) ?> <?= h($roleLower) ?> home"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
+      <a class="brand" href="<?= h(yolotask_portal_url('main')) ?>/" aria-label="YOLOTASK home"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
       <div class="header-actions">
         <span class="badge badge-info"><?= h($roleTitle) ?></span>
         <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch colour theme">
@@ -149,8 +150,12 @@ $botFields = $formStamp === '' ? '' :
         <?php endif; ?>
 
       <?php elseif ($authMode === 'register'): ?>
+        <?php if (is_string($refCode ?? null) && is_string($referrerLabel ?? null)): ?>
+          <p class="referral-note" role="status"><?= yolotask_nav_icon('sparkle') ?><span>You were invited by <strong><?= h($referrerLabel) ?></strong> — welcome to YOLOTASK!</span></p>
+        <?php endif; ?>
         <form method="post" action="register.php" novalidate>
           <input type="hidden" name="_csrf" value="<?= h($csrfToken) ?>">
+          <?php if (is_string($refCode ?? null)): ?><input type="hidden" name="ref" value="<?= h($refCode) ?>"><?php endif; ?>
           <?= $botFields ?>
           <div class="field">
             <label class="label" for="display_name"><?= $isAdvertiser ? 'Your name or business name' : 'Full name' ?></label>

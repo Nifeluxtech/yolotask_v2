@@ -28,7 +28,7 @@ $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php'
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="index.php"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
+      <a class="brand" href="<?= h(yolotask_portal_url('main')) ?>/"><span class="brand-mark" aria-hidden="true">Y</span><span><?= h($appName) ?></span></a>
       <nav class="header-nav" aria-label="Legal">
         <?php foreach ($legalLinks as $url => $label): ?><a href="<?= h($url) ?>"><?= h($label) ?></a><?php endforeach; ?>
       </nav>

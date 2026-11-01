@@ -88,7 +88,7 @@ $legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
 
 <header class="site-header">
   <div class="container header-inner">
-    <a class="brand" href="index.php">
+    <a class="brand" href="<?= h(yolotask_portal_url('main')) ?>/">
       <span class="brand-mark" aria-hidden="true">Y</span>
       <span><?= h($appName) ?></span>
     </a>
@@ -208,7 +208,7 @@ $legalUrl  = static fn (string $page): string => $legalBaseUrl . '/' . $page;
 <footer class="site-footer">
   <div class="container flex-between flex-wrap">
     <div>
-      <a class="brand" href="index.php">
+      <a class="brand" href="<?= h(yolotask_portal_url('main')) ?>/">
         <span class="brand-mark" aria-hidden="true">Y</span>
         <span><?= h($appName) ?></span>
       </a>
