@@ -33,3 +33,22 @@ To run the integration suites against servers without sodium:
     YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Appeals/phase5_test.py
 
 Needs migration 0008 and Pillow; the reviewer portal runs on port 8404.
+
+## Phase 6 integration test (referrals, levels, bonuses, notifications)
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/phase6_test.py
+
+Needs migration 0009, the fake AfrStar gateway on 8499 (started by
+run-servers.sh; the test writes payments.local.php + afrstar.key like the
+Phase 3 test) and Pillow. Registrations wait 3 s for the sign-up form timing
+guard, so the suite takes about 90 s. Sections 8b/8c cover the referral
+network/device allowance (default 3) and interests (catalog, earner and
+campaign selection, premium targeting in the feed and at reservation,
+legacy and disabled interests, authorization, CSRF). Phase 4/5/6 campaign
+helpers send one interest because every new campaign needs 1–3.
+
+Run every suite one at a time (each needs the servers; rate limits are reset
+by the runner). The forwarder test needs `afrstar.key` in the config dir,
+which the Phase 3/5/6 suites write, so run it after one of them. Reset `rate_limits` and
+`login_attempts` between suites.
