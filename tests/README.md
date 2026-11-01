@@ -48,6 +48,19 @@ campaign selection, premium targeting in the feed and at reservation,
 legacy and disabled interests, authorization, CSRF). Phase 4/5/6 campaign
 helpers send one interest because every new campaign needs 1–3.
 
+## Phase 7 integration test (leaderboard, levels page)
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/leaderboard_test.py
+
+Needs migration 0012 and MariaDB's sequence engine (`seq_1_to_N`). Builds its
+own fixtures (campaign pool, approved/rejected/pending submissions, referral
+payouts incl. reversed/skipped) with counts above whatever earlier suites left
+in the current week/month, checks period boundaries through
+`tests/Integration/Growth/lb_query.php` (fixed clock) and live rows either side
+of Monday 00:00 / the 1st 00:00 WAT, then deletes its fixtures and requires a
+clean reconciliation. Takes about 40 s.
+
 Run every suite one at a time (each needs the servers; rate limits are reset
 by the runner). The forwarder test needs `afrstar.key` in the config dir,
 which the Phase 3/5/6 suites write, so run it after one of them. Reset `rate_limits` and
