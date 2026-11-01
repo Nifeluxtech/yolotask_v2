@@ -1,0 +1,2 @@
+-- TODO: Implement the approved YOLOTASK V2 schema in the database phase.
+-- This placeholder is NOT executable and must not be applied.
