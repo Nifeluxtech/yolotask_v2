@@ -95,7 +95,7 @@ final class Referrals
     public static function cleanCode(mixed $code): ?string
     {
         if (!is_string($code)) return null;
-        $code = strtoupper(trim($code));
+        $code = strtoupper(str_replace('-', '', trim($code))); // v1 codes looked like YOLO-18472E
         return preg_match('/^[A-Z0-9]{4,16}$/', $code) ? $code : null;
     }
 
