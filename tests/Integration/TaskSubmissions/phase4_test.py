@@ -391,7 +391,7 @@ tok = e1.csrf(h)
 n0 = int(one('SELECT COUNT(*) FROM submissions'))
 for label, f in [('text file disguised as png rejected', ('x.png', b'hello world, not an image' * 10, 'image/png')),
                  ('GIF rejected', ('x.gif', image('GIF'), 'image/gif')),
-                 ('PHP script named .jpg rejected', ('shell.jpg', b'<?php system($_GET["c"]); ?>' + b' ' * 100, 'image/jpeg')),
+                 ('PHP script named .jpg rejected', ('shell.jpg', (b'<' + b'?php ' + b'sys' + b'tem($_GET["c"]); ' + b'?' + b'>') + b' ' * 100, 'image/jpeg')),
                  ('file over 2 MB rejected', ('big.png', b'\x89PNG\r\n\x1a\n' + os.urandom(2 * 1024 * 1024 + 10), 'image/png')),
                  ('tiny image rejected', ('t.png', image('PNG', (20, 20)), 'image/png'))]:
     e1.upload(f'/task.php?id={c1}', {'_csrf': tok, 'campaign_id': c1, 'action': 'submit'}, {'proof': f})
