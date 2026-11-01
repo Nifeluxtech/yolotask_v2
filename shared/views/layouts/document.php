@@ -3,12 +3,14 @@ declare(strict_types=1);
 
 /**
  * Long-form document layout (Terms, Privacy, Refunds).
- * Expects $docTitle, $docUpdated and trusted $docBody HTML from the page.
+ * Expects $docTitle, $docUpdated and trusted $docBody HTML from the page;
+ * optional $docEyebrow (default "YOLOTASK POLICY"). Also used by the public levels page.
  */
 $appName = yolotask_brand_name();
 $docTitle = is_string($docTitle ?? null) ? $docTitle : 'YOLOTASK';
 $docUpdated = is_string($docUpdated ?? null) ? $docUpdated : '';
 $docBody = is_string($docBody ?? null) ? $docBody : '';
+$docEyebrow = is_string($docEyebrow ?? null) && $docEyebrow !== '' ? $docEyebrow : 'YOLOTASK POLICY';
 $earnerUrl = yolotask_portal_url('earner');
 $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php' => 'Refunds'];
 ?>
@@ -44,7 +46,7 @@ $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php'
 
   <main id="main" class="container page">
     <article class="card legal-doc">
-      <p class="eyebrow text-xs fw-bold text-primary">YOLOTASK POLICY</p>
+      <p class="eyebrow text-xs fw-bold text-primary"><?= h($docEyebrow) ?></p>
       <h1><?= h($docTitle) ?></h1>
       <?php if ($docUpdated !== ''): ?><p class="text-sm text-faint"><?= h($docUpdated) ?></p><?php endif; ?>
       <?= $docBody ?>
