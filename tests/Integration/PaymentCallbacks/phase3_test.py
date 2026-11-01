@@ -124,6 +124,17 @@ def payout_cb(order_sn, osn, amount, status=1, sign=None):
     return hooks.req('/hooks/afrstar/payout.php', raw=json.dumps(payload).encode(), ctype='application/json')
 
 
+def wd(client, data):
+    """Withdrawal in two steps (migration 0014): preview (server-computed fee),
+    then confirm with the quoted fee. Errors at the preview step redirect with
+    a flash, exactly like the old single POST."""
+    s, l, h = client.post('/withdraw.php', dict(data, action='preview'))
+    if s != 200 or 'data-withdraw-preview' not in h:
+        return s, l, h
+    return client.post('/withdraw.php', {'_csrf': data.get('_csrf', ''), 'idem': data.get('idem', ''), 'action': 'confirm',
+                                         'amount': client.field(h, 'amount'), 'quoted_fee': client.field(h, 'quoted_fee')})
+
+
 def make_user(role, email, pw, verified=True):
     h = subprocess.run(['php', '-r', 'echo password_hash($argv[1], PASSWORD_DEFAULT);', pw], capture_output=True, text=True).stdout
     db(f"INSERT INTO users (display_name, email, password_hash, role, status, email_verified_at) VALUES ('{role.title()} Tester', '{email}', '{h}', '{role}', 'active', {'UTC_TIMESTAMP()' if verified else 'NULL'})")
@@ -328,19 +339,20 @@ check('security email sent for bank account', len(mails_to(earner_email)) == bef
 # ---------- withdrawal request, double submit, one-open rule, reject
 s, l, h = earner.get('/withdraw.php')
 wtok, widem = earner.csrf(h), earner.field(h, 'idem')
-earner.post('/withdraw.php', {'_csrf': wtok, 'idem': widem, 'amount': '500'})
+wd(earner, {'_csrf': wtok, 'idem': widem, 'amount': '500'})
 s, l, h = earner.get('/withdraw.php')
 check('withdrawal below ₦1,000 rejected', 'minimum withdrawal is ₦1,000.00' in h)
-earner.post('/withdraw.php', {'_csrf': wtok, 'idem': widem, 'amount': '50000'})
+wd(earner, {'_csrf': wtok, 'idem': widem, 'amount': '50000'})
 s, l, h = earner.get('/withdraw.php')
 check('withdrawal above balance rejected', 'available balance is ₦9,900.00' in h)
-earner.post('/withdraw.php', {'_csrf': 'bad', 'idem': widem, 'amount': '3000'})
+wd(earner, {'_csrf': 'bad', 'idem': widem, 'amount': '3000'})
 check('withdrawal without valid CSRF rejected', balance(eid) == (990000, 0))
-s, l, _ = earner.post('/withdraw.php', {'_csrf': wtok, 'idem': widem, 'amount': '3000'})
-s2, l2, _ = earner.post('/withdraw.php', {'_csrf': wtok, 'idem': widem, 'amount': '3000'})
+s, l, _ = wd(earner, {'_csrf': wtok, 'idem': widem, 'amount': '3000'})
+s2, l2, _ = earner.post('/withdraw.php', {'_csrf': wtok, 'idem': widem, 'action': 'confirm', 'amount': '3000', 'quoted_fee': '30000'})
 check('withdrawal request holds funds (double submit ignored)', balance(eid) == (690000, 300000) and one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == '1', balance(eid))
+check('default 10% fee stored on the request (gross held, fee and rate locked on the row)', db(f"SELECT amount_kobo, fee_kobo, fee_bps FROM withdrawals WHERE user_id = {eid}")[0] == ['300000', '30000', '1000'])
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': wtok, 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wd(earner, {'_csrf': wtok, 'idem': earner.field(h, 'idem'), 'amount': '1000'})
 s, l, h = earner.get('/withdraw.php')
 check('second open withdrawal refused', 'already have a withdrawal in progress' in h and balance(eid) == (690000, 300000))
 wid = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
@@ -357,7 +369,7 @@ check('rejected withdrawal cannot be approved', one(f"SELECT status FROM withdra
 
 # ---------- approve -> AfrStar payout -> success callback
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '2000'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '2000'})
 wid2 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
 check('second withdrawal holds ₦2,000', balance(eid) == (790000, 200000))
 s, l, h = admin.get('/withdrawals.php')
@@ -366,38 +378,40 @@ check('approve without CSRF rejected', one(f"SELECT status FROM withdrawals WHER
 s, l, _ = admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid2})
 w2 = db(f"SELECT status, order_sn, platform_osn FROM withdrawals WHERE id = {wid2}")[0]
 req = [r for r in fake_requests() if r['path'] == '/gateway/payout/'][-1]
-check('approve sends a correctly signed AfrStar bank payout', req['sign_ok'] and req['body']['amount'] == '2000.00' and req['body']['ifsc'] == '80000009'
+check('approve sends a correctly signed AfrStar bank payout of the net amount (₦2,000 - 10% fee)', req['sign_ok'] and req['body']['amount'] == '1800.00' and req['body']['ifsc'] == '80000009'
       and req['body']['account'] == '0123456789' and req['body']['type'] == 'bank' and req['body']['upi_handle'] == '' and req['body']['order_sn'] == w2[1], req)
 check('withdrawal is processing with platform_osn stored', w2[0] == 'processing' and w2[2].startswith('PO'), w2)
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid2})
 check('double approve sends nothing more', len([r for r in fake_requests() if r['path'] == '/gateway/payout/' and r['body']['order_sn'] == w2[1]]) == 1)
-s, l, h = payout_cb(w2[1], w2[2], '2000.00', sign='f' * 32)
+s, l, h = payout_cb(w2[1], w2[2], '1800.00', sign='f' * 32)
 check('payout callback with bad signature rejected', s == 400 and one(f"SELECT status FROM withdrawals WHERE id = {wid2}") == 'processing')
-s, l, h = payout_cb(w2[1], w2[2], '1999.00', sign=md5(AK, w2[2], 1, '1999.00'))
+s, l, h = payout_cb(w2[1], w2[2], '2000.00', sign=md5(AK, w2[2], 1, '2000.00'))
 check('payout callback with a different amount rejected', s == 400 and one(f"SELECT status FROM withdrawals WHERE id = {wid2}") == 'processing')
 before = len(mails_to(earner_email))
-s, l, h = payout_cb(w2[1], w2[2], '2000.00')
+s, l, h = payout_cb(w2[1], w2[2], '1800.00')
 check('payout success callback answers SUCCESS', s == 200 and h == 'SUCCESS')
 check('payout success finalises: held cleared, status paid', balance(eid) == (790000, 0) and one(f"SELECT status FROM withdrawals WHERE id = {wid2}") == 'paid', balance(eid))
+check('paid posting: held gross out, net to clearing, fee to system:withdrawal_fees', sorted(db(f"SELECT IF(a.kind = 'system', a.code, a.kind), e.direction, e.amount_kobo FROM ledger_entries e JOIN ledger_accounts a ON a.id = e.account_id JOIN ledger_transactions t ON t.id = e.transaction_id WHERE t.idempotency_key = 'wd-paid:{wid2}'"), key=lambda r: r[2])
+      == sorted([['wallet_held', 'debit', '200000'], ['system:afrstar_clearing', 'credit', '180000'], ['system:withdrawal_fees', 'credit', '20000']], key=lambda r: r[2]))
 check('paid email sent', len(mails_to(earner_email)) == before + 1 and 'paid' in mails_to(earner_email)[-1]['subject'])
-s, l, h = payout_cb(w2[1], w2[2], '2000.00')
+s, l, h = payout_cb(w2[1], w2[2], '1800.00')
 check('replayed payout success is a no-op', s == 200 and h == 'SUCCESS' and balance(eid) == (790000, 0))
-s, l, h = payout_cb(w2[1], w2[2], '2000.00', status=9)
+s, l, h = payout_cb(w2[1], w2[2], '1800.00', status=9)
 check('contradictory failure after paid goes to review, no money moves', s == 200 and balance(eid) == (790000, 0)
       and one(f"SELECT COUNT(*) FROM payment_reviews WHERE withdrawal_id = {wid2} AND kind = 'payout_conflict'") == '1')
 
 # ---------- approve -> failure callback refunds
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
 wid3 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
 s, l, h = admin.get('/withdrawals.php')
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid3})
 w3 = db(f"SELECT status, order_sn, platform_osn FROM withdrawals WHERE id = {wid3}")[0]
 before = len(mails_to(earner_email))
-s, l, h = payout_cb(w3[1], w3[2], '1000.00', status=9)
-check('payout failure refunds the wallet', s == 200 and h == 'SUCCESS' and balance(eid) == (790000, 0) and one(f"SELECT status FROM withdrawals WHERE id = {wid3}") == 'failed', balance(eid))
+s, l, h = payout_cb(w3[1], w3[2], '900.00', status=9)
+check('payout failure refunds the full gross amount (fee included)', s == 200 and h == 'SUCCESS' and balance(eid) == (790000, 0) and one(f"SELECT status FROM withdrawals WHERE id = {wid3}") == 'failed', balance(eid))
 check('failure email sent to the earner', len(mails_to(earner_email)) == before + 1 and 'could not be paid' in mails_to(earner_email)[-1]['subject'])
-payout_cb(w3[1], w3[2], '1000.00', status=9)
+payout_cb(w3[1], w3[2], '900.00', status=9)
 check('replayed failure does not refund twice', balance(eid) == (790000, 0))
 
 # ---------- AfrStar refuses the payout -> back to review, nothing sent twice
@@ -407,11 +421,11 @@ check('bank account change emails an alert', 'changed' in mails_to(earner_email)
 s, l, h = earner.get('/withdraw.php')
 check('withdrawals paused after a bank account change (24 h cooldown)', 'data-bank-cooldown' in h and 'Withdrawals paused until' in h)
 n_wd = one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}")
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
 check('withdrawal request refused during cooldown', one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
 db(f"UPDATE bank_accounts SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR) WHERE user_id = {eid}")
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1500'})
 wid4 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
 s, l, h = admin.get('/withdrawals.php')
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid4})
@@ -458,7 +472,7 @@ check('callback endpoints refuse GET', s == 405)
 check('every ledger transaction balances', one("SELECT COUNT(*) FROM (SELECT transaction_id FROM ledger_entries GROUP BY transaction_id HAVING SUM(CASE WHEN direction='debit' THEN amount_kobo ELSE -CAST(amount_kobo AS SIGNED) END) <> 0) x") == '0')
 check('total debits equal total credits', one("SELECT SUM(CASE WHEN direction='debit' THEN amount_kobo ELSE 0 END) = SUM(CASE WHEN direction='credit' THEN amount_kobo ELSE 0 END) FROM ledger_entries") == '1')
 clearing = int(one("SELECT balance_kobo FROM ledger_accounts WHERE code = 'system:afrstar_clearing'"))
-check('AfrStar clearing equals top-ups in minus payouts out', clearing == int(one("SELECT COALESCE(SUM(credited_kobo),0) FROM payment_orders WHERE status='paid'")) - int(one("SELECT COALESCE(SUM(amount_kobo),0) FROM withdrawals WHERE status='paid'")), clearing)
+check('AfrStar clearing equals top-ups in minus net payouts out (fees stay with the platform)', clearing == int(one("SELECT COALESCE(SUM(credited_kobo),0) FROM payment_orders WHERE status='paid'")) - int(one("SELECT COALESCE(SUM(amount_kobo - fee_kobo),0) FROM withdrawals WHERE status='paid'")), clearing)
 s, l, h = admin.get('/wallets.php')
 admin.post('/wallets.php', {'_csrf': admin.csrf(h), 'action': 'reconcile'})
 s, l, h = admin.get('/wallets.php')
@@ -506,12 +520,12 @@ check('sealed bank number shown masked after encryption', '••••0000' in 
 db("INSERT INTO settings (setting_key, setting_value) VALUES ('money.withdraw_daily_count', '2') ON DUPLICATE KEY UPDATE setting_value = '2'")
 n_wd = one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}")
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
 s, l, h = earner.get('/withdraw.php')
 check('daily withdrawal count limit enforced', 'withdrawals in 24 hours' in h and one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
 db("UPDATE settings SET setting_value = '10' WHERE setting_key = 'money.withdraw_daily_count'")
 db("INSERT INTO settings (setting_key, setting_value) VALUES ('money.withdraw_daily_max_kobo', '350000') ON DUPLICATE KEY UPDATE setting_value = '350000'")
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
 s, l, h = earner.get('/withdraw.php')
 check('daily withdrawal amount limit enforced (₦3,000 already used of ₦3,500)', 'limited to ₦3,500.00 in 24 hours' in h and 'up to ₦500.00' in h and one(f"SELECT COUNT(*) FROM withdrawals WHERE user_id = {eid}") == n_wd)
 db("DELETE FROM settings WHERE setting_key IN ('money.withdraw_daily_count', 'money.withdraw_daily_max_kobo')")
@@ -559,7 +573,7 @@ s, l, h = earner.get('/bank-account.php')
 earner.post('/bank-account.php', {'_csrf': earner.csrf(h), 'bank_code': '80000009', 'account_number': '0123456789', 'account_name': 'Ada Obi', 'password': PW})
 db(f"UPDATE bank_accounts SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR) WHERE user_id = {eid}")
 s, l, h = earner.get('/withdraw.php')
-earner.post('/withdraw.php', {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
+wd(earner, {'_csrf': earner.csrf(h), 'idem': earner.field(h, 'idem'), 'amount': '1000'})
 wid6 = one(f"SELECT id FROM withdrawals WHERE user_id = {eid} ORDER BY id DESC LIMIT 1")
 s, l, h = admin.get('/withdrawals.php')
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': wid6})
@@ -573,7 +587,7 @@ check('stuck payout flagged only once', 'stuck payouts flagged for review: 0' in
 s, l, h = admin.get('/payments.php')
 check('stuck payout visible in payment review', 'No AfrStar callback' in h)
 w6 = db(f"SELECT order_sn, platform_osn FROM withdrawals WHERE id = {wid6}")[0]
-payout_cb(w6[0], w6[1], '1000.00')
+payout_cb(w6[0], w6[1], '900.00')
 check('late success callback still completes the flagged payout', one(f"SELECT status FROM withdrawals WHERE id = {wid6}") == 'paid')
 
 # optional Paystack account-name lookup

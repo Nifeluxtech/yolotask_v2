@@ -1197,7 +1197,8 @@ x1.post('/bank-account.php', {'_csrf': x1.csrf(h), 'bank_code': '80000009', 'acc
 
 def withdraw(naira):
     s, l, h = x1.get('/withdraw.php')
-    x1.post('/withdraw.php', {'_csrf': x1.csrf(h), 'idem': x1.field(h, 'idem'), 'amount': str(naira)})
+    s, l, h = x1.post('/withdraw.php', {'_csrf': x1.csrf(h), 'idem': x1.field(h, 'idem'), 'action': 'preview', 'amount': str(naira)})
+    x1.post('/withdraw.php', {'_csrf': x1.csrf(h), 'idem': x1.field(h, 'idem'), 'action': 'confirm', 'amount': x1.field(h, 'amount'), 'quoted_fee': x1.field(h, 'quoted_fee')})
     return int(one(f"SELECT id FROM withdrawals WHERE user_id = {ids['x1']} ORDER BY id DESC LIMIT 1") or 0)
 
 
@@ -1209,14 +1210,14 @@ w2 = withdraw(1000)
 s, l, h = admin.get('/withdrawals.php')
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': w2})
 wr = db(f"SELECT order_sn, platform_osn FROM withdrawals WHERE id = {w2}")[0]
-payout_cb(wr[0], wr[1], '1000.00', 1)
+payout_cb(wr[0], wr[1], '900.00', 1)  # ₦1,000 less the default 10% fee
 check('earner inbox: withdrawal paid', any(n[0] == 'payments' and n[1].startswith('Withdrawal paid') for n in notes(ids['x1'])), db(f"SELECT status FROM withdrawals WHERE id = {w2}"))
 w3 = withdraw(1000)
 s, l, h = admin.get('/withdrawals.php')
 admin.post('/withdrawals.php', {'_csrf': admin.csrf(h), 'action': 'approve', 'withdrawal_id': w3})
 wr = db(f"SELECT order_sn, platform_osn FROM withdrawals WHERE id = {w3}")[0]
-payout_cb(wr[0], wr[1], '1000.00', 9)
-payout_cb(wr[0], wr[1], '1000.00', 9)
+payout_cb(wr[0], wr[1], '900.00', 9)
+payout_cb(wr[0], wr[1], '900.00', 9)
 check('earner inbox: withdrawal failed (once, despite a repeated callback)', len([n for n in notes(ids['x1']) if n[1].startswith('Withdrawal failed')]) == 1)
 
 # pruning
