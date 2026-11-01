@@ -21,6 +21,7 @@ $navItems = [
     ['label' => 'Home', 'url' => '#overview'],
     ['label' => 'Features', 'url' => '#features'],
     ['label' => 'How it works', 'url' => '#how-it-works'],
+    ['label' => 'Levels', 'url' => 'levels.php', 'icon' => 'chart'],
 ];
 $features = [
     ['icon' => '01', 'tag' => 'EARNERS', 'title' => 'Earn on your schedule', 'description' => 'Pick tasks that fit your time, follow the instructions and get rewarded for every approved proof.'],
