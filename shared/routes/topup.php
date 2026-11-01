@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
+use YoloTask\Growth\DepositCashback;
+use YoloTask\Growth\Referrals;
 use YoloTask\Money\Wallet;
 use YoloTask\Payments\AfrstarClient;
 use YoloTask\Payments\PaymentOrders;
@@ -43,6 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $wallet = Wallet::forUser($pdo, (int) $user['id']);
+$cashbackBps = DepositCashback::rateBps($pdo);
+$cashbackMin = DepositCashback::minDepositKobo($pdo);
 $csrf = Csrf::token();
 $phone = (string) ($user['phone'] ?? '');
 if (str_starts_with($phone, '+234')) $phone = '0' . substr($phone, 4);
@@ -61,6 +65,9 @@ ob_start();
 
   <section class="card" aria-labelledby="topup-title">
     <div class="card-header"><h2 id="topup-title">Top up your wallet</h2><span class="badge badge-info">Balance <?= h(yolotask_money($wallet['available_kobo'])) ?></span></div>
+    <?php if ($cashbackBps > 0): ?>
+      <p class="cashback-offer text-sm" role="note"><span class="badge badge-success">Get <?= h(Referrals::percent($cashbackBps)) ?> cashback on deposits</span><?php if ($cashbackMin > 0): ?> <span class="text-faint">Minimum top-up for cashback: <?= h(yolotask_money($cashbackMin)) ?>.</span><?php endif; ?></p>
+    <?php endif; ?>
     <p class="text-sm text-faint">You will pay on AfrStar's secure page by bank transfer. Your wallet is credited automatically as soon as AfrStar confirms the payment. No fees.</p>
     <form method="post" action="topup.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">

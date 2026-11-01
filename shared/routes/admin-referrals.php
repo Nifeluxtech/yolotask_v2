@@ -3,12 +3,13 @@ declare(strict_types=1);
 
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
+use YoloTask\Growth\DepositCashback;
 use YoloTask\Growth\Referrals;
 use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/growth-helpers.php';
 
-/* Admin: referral programme settings, milestones, flagged referrals and payouts. */
+/* Admin: referral programme settings, milestones, flagged referrals and payouts, and advertiser deposit cashback. */
 [$pdo, $admin] = yolotask_admin_growth_boot('admin.referrals_load_failed');
 $adminId = (int) $admin['id'];
 $filter = in_array($_GET['f'] ?? '', ['flagged', 'milestone', 'commission', 'reversed'], true) ? (string) $_GET['f'] : 'all';
@@ -28,6 +29,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ((int) $allow !== $oldAllowance) \YoloTask\Security\Audit::record($pdo, $adminId, 'admin.referral_ip_allowance_changed', 'settings', (int) $allow);
             yolotask_flash('Referral settings saved.');
             $back = 'referrals.php#settings';
+        } elseif ($action === 'cashback_settings') {
+            $minInput = trim(yolotask_post_str('cashback_min'));
+            DepositCashback::saveSettings($pdo, $adminId, yolotask_post_str('cashback_percent'), $minInput === '' ? 0 : yolotask_parse_naira($minInput));
+            yolotask_flash('Cashback settings saved.');
+            $back = 'referrals.php#cashback';
+        } elseif ($action === 'cashback_reverse') {
+            DepositCashback::reverse($pdo, $adminId, (int) yolotask_post_str('id'), yolotask_post_str('reason'));
+            yolotask_flash('Cashback reversed in the ledger.');
+            $back = 'referrals.php#cashback';
         } elseif ($action === 'milestone_save') {
             $id = (int) yolotask_post_str('id');
             $count = yolotask_post_str('task_count');
@@ -70,6 +80,11 @@ $milestones = Referrals::milestones($pdo);
 $flagged = Referrals::flagged($pdo);
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $payouts = Referrals::payouts($pdo, $filter, $page);
+$cbBps = DepositCashback::rateBps($pdo);
+$cbMin = DepositCashback::minDepositKobo($pdo);
+$cbStats = DepositCashback::stats($pdo);
+$cbPage = max(1, (int) ($_GET['cpage'] ?? 1));
+$cashbacks = DepositCashback::recent($pdo, $cbPage, 10);
 $csrf = Csrf::token();
 $naira = static fn (int $kobo): string => rtrim(rtrim(number_format($kobo / 100, 2, '.', ''), '0'), '.');
 ob_start();
@@ -127,6 +142,46 @@ ob_start();
     </form>
   </section>
 </div>
+
+<section class="card" id="cashback" aria-labelledby="cashback-title">
+  <div class="card-header"><h2 id="cashback-title">Advertiser deposit cashback</h2><span class="badge <?= $cbBps > 0 ? 'badge-success' : 'badge-warning' ?>"><?= $cbBps > 0 ? h(Referrals::percent($cbBps)) . ' on' : 'Off' ?></span></div>
+  <p class="text-sm text-faint">Every confirmed AfrStar top-up pays the advertiser this percentage of the amount credited, rounded down to the kobo, into their wallet balance (Dr system:deposit_cashback). Admin wallet credits, adjustments and bonuses never earn cashback, and cashback never earns referral commission. Paid so far: <?= number_format($cbStats['paid_count']) ?> top-up<?= $cbStats['paid_count'] === 1 ? '' : 's' ?>, <?= h(yolotask_money($cbStats['paid_kobo'])) ?>.</p>
+  <form method="post" action="referrals.php" class="stack">
+    <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="cashback_settings">
+    <div class="field"><label class="label" for="cashback_percent">Cashback on deposits (%)</label>
+      <input class="input" id="cashback_percent" name="cashback_percent" inputmode="decimal" value="<?= h(rtrim(rtrim(number_format($cbBps / 100, 2, '.', ''), '0'), '.')) ?>" required>
+      <span class="text-xs text-faint">0 to 50 (up to two decimals). 0 switches cashback off and hides the offer on the top-up page. Applies to deposits confirmed after you save.</span></div>
+    <div class="field"><label class="label" for="cashback_min">Minimum deposit for cashback (₦)</label>
+      <input class="input" id="cashback_min" name="cashback_min" inputmode="decimal" value="<?= h($naira($cbMin)) ?>" required>
+      <span class="text-xs text-faint">Top-ups below this get no cashback. 0 = no minimum.</span></div>
+    <button class="btn btn-primary" type="submit">Save cashback</button>
+  </form>
+  <?php if ($cashbacks['rows'] !== []): ?>
+    <ul class="user-list" style="margin-top:12px">
+      <?php foreach ($cashbacks['rows'] as $c): $cbPaid = (string) $c['status'] === 'paid'; ?>
+        <li class="user-row">
+          <div class="user-meta">
+            <strong>#<?= (int) $c['id'] ?> · <?= h(yolotask_money($c['amount_kobo'])) ?> to <?= h((string) $c['display_name']) ?></strong>
+            <span class="text-xs text-faint text-break">Cashback <?= h(Referrals::percent((int) $c['rate_bps'])) ?> of <?= h(yolotask_money($c['base_kobo'])) ?> top-up <?= h((string) $c['order_sn']) ?> · <?= h((string) $c['email']) ?> · <?= h(yolotask_wat((string) $c['created_at'])) ?></span>
+            <span class="user-tags"><span class="badge <?= $cbPaid ? 'badge-success' : 'badge-danger' ?>"><?= h(ucfirst((string) $c['status'])) ?></span></span>
+            <?php if (!$cbPaid && $c['reverse_reason']): ?><span class="text-xs text-faint">Reversed: <?= h((string) $c['reverse_reason']) ?></span><?php endif; ?>
+            <?php if ($cbPaid): ?>
+              <details class="danger-details" style="margin-top:8px">
+                <summary class="btn btn-ghost btn-sm">Reverse cashback</summary>
+                <form method="post" action="referrals.php" class="stack">
+                  <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="cashback_reverse"><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
+                  <input class="input" name="reason" minlength="5" maxlength="255" required placeholder="Reason (required, kept in the ledger)" aria-label="Reason">
+                  <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Take this cashback back from the advertiser's wallet?">Reverse in ledger</button>
+                </form>
+              </details>
+            <?php endif; ?>
+          </div>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+    <?= yolotask_pager($cashbacks, static fn (int $pg): string => 'referrals.php?cpage=' . $pg . '#cashback') ?>
+  <?php endif; ?>
+</section>
 
 <section class="card" id="flagged" aria-labelledby="flagged-title">
   <div class="card-header"><h2 id="flagged-title">Flagged sign-ups</h2><span class="badge <?= $flagged !== [] ? 'badge-warning' : 'badge-info' ?>"><?= count($flagged) ?></span></div>
