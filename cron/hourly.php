@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 /**
  * Hourly: release task rewards whose hold window has passed (only used when
- * the admin sets a reward hold above 0 hours) and run the campaign escrow /
+ * the admin sets a reward hold above 0 hours), catch up referral payouts
+ * (Phase 6) and run the campaign escrow /
  * revenue reconciliation, logging any mismatch (exit code 2). cPanel cron:
  *   5 * * * * /opt/cpanel/ea-php84/root/usr/bin/php $HOME/yolotask-v2-live/current/cron/hourly.php >> $HOME/yolotask-v2-live/runtime/logs/cron-hourly.log 2>&1
  */
@@ -17,6 +18,9 @@ try {
     $pdo = \YoloTask\Core\Database::connection();
     $t = gmdate('Y-m-d H:i:s') . 'Z';
     fwrite(STDOUT, "{$t} tasks: rewards released: " . \YoloTask\Tasks\Approvals::releaseDue($pdo) . "\n");
+    // Phase 6: pay referral milestones / deposit commissions that the immediate path missed (idempotent).
+    $sw = \YoloTask\Growth\Referrals::sweep($pdo);
+    fwrite(STDOUT, "{$t} referrals: catch-up paid {$sw['milestones']} milestone(s), {$sw['commissions']} commission(s)\n");
     $problems = \YoloTask\Money\Ledger::reconcileCampaigns($pdo);
     if ($problems === []) {
         fwrite(STDOUT, "{$t} campaigns: escrow reconciliation OK\n");

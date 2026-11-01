@@ -4,7 +4,8 @@ declare(strict_types=1);
 /**
  * Daily housekeeping. cPanel cron:
  *   15 2 * * * /usr/local/bin/php $HOME/yolotask-v2-live/current/cron/daily.php >/dev/null 2>&1
- * Removes expired sessions, used or expired codes and links, and old throttle rows,
+ * Removes expired sessions, used or expired codes and links, old throttle rows
+ * and read notifications older than 90 days (Phase 6),
  * expires stale unpaid AfrStar top-up orders (no money moves) and runs the
  * wallet/ledger reconciliation, logging any mismatch. Exit code 2 = mismatch.
  */
@@ -39,6 +40,13 @@ try {
     fwrite(STDOUT, "cleanup: forwarded AfrStar callbacks: " . (int) $n . " removed\n");
 } catch (Throwable $e) {
     fwrite(STDOUT, "cleanup: forwarded AfrStar callbacks: skipped (migration 0007 not applied)\n");
+}
+
+// Phase 6: read notifications older than notifications.retention_days (default 90) are removed.
+try {
+    fwrite(STDOUT, "cleanup: old read notifications: " . \YoloTask\Messaging\Notifications::prune($pdo) . " removed\n");
+} catch (Throwable $e) {
+    fwrite(STDOUT, "cleanup: old read notifications: skipped (migration 0009 not applied)\n");
 }
 
 // Phase 3: money housekeeping and reconciliation.
