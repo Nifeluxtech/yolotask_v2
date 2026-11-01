@@ -194,8 +194,8 @@ month_label = month_start_wat.strftime('%B %Y')
 
 base_w = int(one(f"""SELECT COALESCE(MAX(c), 0) FROM (SELECT COUNT(*) c FROM submissions s JOIN users u ON u.id = s.earner_user_id
     WHERE s.status = 'approved' AND s.decided_at >= '{fmt(earliest_start)}' AND u.role = 'earner' AND u.status = 'active' GROUP BY s.earner_user_id) x"""))
-base_r = int(one(f"""SELECT COALESCE(MAX(c), 0) FROM (SELECT COUNT(*) c FROM referral_payouts p JOIN users u ON u.id = p.referrer_user_id
-    WHERE p.status = 'paid' AND p.amount_kobo > 0 AND p.created_at >= '{fmt(earliest_start)}' AND u.status = 'active' GROUP BY p.referrer_user_id) x"""))
+base_r = int(one(f"""SELECT COALESCE(MAX(c), 0) FROM (SELECT COUNT(*) c FROM referrals r JOIN users u ON u.id = r.referrer_user_id
+    WHERE r.status = 'active' AND u.status = 'active' GROUP BY r.referrer_user_id) x"""))
 B = max(base_w, 2) + 10
 B2 = base_r + 3
 POOLN = max(B + 12, 75)
@@ -234,13 +234,21 @@ def subs(user, n, at, status='approved', offset=0):
         FROM campaigns WHERE title = '{POOL}' ORDER BY id LIMIT {n} OFFSET {offset}""")
 
 
+def referrals(referrer, n, at, status='active'):
+    """n people referred by `referrer`, joining at `at` (referee users created in bulk)."""
+    k = len(my_refs)
+    db(f"""INSERT INTO users (display_name, email, password_hash, role, status)
+        SELECT CONCAT('Referee{lt} Person'), CONCAT('lbrefee{tag}_{referrer}_{k}_', seq, '@example.test'), 'x', 'earner', 'active' FROM seq_1_to_{n}""")
+    db(f"""INSERT INTO referrals (referrer_user_id, referee_user_id, referee_role, code_used, status, created_at)
+        SELECT {referrer}, id, 'earner', 'LBTEST', '{status}', '{fmt(at)}' FROM users WHERE email LIKE 'lbrefee{tag}\\_{referrer}\\_{k}\\_%'""")
+    my_refs.extend(int(r[0]) for r in db(f"SELECT id FROM referrals WHERE referrer_user_id = {referrer} AND code_used = 'LBTEST'") if int(r[0]) not in my_refs)
+
+
 def payouts(referrer, n, at, amount, status='paid'):
-    ref = one(f"SELECT id FROM referrals WHERE referrer_user_id = {referrer} AND code_used = 'LBTEST'")
+    ref = one(f"SELECT id FROM referrals WHERE referrer_user_id = {referrer} AND code_used = 'LBTEST' ORDER BY id LIMIT 1")
     if ref is None:
-        referee = make_user('earner', f'lbref{referrer}x{tag}@gmail.com', PW, f'Referee{lt} Person')
-        db(f"INSERT INTO referrals (referrer_user_id, referee_user_id, referee_role, code_used, status) VALUES ({referrer}, {referee}, 'earner', 'LBTEST', 'active')")
-        ref = one(f"SELECT id FROM referrals WHERE referrer_user_id = {referrer} AND code_used = 'LBTEST'")
-        my_refs.append(int(ref))
+        referrals(referrer, 1, at)
+        ref = one(f"SELECT id FROM referrals WHERE referrer_user_id = {referrer} AND code_used = 'LBTEST' ORDER BY id LIMIT 1")
     referee = one(f"SELECT referee_user_id FROM referrals WHERE id = {ref}")
     db(f"""INSERT INTO referral_payouts (referral_id, referrer_user_id, referee_user_id, kind, base_kobo, amount_kobo, status, created_at)
         SELECT {ref}, {referrer}, {referee}, 'commission', 0, {amount}, '{status}', '{fmt(at)}' FROM seq_1_to_{n}""")
@@ -253,6 +261,8 @@ def cleanup():
         ids = ','.join(str(i) for i in my_refs)
         db(f"DELETE FROM referral_payouts WHERE referral_id IN ({ids})")
         db(f"DELETE FROM referrals WHERE id IN ({ids})")
+    db(f"DELETE FROM wallets WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'lbrefee{tag}\\_%')")
+    db(f"DELETE FROM users WHERE email LIKE 'lbrefee{tag}\\_%'")
     db(f"DELETE FROM earner_levels WHERE name IN ('Zen{lt}', 'Zenb{lt}', 'Hid{lt}')")
     setting('levels.enabled', '1')
 
@@ -279,15 +289,22 @@ try:
     subs(U['lv'], 60, old)
     subs(U['lv'], 10, old, 'rejected', offset=60)
     # Referrers
-    payouts(U['ra'], B2 + 4, inside + dt.timedelta(seconds=30), 500)
-    payouts(U['rb'], B2 + 3, inside + dt.timedelta(seconds=10), 400)
-    payouts(U['rc'], B2 + 3, inside + dt.timedelta(seconds=20), 400)
-    payouts(U['rd'], B2 + 1, inside, 300)
+    # Referrers are ranked by people referred in the period; the amount is referral earnings paid in it.
+    referrals(U['ra'], B2 + 4, inside + dt.timedelta(seconds=30))
+    referrals(U['rb'], B2 + 3, inside + dt.timedelta(seconds=10))
+    referrals(U['rc'], B2 + 3, inside + dt.timedelta(seconds=20))
+    referrals(U['rd'], B2 + 1, inside)
+    referrals(U['rd'], 4, inside, 'flagged')
+    referrals(U['rd'], 3, inside, 'rejected')
+    referrals(U['rstaff'], B2 + 10, inside)
+    referrals(U['rsusp'], B2 + 10, inside)
+    referrals(U['ra'], 4, earliest_start - dt.timedelta(seconds=1))  # before both periods (counts for all time)
+    payouts(U['ra'], 3, inside, 500)
+    payouts(U['ra'], 2, earliest_start - dt.timedelta(seconds=1), 500)  # paid before both periods
+    payouts(U['rd'], 2, inside, 300)
     payouts(U['rd'], 6, inside, 300, 'reversed')
     payouts(U['rd'], 3, inside, 0, 'skipped')
-    payouts(U['rstaff'], B2 + 10, inside, 900)
-    payouts(U['rsusp'], B2 + 10, inside, 900)
-    payouts(U['ra'], 4, earliest_start - dt.timedelta(seconds=1), 500)  # before both periods
+    payouts(U['rstaff'], 5, inside, 900)
 
     # ======================================================================
     # 3. Ranking, ties, exclusions (library)
@@ -302,10 +319,16 @@ try:
         check(f'[{period}] at most 50 rows, ranks 1..n', len(g['rows']) <= 50 and [r['rank'] for r in g['rows']] == list(range(1, len(g['rows']) + 1)))
         rr = lbq('get', 'referrers', period)
         a_, b_, c_, d_ = find(rr, U['ra']), find(rr, U['rb']), find(rr, U['rc']), find(rr, U['rd'])
-        check(f'[{period}] referrers: RA 1st, counts only payouts inside the period', a_ and a_['rank'] == 1 and a_['count'] == B2 + 4 and a_['total_kobo'] == (B2 + 4) * 500, a_)
+        check(f'[{period}] referrers: RA 1st by people referred inside the period, with earnings paid inside it', a_ and a_['rank'] == 1 and a_['count'] == B2 + 4 and a_['total_kobo'] == 3 * 500, a_)
         check(f'[{period}] referrers tie: advertiser RB (earlier) 2nd, RC 3rd', b_ and c_ and b_['rank'] == 2 and c_['rank'] == 3, (b_, c_))
-        check(f'[{period}] reversed and skipped payouts are left out', d_ is not None and d_['count'] == B2 + 1 and d_['total_kobo'] == (B2 + 1) * 300, d_)
+        check(f'[{period}] flagged/rejected referrals and reversed/skipped payouts are left out', d_ is not None and d_['count'] == B2 + 1 and d_['total_kobo'] == 2 * 300, d_)
         check(f'[{period}] staff and suspended referrers are left out', find(rr, U['rstaff']) is None and find(rr, U['rsusp']) is None)
+
+    rr = lbq('get', 'referrers', 'all')
+    a_ = find(rr, U['ra'])
+    check('[all] referrers: all-time count includes older referrals and earnings', a_ and a_['count'] == B2 + 8 and a_['total_kobo'] == 5 * 500 and rr['label'] == 'All time', a_)
+    g = lbq('get', 'workers', 'all')
+    check('[all] workers: old approved work counts all time', (find(g, U['lv']) or {}).get('count') == 60 or len(g['rows']) == 50, find(g, U['lv']))
 
     # boundaries with live rows
     for key, times in (('bw', [W - dt.timedelta(seconds=1)] * 7 + [W] * 2), ('bm', [MO - dt.timedelta(seconds=1)] * 5 + [MO] * 3)):
@@ -351,7 +374,10 @@ try:
     check('idle viewer sees "not on the board yet"', 'not on the board yet this month' in h and f'Nobody{lt} I.' in h)
     s, l, h = C['ra'].get('/leaderboard.php?board=referrers&period=month')
     rows = rows_html(h)
-    check('Top Referrers board: RA first with masked name and payout count', s == 200 and 'Top Referrers · This Month' in h and rows and f'Refa{lt} O.' in rows[0] and f'{B2 + 4} payouts' in rows[0] and 'lb-you' in rows[0])
+    check('Top Referrers board: RA first with masked name and referral count', s == 200 and 'Top Referrers · This Month' in h and rows and f'Refa{lt} O.' in rows[0] and f'{B2 + 4} referrals' in rows[0] and 'lb-you' in rows[0])
+    s2, l2, h2 = C['ra'].get('/leaderboard.php?board=referrers&period=all')
+    rows2 = rows_html(h2)
+    check('All Time tab: Top Referrers · All Time with all-time count', s2 == 200 and 'Top Referrers · All Time' in h2 and any(f'{B2 + 8} referrals' in x for x in rows2))
     s, l, hw = C['w1'].get('/leaderboard.php?board=referrers&period=month')
     check("referrer's surname is masked for other earners", f'Refa{lt} O.' in hw and f'Okonkwo{lt}' not in hw)
     check('month label shown', month_label in h)

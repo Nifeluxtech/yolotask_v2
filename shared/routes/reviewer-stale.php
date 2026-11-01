@@ -73,7 +73,7 @@ ob_start();
     <ul class="user-list">
       <?php foreach ($list['rows'] as $s): $mine = $s['claim_user_id'] !== null && (int) $s['claim_user_id'] === $rid; $v = $mine ? Instructions::version($pdo, (int) $s['campaign_id'], (int) $s['instructions_version']) : null; ?>
         <li class="user-row submission-row" data-stale="<?= (int) $s['id'] ?>">
-          <?= yolotask_proof_thumb($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null) ?>
+          <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? '')) ?>
           <div class="user-meta">
             <strong>#<?= (int) $s['id'] ?> · <?= h((string) $s['campaign_title']) ?></strong>
             <span class="text-xs text-faint"><?= h((string) $s['platform_name']) ?> <?= h((string) $s['task_type_name']) ?> · submitted <?= h(yolotask_wat((string) $s['submitted_at'])) ?> · auto-approves in <?= h(yolotask_until((string) $s['auto_approve_at'])) ?> · reward <?= h(yolotask_money($s['unit_reward_kobo'])) ?></span>

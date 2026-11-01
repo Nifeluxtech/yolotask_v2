@@ -20,7 +20,7 @@ try {
     Logger::error('leaderboard.load_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     yolotask_error_page(500);
 }
-$what = $board === 'referrers' ? 'referral earnings' : 'approved tasks';
+$what = $board === 'referrers' ? 'people referred' : 'approved tasks';
 $renderRow = static function (array $r) use ($board): string {
     return '<li class="lb-row' . ($r['is_viewer'] ? ' lb-you' : '') . ($r['rank'] !== null && $r['rank'] >= 1 && $r['rank'] <= 3 ? ' lb-top' : '') . '"' . ($r['is_viewer'] ? ' data-you' : '') . '>'
         . yolotask_leaderboard_rank($r['rank'])
@@ -33,8 +33,8 @@ ob_start();
 ?>
 <section class="card card-glow dash-hero" aria-labelledby="lb-title">
   <p class="text-xs fw-bold text-primary">LEADERBOARD</p>
-  <h2 id="lb-title"><?= $board === 'referrers' ? 'Top Referrers' : 'Top Workers' ?> · <?= $period === 'month' ? 'This Month' : 'This Week' ?></h2>
-  <p class="text-sm text-faint">Ranked by <?= h($what) ?> since <?= h($lb['since']) ?>, 12:00 AM (Lagos time). Ties go to whoever got there first. Names show first name and last initial only.</p>
+  <h2 id="lb-title"><?= $board === 'referrers' ? 'Top Referrers' : 'Top Workers' ?> · <?= h(yolotask_leaderboard_period_label($period)) ?></h2>
+  <p class="text-sm text-faint">Ranked by <?= h($what) ?><?= $period === 'all' ? ' since launch' : ' since ' . h($lb['since']) . ', 12:00 AM (Lagos time)' ?>.<?= $board === 'referrers' ? ' The amount is referral earnings paid in the same period.' : '' ?> Ties go to whoever got there first. Names show first name and last initial only.</p>
 </section>
 
 <?= yolotask_leaderboard_toggles('leaderboard.php', $board, $period) ?>
@@ -42,7 +42,7 @@ ob_start();
 <section class="card" aria-labelledby="lb-list-title">
   <div class="card-header"><h2 id="lb-list-title">Top <?= Leaderboard::LIMIT ?></h2><span class="badge badge-info"><?= h($lb['label']) ?></span></div>
   <?php if ($lb['rows'] === []): ?>
-    <div class="empty-state"><p class="text-faint"><?= $board === 'referrers' ? 'No referral earnings yet this ' . $period . '. Invite friends to get on the board.' : 'No approved tasks yet this ' . $period . '. Be the first on the board.' ?></p></div>
+    <div class="empty-state"><p class="text-faint"><?= $board === 'referrers' ? ($period === 'all' ? 'No referrals yet.' : 'No new referrals yet this ' . $period . '.') . ' Invite friends to get on the board.' : ($period === 'all' ? 'No approved tasks yet.' : 'No approved tasks yet this ' . $period . '.') . ' Be the first on the board.' ?></p></div>
   <?php else: ?>
     <ol class="lb-list">
       <?php foreach ($lb['rows'] as $r) echo $renderRow($r); ?>

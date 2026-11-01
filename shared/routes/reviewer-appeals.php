@@ -77,7 +77,7 @@ if ($detail) {
     <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $a['platform_name'] . ' · ' . $a['task_type_name'])) ?> · APPEAL #<?= (int) $a['id'] ?></p>
     <h2 id="ap-title" class="text-break"><?= h((string) $a['campaign_title']) ?></h2>
     <div class="wallet-sub"><span class="badge <?= h($class) ?>"><?= h($label) ?></span><span>Filed <strong><?= h(yolotask_wat((string) $a['created_at'])) ?></strong> · earner <?= h((string) $a['earner_name']) ?> · reward <?= h(yolotask_money($a['unit_reward_kobo'])) ?></span></div>
-    <p class="text-sm text-break"><a href="<?= h((string) $a['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $a['link_url']) ?></a></p>
+    <p class="text-sm text-break"><?php if (yolotask_safe_task_url((string) $a['link_url']) !== null): ?><a href="<?= h((string) $a['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $a['link_url']) ?></a><?php else: ?><span class="text-faint"><?= h((string) $a['link_url']) ?: 'No task link' ?></span><?php endif; ?></p>
   </section>
   <section class="card" aria-labelledby="in-title">
     <div class="card-header"><h2 id="in-title">Instructions the earner worked from</h2><span class="badge badge-info">Version <?= (int) $a['instructions_version'] ?></span></div>
@@ -90,7 +90,7 @@ if ($detail) {
   <section class="card" aria-labelledby="pf-title">
     <div class="card-header"><h2 id="pf-title">Proof</h2><span class="badge badge-info"><?= count($proofs) ?> file<?= count($proofs) === 1 ? '' : 's' ?></span></div>
     <div class="proof-grid">
-      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Added with the appeal' : 'Attempt ' . (int) $p['attempt'] ?></figcaption></figure><?php endforeach; ?>
+      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Added with the appeal' : 'Attempt ' . (int) $p['attempt'] ?><br><?= yolotask_task_link((string) ($a['link_url'] ?? '')) ?></figcaption></figure><?php endforeach; ?>
     </div>
     <?php if ($a['earner_note']): ?><p class="text-sm text-break">Earner's note with the proof: “<?= h((string) $a['earner_note']) ?>”</p><?php endif; ?>
   </section>
@@ -146,7 +146,7 @@ ob_start();
     <ul class="user-list">
       <?php foreach ($list['rows'] as $a): $mine = $a['claim_user_id'] !== null && (int) $a['claim_user_id'] === $rid; ?>
         <li class="user-row submission-row" data-appeal="<?= (int) $a['id'] ?>">
-          <?= yolotask_proof_thumb($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null) ?>
+          <?= yolotask_proof_cell($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null, (string) ($a['link_url'] ?? '')) ?>
           <div class="user-meta">
             <strong><a href="appeal.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a></strong>
             <span class="text-xs text-faint"><?= h((string) $a['platform_name']) ?> <?= h((string) $a['task_type_name']) ?> · filed <?= h(yolotask_wat((string) $a['created_at'])) ?> · rejected by <?= h(yolotask_rejection_source((string) $a['rejection_source'])) ?></span>

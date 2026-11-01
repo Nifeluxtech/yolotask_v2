@@ -92,6 +92,30 @@ function yolotask_proof_thumb(?int $proofId, string $label = 'Proof screenshot')
     return '<a class="proof-thumb" href="' . h($url) . '" target="_blank" rel="noopener"><img src="' . h($url) . '" alt="' . h($label) . '" loading="lazy" decoding="async"></a>';
 }
 
+/** The campaign's task link if it is a plain http(s) URL, else null (never javascript:, data:, etc.). */
+function yolotask_safe_task_url(?string $url): ?string
+{
+    $url = trim((string) $url);
+    if ($url === '' || strlen($url) > 2000 || preg_match('/[\x00-\x20\x7f<>"\'\\\\]/', $url)) return null;
+    $parts = parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) return null;
+    return in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true) ? $url : null;
+}
+
+/** "Open task link" (new tab) for reviewers comparing a proof with the task, or a muted placeholder. */
+function yolotask_task_link(?string $url, string $label = 'Open task link'): string
+{
+    $safe = yolotask_safe_task_url($url);
+    if ($safe === null) return '<span class="task-link text-xs text-faint">No task link</span>';
+    return '<a class="task-link text-xs" href="' . h($safe) . '" target="_blank" rel="noopener noreferrer nofollow" title="' . h($safe) . '" aria-label="' . h($label) . ' (opens in a new tab)">' . h($label) . ' <span aria-hidden="true">↗</span></a>';
+}
+
+/** Proof thumbnail with the task link right beside it (submission and appeal lists). */
+function yolotask_proof_cell(?int $proofId, ?string $taskUrl, string $label = 'Proof screenshot'): string
+{
+    return '<div class="proof-cell">' . yolotask_proof_thumb($proofId, $label) . yolotask_task_link($taskUrl) . '</div>';
+}
+
 function yolotask_post_str(string $key): string
 {
     return is_string($_POST[$key] ?? null) ? $_POST[$key] : '';

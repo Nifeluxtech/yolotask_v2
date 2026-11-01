@@ -82,7 +82,7 @@ if ($detail) {
   <section class="card" aria-labelledby="pf-title">
     <div class="card-header"><h2 id="pf-title">Your proof</h2><span class="badge badge-info"><?= count($proofs) ?> file<?= count($proofs) === 1 ? '' : 's' ?></span></div>
     <div class="proof-grid">
-      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Appeal screenshot' : 'Attempt ' . (int) $p['attempt'] ?></figcaption></figure><?php endforeach; ?>
+      <?php foreach ($proofs as $p): ?><figure><?= yolotask_proof_thumb((int) $p['id']) ?><figcaption class="text-xs text-faint"><?= (int) $p['is_appeal'] === 1 ? 'Appeal screenshot' : 'Attempt ' . (int) $p['attempt'] ?><br><?= yolotask_task_link((string) ($s['link_url'] ?? '')) ?></figcaption></figure><?php endforeach; ?>
     </div>
   </section>
   <?php if ($appeal !== null): [$aLabel, $aClass] = Appeals::statusLabel($appeal); ?>
