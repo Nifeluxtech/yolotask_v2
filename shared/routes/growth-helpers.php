@@ -16,6 +16,7 @@ function yolotask_admin_growth_tabs(PDO $pdo, string $active): string
     $tabs = [
         'referrals' => ['Referrals', 'referrals.php', $flagged],
         'levels' => ['Earner levels', 'levels.php', 0],
+        'leaders' => ['Leaderboard', 'leaders.php', 0],
         'interests' => ['Interests', 'interests.php', 0],
         'announcements' => ['Announcements', 'announcements.php', 0],
     ];

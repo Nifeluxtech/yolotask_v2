@@ -133,6 +133,7 @@ $eventLabels = [
     'admin.level_updated' => 'Updated an earner level',
     'admin.level_deleted' => 'Deleted an earner level',
     'admin.bonus_granted' => 'Gave a bonus',
+    'admin.leader_rewarded' => 'Paid a leadership bonus',
     'admin.announcement_created' => 'Published an announcement',
     'admin.announcement_withdrawn' => 'Withdrew an announcement',
 ];
@@ -299,7 +300,7 @@ ob_start();
       default => 'Here is an overview of your earner account and its security.',
   }) ?></p>
   <div class="hero-actions">
-    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="appeals.php">Appeals<?= ($adminAppeals ?? 0) > 0 ? ' (' . $adminAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="referrals.php">Referrals<?= ($refFlagged ?? 0) > 0 ? ' (' . $refFlagged . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="announcements.php">Announcements</a>
+    <?php if ($role === 'admin'): ?><a class="btn btn-primary btn-sm" href="campaigns.php">Campaign queue<?= $campaignQueue > 0 ? ' (' . $campaignQueue . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="users.php">Manage users</a><a class="btn btn-secondary btn-sm" href="withdrawals.php">Withdrawals<?= $adminMoney['withdrawals'] > 0 ? ' (' . $adminMoney['withdrawals'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="payments.php">Payment review<?= $adminMoney['reviews'] > 0 ? ' (' . $adminMoney['reviews'] . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="appeals.php">Appeals<?= ($adminAppeals ?? 0) > 0 ? ' (' . $adminAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="referrals.php">Referrals<?= ($refFlagged ?? 0) > 0 ? ' (' . $refFlagged . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="announcements.php">Announcements</a><a class="btn btn-secondary btn-sm" href="leaders.php">Leaderboard</a>
     <?php elseif ($role === 'earner'): ?><a class="btn btn-primary btn-sm" href="tasks.php">Find tasks</a><a class="btn btn-secondary btn-sm" href="wallet.php">My wallet</a><a class="btn btn-secondary btn-sm" href="withdraw.php">Withdraw</a><a class="btn btn-secondary btn-sm" href="referrals.php">Invite &amp; earn</a>
     <?php elseif ($role === 'advertiser'): ?><a class="btn btn-primary btn-sm" href="campaign-new.php">New campaign</a><a class="btn btn-secondary btn-sm" href="campaigns.php">My campaigns</a><a class="btn btn-secondary btn-sm" href="topup.php">Top up wallet</a><a class="btn btn-secondary btn-sm" href="referrals.php">Invite &amp; earn</a>
     <?php elseif ($role === 'reviewer'): ?><a class="btn btn-primary btn-sm" href="appeals.php">Appeal queue<?= ($openAppeals ?? 0) > 0 ? ' (' . $openAppeals . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="stale.php">Stale proofs<?= ($staleCount ?? 0) > 0 ? ' (' . $staleCount . ')' : '' ?></a><a class="btn btn-secondary btn-sm" href="history.php">My decisions</a>
@@ -318,7 +319,7 @@ ob_start();
 <?php if ($levelInfo !== null && $levelInfo['enabled'] && $levelInfo['level'] !== null): $lv = $levelInfo; ?>
 <section class="card level-card" aria-labelledby="level-title">
   <div class="level-head">
-    <span class="level-badge level-<?= h(strtolower(preg_replace('/[^a-z]/i', '', (string) $lv['level']['name']))) ?>"><?= yolotask_nav_icon('sparkle') ?><span id="level-title"><?= h((string) $lv['level']['name']) ?></span></span>
+    <a class="level-badge level-link level-<?= h(strtolower(preg_replace('/[^a-z]/i', '', (string) $lv['level']['name']))) ?>" href="levels.php" title="See all levels and benefits"><?= yolotask_nav_icon('sparkle') ?><span id="level-title"><?= h((string) $lv['level']['name']) ?></span></a>
     <span class="text-xs text-faint"><?= number_format($lv['approved']) ?> approved · <?= h(rtrim(rtrim(number_format($lv['rate'], 1), '0'), '.')) ?>% approval rate · hold up to <?= (int) $lv['max_active'] ?> tasks<?= $lv['premium'] ? ' · premium tasks unlocked' : '' ?></span>
   </div>
   <?php if ($lv['next'] !== null): $need = max(0, (int) $lv['next']['min_approved'] - $lv['approved']); ?>
@@ -327,6 +328,20 @@ ob_start();
   <?php else: ?>
     <p class="text-xs text-faint">Top level reached. Keep your approval rate up to stay here.</p>
   <?php endif; ?>
+  <a class="text-xs" href="levels.php">See all levels and benefits</a>
+</section>
+<?php endif; ?>
+
+<?php if ($role === 'earner'): ?>
+<section class="grid grid-2 quick-links" aria-label="Quick links">
+  <a class="card card-hover quick-link" href="leaderboard.php" data-quick="leaderboard">
+    <span class="stat-icon"><?= yolotask_nav_icon('chart') ?></span>
+    <span class="quick-text"><strong>Leaderboard</strong><span class="text-xs text-faint">Top workers and referrers this week and month</span></span>
+  </a>
+  <a class="card card-hover quick-link" href="levels.php" data-quick="levels">
+    <span class="stat-icon"><?= yolotask_nav_icon('sparkle') ?></span>
+    <span class="quick-text"><strong>Levels</strong><span class="text-xs text-faint">Requirements, benefits and your progress</span></span>
+  </a>
 </section>
 <?php endif; ?>
 
