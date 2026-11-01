@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005) and appeal/review rules (migration 0008). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -42,6 +42,12 @@ final class Settings
         'appeals.flag_min_overturns' => '3',
         'appeals.flag_rate_percent' => '30',
         'appeals.flag_window_days' => '30',
+        // Phase 6 referrals, levels and notifications (rows seeded by migration 0009).
+        'referrals.enabled' => '1',
+        'referrals.commission_bps' => '500',   // 5% of each confirmed advertiser deposit (0-5000 bps)
+        'levels.enabled' => '1',
+        'notifications.retention_days' => '90',
+        'referrals.ip_allowance' => '3',       // referred sign-ups per IP address / device per referrer before admin review (1-100)
     ];
 
     private static ?array $cache = null;
