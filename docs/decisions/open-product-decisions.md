@@ -37,4 +37,6 @@ settings, or Money settings) until the product owner decides otherwise.
 | Notification emails | Every category emails by default except task approvals, which stay in the inbox (one email per approved task would be noise; Hark choice). Announcements are inbox + banner only. Security emails are always sent | per user, `notifications.php` |
 | Notification retention | Read notifications deleted after 90 days; unread kept | `notifications.retention_days` |
 | Admin bonus | Separate from wallet adjustments: expense account `system:bonuses`, reason required, user notified | — |
+| Leaderboard | V1 port: Top Workers (approved tasks by approval time + rewards) and Top Referrers (paid referral milestones + deposit commissions, reversed excluded), this week (Mon 00:00 WAT) / this month (1st 00:00 WAT), top 50; first name + last initial for earners; staff, suspended and closed accounts excluded; advertisers can rank as referrers; ties to whoever got there first (Hark readings) | — |
+| Leadership rewards | Manual, from Admin → Growth → Leaderboard: ₦1–₦100,000, note ≤ 140 characters, paid as an admin bonus (`system:bonuses`), notified "Leadership bonus"; no automatic period-end payouts (`cron/close-leaderboard-period.php` stays a placeholder) | — |
 | Virtual numbers | Later phase | — |
