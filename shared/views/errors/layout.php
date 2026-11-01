@@ -3,7 +3,7 @@ declare(strict_types=1);
 $errorCode = is_string($errorCode ?? null) ? $errorCode : '500';
 $errorTitle = is_string($errorTitle ?? null) ? $errorTitle : 'Something went wrong';
 $errorBody = is_string($errorBody ?? null) ? $errorBody : '';
-$homeUrl = function_exists('yolotask_portal_url') && defined('YOLOTASK_APP_ROLE') ? yolotask_portal_url((string) YOLOTASK_APP_ROLE) : '/';
+$homeUrl = function_exists('yolotask_portal_url') && defined('YOLOTASK_APP_ROLE') ? yolotask_portal_url('main') : '/';
 ?>
 <!doctype html>
 <html lang="en" data-theme="dark">
