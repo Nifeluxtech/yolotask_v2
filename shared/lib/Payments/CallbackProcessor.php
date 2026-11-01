@@ -4,7 +4,7 @@ namespace YoloTask\Payments;
 
 use PDO;
 use YoloTask\Core\Logger;
-use YoloTask\Messaging\Mailer;
+use YoloTask\Messaging\Notifications;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
@@ -17,7 +17,8 @@ use YoloTask\Money\Wallet;
  * verify or persist gets a non-200 so AfrStar retries. Replays are no-ops.
  *
  * Returns ['status' => int, 'body' => string, 'after' => list<callable>];
- * `after` holds slow work (emails) to run once the response is sent.
+ * `after` holds slow work (notifications, emails, referral commission) to run
+ * once the response is sent.
  */
 final class CallbackProcessor
 {
@@ -78,8 +79,12 @@ final class CallbackProcessor
                 $pdo->prepare("UPDATE payment_orders SET status = 'paid', amount_paid_kobo = :p, credited_kobo = :c, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, ledger_transaction_id = :t, paid_at = UTC_TIMESTAMP(), provider_message = :m WHERE id = :id")
                     ->execute(['p' => $paid, 'c' => $orderAmount, 'o' => $osn, 'r' => $ref, 't' => $tx['id'], 'm' => mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), 'id' => (int) $order['id']]);
                 $outcome = 'credited';
-                $after[] = self::mailLater($pdo, (int) $order['user_id'], 'Your YOLOTASK wallet was funded', 'Top-up received',
+                $after[] = self::notifyLater($pdo, (int) $order['user_id'], 'topup:' . $order['id'], 'Top-up credited: ' . Money::format($orderAmount),
+                    'Your payment of ' . Money::format($orderAmount) . ' was added to your wallet (' . $order['order_sn'] . ').', 'wallet.php',
+                    'Your YOLOTASK wallet was funded', 'Top-up received',
                     ['We received your payment of ' . Money::format($orderAmount) . ' and added it to your YOLOTASK wallet.', 'Reference: ' . $order['order_sn']]);
+                $creditedOrderId = (int) $order['id'];
+                $after[] = static function () use ($pdo, $creditedOrderId): void { \YoloTask\Growth\Referrals::afterTopupCredited($pdo, $creditedOrderId); };
             } else {
                 $pdo->prepare("UPDATE payment_orders SET status = 'review', amount_paid_kobo = :p, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m WHERE id = :id")
                     ->execute(['p' => $paid, 'o' => $osn, 'r' => $ref, 'm' => 'Paid amount differs from the order; held for review', 'id' => (int) $order['id']]);
@@ -154,7 +159,8 @@ final class CallbackProcessor
                 ], 'withdrawal', (int) $w['id']);
                 $pdo->prepare("UPDATE withdrawals SET status = 'paid', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
-                $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal was paid', 'Withdrawal paid',
+                $after[] = self::notifyLater($pdo, (int) $w['user_id'], 'wd-paid:' . $w['id'], 'Withdrawal paid: ' . Money::format($payoutAmount),
+                    Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . '.', 'wallet.php', 'Your YOLOTASK withdrawal was paid', 'Withdrawal paid',
                     [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . '.', 'Reference: ' . $orderSn]);
                 $outcome = 'paid';
             } else {
@@ -164,7 +170,9 @@ final class CallbackProcessor
                 ], 'withdrawal', (int) $w['id']);
                 $pdo->prepare("UPDATE withdrawals SET status = 'failed', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
-                $after[] = self::mailLater($pdo, (int) $w['user_id'], 'Your YOLOTASK withdrawal could not be paid', 'Withdrawal failed',
+                $after[] = self::notifyLater($pdo, (int) $w['user_id'], 'wd-failed:' . $w['id'], 'Withdrawal failed: money returned',
+                    'Your withdrawal of ' . Money::format($payoutAmount) . ' could not be completed. The full amount is back in your wallet.', 'wallet.php',
+                    'Your YOLOTASK withdrawal could not be paid', 'Withdrawal failed',
                     ['Your withdrawal of ' . Money::format($payoutAmount) . ' to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . ' could not be completed by the bank.', 'The full amount is back in your YOLOTASK wallet. Check your bank details and try again.']);
                 $outcome = 'failed_refunded';
             }
@@ -274,17 +282,12 @@ final class CallbackProcessor
         return ['status' => $http, 'body' => $http === 200 ? 'SUCCESS' : strtoupper($outcome), 'after' => $after];
     }
 
-    private static function mailLater(PDO $pdo, int $userId, string $subject, string $heading, array $paragraphs): callable
+    /** Inbox item + email (per the user's "payments" email switch), run after the response is sent. */
+    private static function notifyLater(PDO $pdo, int $userId, string $dedupe, string $title, string $body, string $url, string $subject, string $heading, array $paragraphs): callable
     {
-        $stmt = $pdo->prepare('SELECT email FROM users WHERE id = :id');
-        $stmt->execute(['id' => $userId]);
-        $email = (string) $stmt->fetchColumn();
-        return static function () use ($email, $subject, $heading, $paragraphs): void {
-            try {
-                Mailer::send($email, $subject, $heading, $paragraphs, null, null, 'Questions? Reply to YOLOTASK support from your account email.');
-            } catch (\Throwable $e) {
-                Logger::error('payments.mail_failed', ['exception' => get_class($e)]);
-            }
+        return static function () use ($pdo, $userId, $dedupe, $title, $body, $url, $subject, $heading, $paragraphs): void {
+            Notifications::notify($pdo, $userId, 'payments', $title, $body, $url, $dedupe,
+                ['subject' => $subject, 'heading' => $heading, 'lines' => $paragraphs, 'footnote' => 'Questions? Reply to YOLOTASK support from your account email.']);
         };
     }
 }

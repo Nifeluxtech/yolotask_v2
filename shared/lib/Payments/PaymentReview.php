@@ -4,7 +4,6 @@ namespace YoloTask\Payments;
 
 use PDO;
 use RuntimeException;
-use YoloTask\Messaging\Mailer;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
@@ -69,11 +68,14 @@ final class PaymentReview
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
-        $email = $pdo->prepare('SELECT email FROM users WHERE id = :id');
-        $email->execute(['id' => $userId]);
-        Mailer::send((string) $email->fetchColumn(), 'Your YOLOTASK wallet was funded', 'Top-up received',
-            ['Your payment for top-up ' . $order['order_sn'] . ' was checked and ' . Money::format($amount) . ' (the amount you paid) was added to your wallet.'],
-            null, null, 'Questions? Reply to YOLOTASK support from your account email.');
+        \YoloTask\Messaging\Notifications::notify($pdo, $userId, 'payments', 'Top-up credited: ' . Money::format($amount),
+            'Your payment for top-up ' . $order['order_sn'] . ' was checked and ' . Money::format($amount) . ' was added to your wallet.', 'wallet.php', 'topup:' . $order['id'], [
+                'subject' => 'Your YOLOTASK wallet was funded', 'heading' => 'Top-up received',
+                'lines' => ['Your payment for top-up ' . $order['order_sn'] . ' was checked and ' . Money::format($amount) . ' (the amount you paid) was added to your wallet.'],
+                'footnote' => 'Questions? Reply to YOLOTASK support from your account email.',
+            ]);
+        // A reviewed AfrStar payment is a real deposit: it earns referral commission (an admin wallet credit never does).
+        \YoloTask\Growth\Referrals::afterTopupCredited($pdo, (int) $order['id']);
         return $amount;
     }
 

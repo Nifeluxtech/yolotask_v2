@@ -6,7 +6,6 @@ use PDO;
 use RuntimeException;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
-use YoloTask\Messaging\Mailer;
 use YoloTask\Money\Fees;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
@@ -178,11 +177,12 @@ final class Withdrawals
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
-        $email = $pdo->prepare('SELECT email FROM users WHERE id = :id');
-        $email->execute(['id' => $userId]);
-        Mailer::send((string) $email->fetchColumn(), 'Your YOLOTASK withdrawal was declined', 'Withdrawal declined',
-            ['Your withdrawal request of ' . Money::format((int) $w['amount_kobo']) . ' was declined.', 'Reason: ' . $reason, 'The full amount is back in your YOLOTASK wallet.'],
-            null, null, 'Questions? Reply to YOLOTASK support from your account email.');
+        \YoloTask\Messaging\Notifications::notify($pdo, $userId, 'payments', 'Withdrawal declined', 'Your withdrawal of ' . Money::format((int) $w['amount_kobo']) . ' was declined: ' . rtrim($reason, '. ') . '. The money is back in your wallet.',
+            'wallet.php', 'wd-rejected:' . $withdrawalId, [
+                'subject' => 'Your YOLOTASK withdrawal was declined', 'heading' => 'Withdrawal declined',
+                'lines' => ['Your withdrawal request of ' . Money::format((int) $w['amount_kobo']) . ' was declined.', 'Reason: ' . $reason, 'The full amount is back in your YOLOTASK wallet.'],
+                'footnote' => 'Questions? Reply to YOLOTASK support from your account email.',
+            ]);
     }
 
     public static function forUser(PDO $pdo, int $userId, int $limit = 10): array
