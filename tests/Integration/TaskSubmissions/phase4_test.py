@@ -213,7 +213,8 @@ check('advertiser wallet funded ₦1,000', balance(aid) == (100000, 0), balance(
 s, l, h = adv.get('/campaign-new.php')
 check('create page loads with platform + task selects and cost preview', s == 200 and 'name="platform_id"' in h and 'data-cost' in h)
 tok = adv.csrf(h)
-base = {'_csrf': tok, 'title': 'Follow Bola on Instagram', 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': 'basic',
+INTEREST1 = one("SELECT id FROM interests WHERE is_active = 1 ORDER BY sort_order, id LIMIT 1")  # every new campaign needs 1-3 interests
+base = {'_csrf': tok, 'interests[]': INTEREST1, 'title': 'Follow Bola on Instagram', 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': 'basic',
         'link_url': f'https://www.instagram.com/bola_{tag}/?utm_source=x&igshid=abc', 'instructions': 'Follow the page with your own account.',
         'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': '3', 'ends_at': ''}
 
