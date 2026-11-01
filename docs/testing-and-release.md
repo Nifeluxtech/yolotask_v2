@@ -28,3 +28,8 @@ reviewers, reconciliation and the read-only verification SQL.
 Run every suite with `rate_limits` and `login_attempts` emptied first; also
 run them against servers started with
 `YT_PHP_ARGS="-d disable_functions=sodium_crypto_secretbox,sodium_crypto_secretbox_open"`.
+
+Withdrawal fee and daily check-in (migration 0014):
+`tests/Integration/WithdrawalLifecycle/withdrawal_fee_test.py` and
+`tests/Integration/Growth/checkin_test.py` (see tests/README.md). Run them
+with the other suites, normally and against servers without sodium.

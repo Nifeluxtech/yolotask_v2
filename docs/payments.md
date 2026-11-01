@@ -22,7 +22,8 @@ callbacks answer 503.
 - **Withdrawal (earners).** One saved bank account (bank from the AfrStar
   code list, 10-digit NUBAN, typed account name; changing it needs the
   password and emails an alert). A request moves the amount from available to
-  held (`pending_review`); one open withdrawal per earner. Admin approves
+  held (`pending_review`); one open withdrawal per earner. A withdrawal fee
+  (below) is previewed first and taken from the amount at payout. Admin approves
   (status `processing` is committed first, then `/gateway/payout/` with order
   number `YTW<id>A<attempt>`) or rejects with a reason (hold released). A
   definitive AfrStar refusal returns it to review; an unclear outcome stays
@@ -30,7 +31,7 @@ callbacks answer 503.
 - **Admin.** Money → Wallets (totals, live AfrStar balance, reconciliation,
   user search, manual credit/debit with mandatory reason), Withdrawals,
   Payments & review (review queue, orders, raw callback log), Ledger, Money
-  settings (min/max top-up and withdrawal, unpaid-order expiry).
+  settings (min/max top-up and withdrawal, earner withdrawal fee, unpaid-order expiry).
 
 ## Hardening added with Phase 4
 
@@ -73,8 +74,49 @@ callbacks answer 503.
 
 Min top-up ₦100, max ₦500,000; min withdrawal ₦1,000, max ₦500,000; unpaid
 top-ups expire after 24 h (no money moves; a late confirmed payment still
-credits). No fees (`Money\Fees` returns 0). Top-up and withdrawal need a
-confirmed email.
+credits). No top-up fee. Earner withdrawal fee 10 % by default (see below).
+Top-up and withdrawal need a confirmed email.
+
+## Earner withdrawal fee (migration 0014)
+
+- **Rates.** Base rate `money.withdraw_fee_bps` (default 1000 = 10 %; Admin →
+  Money → Money settings, field "Earner withdrawal fee (%)" next to the
+  minimum withdrawal; 0–50 %, up to two decimals, 0 = free; audited as
+  `admin.withdrawal_fee_changed` with the new rate in basis points as target
+  id). Each earner level may set a lower rate (Admin → Growth → Earner
+  levels, "Withdrawal fee (%)"; empty = base; a value above the base is
+  refused on save, audited `admin.level_withdrawal_fee_changed`). If the base
+  is later lowered below a level's rate, the base applies (shown on the
+  levels page). With levels switched off, or before an earner reaches a
+  level, the base rate applies.
+- **Rounding.** fee = floor(gross × rate / 10000): rounded **down** to the
+  kobo, in the earner's favour (`Money\Fees::withdrawal`).
+- **Preview before submitting.** The withdraw form states the earner's
+  rate. "Preview withdrawal" posts the amount; the server checks it and
+  shows the amount, the fee (rate and level) and "You will receive" — nothing
+  is created or held. "Confirm" posts the amount with the fee shown;
+  `Withdrawals::request` recomputes it under the wallet lock and, if it no
+  longer matches (admin changed the rate, the earner's level changed, or the
+  form was tampered with), creates nothing and shows the new preview with
+  "The fee changed". A POST without the confirm step only previews.
+- **Locked at request.** The withdrawal stores `fee_bps`, `fee_kobo` and
+  `fee_level_id`; approval pays `amount − fee` through AfrStar and the payout
+  callback must carry that net amount. Later admin changes never affect a
+  queued or processing withdrawal.
+- **Refunds.** A rejected withdrawal or a failed payout returns the **full
+  gross amount, fee included**, to the available balance (the fee is only
+  booked when AfrStar confirms the payout).
+- **Limits on the gross amount.** The minimum (₦1,000), maximum and 24-hour
+  total are checked on the amount the earner enters, before the fee (the
+  existing code compared the requested amount, so the minimum stays a gross
+  minimum; ₦1,000 at 10 % pays out ₦900).
+- **Pre-0014 withdrawals stay free:** the migration sets `fee_kobo = 0`,
+  `fee_bps = 0` on every existing row, so they pay out in full.
+- **Shown:** withdraw page (rate, preview, open request with fee and net),
+  wallet list (fee, rate, "you receive" / "returned"), admin withdrawals list
+  (fee, rate, "pays ₦…", approve confirmation with the net), Money settings
+  badge.
+
 
 ## Referral commission (Phase 6)
 

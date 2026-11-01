@@ -99,3 +99,27 @@
   never earns referral commission. Reconciliation: account = sum of `paid`
   rows, rows match their ledger transactions, cashback only on the credited
   amount of a paid top-up (`database/verify/deposit_cashback_reconciliation.sql`).
+- Withdrawal fee and daily check-in (migration 0014). Two new system
+  accounts: `system:withdrawal_fees` (credit-normal revenue, no negative) and
+  `system:checkin_rewards` (debit-normal expense, no negative). A withdrawal
+  stores `fee_bps` and `fee_kobo` (= floor(gross × fee_bps / 10000)) when it
+  is requested; nothing recalculates them. Postings: request = Dr available
+  / Cr held (gross, unchanged); reject or failed payout = Dr held / Cr
+  available (**gross**: the full amount incl. the fee goes back, key
+  `wd-release:<id>`); paid = Dr held (gross) / Cr `system:afrstar_clearing`
+  (net = gross − fee, what AfrStar sent) / Cr `system:withdrawal_fees` (fee,
+  only when > 0), key `wd-paid:<id>`. The fee is recognised only when the
+  payout is confirmed, so a refund never has to reverse it.
+  **Why a separate revenue account and not `system:revenue`:** revenue must
+  keep equalling task margins (reconciliation rule). Daily check-in = Dr
+  `system:checkin_rewards` / Cr earner available, type `checkin_reward`, key
+  `checkin:<userId>:<YYYY-MM-DD>` (Lagos date); one `daily_checkins` row per
+  earner per Lagos day (unique). Reconciliation adds: fee account = fees of
+  paid withdrawals, every fee = floor(gross × rate) with rate ≤ 50 %, every
+  paid withdrawal sent the net through clearing and booked its fee, every
+  rejected/failed withdrawal refunded the gross; check-in account = rewards
+  paid, every check-in row matches its posting and key, no orphan postings
+  (`Money\Fees::reconcileWithdrawals`, `Growth\Checkin::reconcile`,
+  `database/verify/withdrawal_fee_checkin_reconciliation.sql`). AfrStar
+  clearing now equals top-ups in minus **net** payouts out.
+

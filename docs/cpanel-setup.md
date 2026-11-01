@@ -11,7 +11,7 @@ This setup guide prepares a **staging shell only**. The starter does not impleme
 
 ## Release deployment
 
-The top-level `.cpanel.yml` invokes `scripts/deploy/cpanel-release.sh`. It checks for a clean Git tree, copies the checked-out commit into `~/yolotask-v2-live/releases/<full-commit-sha>`, creates the private runtime directories if absent, and switches `~/yolotask-v2-live/current` to the new release. It does not run database migrations, and it does not create or alter cPanel domains.
+The top-level `.cpanel.yml` invokes `scripts/deploy/cpanel-release.sh`. It checks for a clean Git tree, copies the checked-out commit into `~/yolotask-v2-live/releases/<full-commit-sha>`, creates the private runtime directories if absent, and switches `~/yolotask-v2-live/current` to the new release. It applies pending database migrations (`scripts/migrate.php`) before switching, carries the server-only main-site files described below, and does not create or alter cPanel domains or the `public_html` link.
 
 The cPanel Git workflow is manual: update from GitHub, verify the reviewed commit SHA, then deploy. The symlink approach must be tested with the hosting provider. If symlinks are not followed by the webserver or are disallowed for document roots, stop and choose a host-approved deployment layout before proceeding.
 
@@ -22,6 +22,34 @@ Suggested document roots, if the host permits them:
 - `reviewer.yolotask.com` → `~/yolotask-v2-live/current/apps/reviewer/public`
 - `admin.yolotask.com` → `~/yolotask-v2-live/current/apps/admin/public`
 - `yolotask.com` → use the host-approved primary-domain arrangement; do not assume it can leave `public_html`.
+
+### Main site (`public_html`) and server-only files
+
+On the live account `~/public_html` is a symlink to one specific release
+(`~/yolotask-v2-live/releases/<sha>/apps/main/public`), not to `current`, so a
+new release does not reach the main site until that link is moved by hand.
+**Re-point it once** (the deploy script never changes it):
+
+    ln -sfn ~/yolotask-v2-live/current/apps/main/public ~/public_html.new && mv -Tf ~/public_html.new ~/public_html
+
+(`public_html` must already be a symlink; never run this over a real
+directory.) After that every deploy goes live on the main site when
+`current` switches. Until then the release script prints a NOTE naming the
+release `public_html` points at.
+
+That public root also holds two user-managed files that are not in Git:
+`mgm-relay.php` and `mgm-forward.php` (plain files, 0644). Before switching
+`current`, `scripts/deploy/cpanel-release.sh` copies each of them from the
+release `~/public_html` resolves to (fallback: `~/yolotask-v2-live/current/apps/main/public`)
+into the new release's `apps/main/public/`, keeping mode and timestamps
+(`cp -a`), and logs each copy or skip to
+`~/yolotask-v2-live/runtime/logs/deploy-carry.log`. A missing file is skipped
+and never fails the deploy. The list is configurable with
+`YOLOTASK_CARRY_PUBLIC_FILES` (space-separated plain file names; default
+`mgm-relay.php mgm-forward.php`; empty = carry nothing). Both names are in
+`.gitignore` (`/apps/main/public/…`) so a copy in the working tree never
+makes it dirty and blocks a deploy. Covered by
+`tests/smoke/cpanel-release-permissions.sh`.
 
 Private runtime config belongs at `~/yolotask-v2-live/config-private/app.local.php` and `database.local.php`. Private runtime storage is under `~/yolotask-v2-live/runtime`. Neither belongs in Git or a document root. Copy and edit the examples in `config/` only into these private locations. The DB credentials must be staging-only. No local or production secrets are included in the package.
 
