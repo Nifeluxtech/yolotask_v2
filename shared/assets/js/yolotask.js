@@ -161,6 +161,49 @@
     });
   }
 
+  /* ---------- Copy buttons and dismissible announcements (Phase 6) ---------- */
+  function initCopyAndAnnouncements() {
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-copy]');
+      if (!btn) return;
+      var field = document.querySelector(btn.getAttribute('data-copy'));
+      if (!field) return;
+      var text = field.value || field.textContent || '';
+      var done = function () { var old = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = old; }, 1600); };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, function () { field.select(); document.execCommand('copy'); done(); });
+      } else {
+        field.select(); try { document.execCommand('copy'); } catch (e) { /* ignore */ } done();
+      }
+    });
+    document.querySelectorAll('[data-announcement]').forEach(function (banner) {
+      var key = 'yt_ann_' + banner.getAttribute('data-announcement');
+      try { if (localStorage.getItem(key) === '1') { banner.hidden = true; return; } } catch (e) { /* storage off */ }
+      var close = banner.querySelector('[data-announcement-dismiss]');
+      if (close) close.addEventListener('click', function () {
+        banner.hidden = true;
+        try { localStorage.setItem(key, '1'); } catch (e) { /* storage off */ }
+      });
+    });
+  }
+
+  /* ---------- Interest chip pickers: live counter, lock at the maximum ---------- */
+  function initChipSelect() {
+    document.querySelectorAll('[data-chip-select]').forEach(function (set) {
+      var max = parseInt(set.getAttribute('data-chip-max'), 10) || 3;
+      var boxes = set.querySelectorAll('input[type=checkbox]');
+      var count = set.querySelector('[data-chip-count]');
+      var sync = function () {
+        var n = 0;
+        boxes.forEach(function (b) { if (b.checked) n += 1; });
+        boxes.forEach(function (b) { b.disabled = !b.checked && n >= max; b.closest('.chip').classList.toggle('is-locked', b.disabled); });
+        if (count) count.textContent = n + ' / ' + max;
+      };
+      set.addEventListener('change', sync);
+      sync();
+    });
+  }
+
   /* ---------- Active bottom nav ---------- */
   function initActiveNav() {
     if (document.querySelector('.bottom-nav a.active')) return; /* server already marked it */
@@ -188,6 +231,8 @@
     initPageTransitions();
     initActiveNav();
     initConfirmAndCountdown();
+    initCopyAndAnnouncements();
+    initChipSelect();
   }
 
   if (document.readyState === 'loading') {
