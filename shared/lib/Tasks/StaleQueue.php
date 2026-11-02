@@ -42,7 +42,7 @@ final class StaleQueue
     public static function queue(PDO $pdo, int $page): array
     {
         $where = "WHERE s.status = 'pending' AND s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)";
-        $sql = "SELECT s.id, s.campaign_id, s.submitted_at, s.auto_approve_at, s.attempts, s.comment, s.instructions_version, s.unit_price_kobo, s.unit_reward_kobo, c.title campaign_title, c.link_url, p.name platform_name, t.name task_type_name,
+        $sql = "SELECT s.id, s.campaign_id, s.submitted_at, s.auto_approve_at, s.attempts, s.comment, s.instructions_version, s.unit_price_kobo, s.unit_reward_kobo, c.title campaign_title, c.link_url, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
                 u.display_name earner_name, rc.reviewer_user_id claim_user_id, rc.expires_at claim_expires_at, cu.display_name claim_reviewer_name,
                 (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id
             FROM submissions s JOIN campaigns c ON c.id = s.campaign_id JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id JOIN users u ON u.id = s.earner_user_id

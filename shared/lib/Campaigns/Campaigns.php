@@ -84,9 +84,25 @@ final class Campaigns
         $type = Pricing::taskType($pdo, (int) ($in['task_type_id'] ?? 0));
         if ($type === null || !(int) $type['is_active']) throw new RuntimeException('Choose a task type.');
         $tier = ($in['tier'] ?? 'basic') === 'targeted' ? 'targeted' : 'basic';
+        $custom = Pricing::customRules($pdo);
+        $customPlatform = null;
+        $customTask = null;
+        if (Pricing::isCustom($platform) || Pricing::isCustom($type)) {
+            if (!$custom['enabled']) throw new RuntimeException('Custom apps, websites and tasks are switched off right now. Choose a listed platform and task.');
+        }
+        if (Pricing::isCustom($platform)) {
+            $customPlatform = self::cleanLabel((string) ($in['custom_platform_name'] ?? ''));
+            if (mb_strlen($customPlatform) < 2 || mb_strlen($customPlatform) > 60) throw new RuntimeException('Enter the name of your app or website (2 to 60 characters).');
+        }
+        if (Pricing::isCustom($type)) {
+            $customTask = self::cleanLabel((string) ($in['custom_task_name'] ?? ''));
+            if (mb_strlen($customTask) < 3 || mb_strlen($customTask) > 80) throw new RuntimeException('Describe the task in a few words (3 to 80 characters), for example "Download and sign up".');
+        }
         $link = CampaignLinks::validate((string) ($in['link_url'] ?? ''), $platform);
-        if (CampaignLinks::duplicateOpen($pdo, $link['hash'], (int) $type['id'], $exceptId)) {
-            throw new RuntimeException('A campaign for this link and task type is already running. Wait for it to finish, or choose a different task type.');
+        if (CampaignLinks::duplicateOpen($pdo, $link['hash'], (int) $type['id'], $exceptId, $customTask)) {
+            throw new RuntimeException($customTask !== null
+                ? 'A campaign with this link and the same task is already running. Wait for it to finish, or describe a different task.'
+                : 'A campaign for this link and task type is already running. Wait for it to finish, or choose a different task type.');
         }
         $text = Instructions::clean((string) ($in['instructions'] ?? ''), (string) ($in['proof_requirements'] ?? ''));
         $qtyRaw = trim((string) ($in['quantity'] ?? ''));
@@ -106,11 +122,26 @@ final class Campaigns
             if ($endLocal > $now->modify('+366 days')) throw new RuntimeException('The end date must be within a year.');
             $endsAt = $endLocal->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         }
-        $unit = Pricing::unit($type, $tier);
+        if ($customTask !== null) {
+            $raw = str_replace([',', ' ', '₦'], '', trim((string) ($in['custom_price'] ?? '')));
+            if (!preg_match('/^\d{1,6}$/', $raw)) throw new RuntimeException('Enter your price per task in whole naira, at least ' . Money::format($custom['min']) . '.');
+            $price = (int) $raw * 100;
+            if ($price < $custom['min'] || $price > Pricing::MAX_PRICE_KOBO) throw new RuntimeException('Your price per task must be between ' . Money::format($custom['min']) . ' and ' . Money::format(Pricing::MAX_PRICE_KOBO) . '.');
+            $reward = Pricing::customReward($price, $custom['percent']);
+            $unit = ['price' => $price, 'reward' => $reward, 'margin' => $price - $reward];
+        } else {
+            $unit = Pricing::unit($type, $tier);
+        }
         if ($unit['reward'] <= 0 || $unit['margin'] <= 0) throw new RuntimeException('This task type is not priced yet. Choose another.');
         $interests = Interests::parseSelection($pdo, $in['interests'] ?? null); // 1-3 active interests, required on every new campaign
-        return ['interests' => $interests, 'title' => $title, 'platform' => $platform, 'type' => $type, 'tier' => $tier, 'link' => $link, 'instructions' => $text['instructions'],
+        return ['custom_platform' => $customPlatform, 'custom_task' => $customTask, 'interests' => $interests, 'title' => $title, 'platform' => $platform, 'type' => $type, 'tier' => $tier, 'link' => $link, 'instructions' => $text['instructions'],
             'proof' => $text['proof'], 'quantity' => $qty, 'ends_at' => $endsAt, 'price' => $unit['price'], 'reward' => $unit['reward'], 'budget' => $unit['price'] * $qty];
+    }
+
+    /** One-line label typed by an advertiser: collapse whitespace, drop control characters. */
+    private static function cleanLabel(string $s): string
+    {
+        return trim((string) preg_replace('/\s+/u', ' ', (string) preg_replace('/[\x00-\x1F\x7F<>]/u', ' ', $s)));
     }
 
     /** Create a draft (no money moves). */
@@ -122,9 +153,9 @@ final class Campaigns
         $v = self::validateInput($pdo, $in);
         $pdo->beginTransaction();
         try {
-            $pdo->prepare('INSERT INTO campaigns (advertiser_user_id, platform_id, task_type_id, title, link_url, link_normalized, link_hash, instructions, proof_requirements, tier, unit_price_kobo, unit_reward_kobo, quantity, budget_kobo, auto_approve_hours, ends_at)
-                VALUES (:u, :p, :t, :ti, :l, :ln, :lh, :i, :pr, :tier, :price, :reward, :q, :b, :aa, :e)')
-                ->execute(['u' => $uid, 'p' => $v['platform']['id'], 't' => $v['type']['id'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
+            $pdo->prepare('INSERT INTO campaigns (advertiser_user_id, platform_id, task_type_id, custom_platform_name, custom_task_name, title, link_url, link_normalized, link_hash, instructions, proof_requirements, tier, unit_price_kobo, unit_reward_kobo, quantity, budget_kobo, auto_approve_hours, ends_at)
+                VALUES (:u, :p, :t, :cp, :ct, :ti, :l, :ln, :lh, :i, :pr, :tier, :price, :reward, :q, :b, :aa, :e)')
+                ->execute(['u' => $uid, 'p' => $v['platform']['id'], 't' => $v['type']['id'], 'cp' => $v['custom_platform'], 'ct' => $v['custom_task'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
                     'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'],
                     'aa' => self::advertiserAutoApproveHours($pdo, $uid), 'e' => $v['ends_at']]);
             $id = (int) $pdo->lastInsertId();
@@ -147,9 +178,9 @@ final class Campaigns
         $v = self::validateInput($pdo, $in, $id);
         $pdo->beginTransaction();
         try {
-            $upd = $pdo->prepare("UPDATE campaigns SET platform_id = :p, task_type_id = :t, title = :ti, link_url = :l, link_normalized = :ln, link_hash = :lh, instructions = :i, proof_requirements = :pr, tier = :tier,
+            $upd = $pdo->prepare("UPDATE campaigns SET platform_id = :p, task_type_id = :t, custom_platform_name = :cp, custom_task_name = :ct, title = :ti, link_url = :l, link_normalized = :ln, link_hash = :lh, instructions = :i, proof_requirements = :pr, tier = :tier,
                 unit_price_kobo = :price, unit_reward_kobo = :reward, quantity = :q, budget_kobo = :b, ends_at = :e WHERE id = :id AND status = 'draft'");
-            $upd->execute(['p' => $v['platform']['id'], 't' => $v['type']['id'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
+            $upd->execute(['p' => $v['platform']['id'], 't' => $v['type']['id'], 'cp' => $v['custom_platform'], 'ct' => $v['custom_task'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
                 'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'], 'e' => $v['ends_at'], 'id' => $id]);
             Instructions::replaceDraft($pdo, $id, $v['instructions'], $v['proof']);
             Interests::setForCampaign($pdo, $id, $v['interests']);
@@ -247,7 +278,7 @@ final class Campaigns
             if ((string) $c['status'] === 'pending_approval' && (int) $c['funded_kobo'] === (int) $c['budget_kobo']) { $pdo->commit(); return; } // double click
             if ((string) $c['status'] !== 'draft') throw new RuntimeException('This campaign has already been submitted.');
             if ($c['ends_at'] !== null && strtotime((string) $c['ends_at'] . ' UTC') <= time()) throw new RuntimeException('The end date has passed. Edit the campaign first.');
-            if (CampaignLinks::duplicateOpen($pdo, (string) $c['link_hash'], (int) $c['task_type_id'], $id)) throw new RuntimeException('A campaign for this link and task type is already running.');
+            if (CampaignLinks::duplicateOpen($pdo, (string) $c['link_hash'], (int) $c['task_type_id'], $id, $c['custom_task_name'] !== null ? (string) $c['custom_task_name'] : null)) throw new RuntimeException('A campaign for this link and task type is already running.');
             if (Interests::forCampaign($pdo, $id) === []) throw new RuntimeException('Choose 1 to ' . Interests::MAX . ' interests for this campaign before funding it.');
             if ($wallet['status'] !== 'active') throw new RuntimeException('Your wallet is on hold. Contact support.');
             $budget = (int) $c['budget_kobo'];
@@ -413,7 +444,7 @@ final class Campaigns
 
     // ---------------------------------------------------------------- reads
 
-    private const SELECT = 'SELECT c.*, p.name platform_name, p.slug platform_slug, t.name task_type_name, t.slug task_type_slug, u.display_name advertiser_name, u.email advertiser_email,
+    private const SELECT = 'SELECT c.*, COALESCE(c.custom_platform_name, p.name) platform_name, p.slug platform_slug, COALESCE(c.custom_task_name, t.name) task_type_name, t.slug task_type_slug, u.display_name advertiser_name, u.email advertiser_email,
         (SELECT COUNT(*) FROM task_reservations r WHERE r.campaign_id = c.id AND r.status = \'active\' AND r.expires_at > UTC_TIMESTAMP()) reserved_count
         FROM campaigns c JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id JOIN users u ON u.id = c.advertiser_user_id';
 

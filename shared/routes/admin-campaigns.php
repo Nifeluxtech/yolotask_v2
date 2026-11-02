@@ -99,7 +99,7 @@ if ($detail) {
 <?= yolotask_admin_market_tabs($pdo, 'campaigns') ?>
 <div class="wallet-grid">
   <section class="card card-glow dash-hero" aria-labelledby="c-title">
-    <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?> <?= yolotask_tier_badge((string) $c['tier']) ?></p>
+    <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?> <?= yolotask_tier_badge((string) $c['tier']) ?><?= ($c['custom_platform_name'] ?? null) !== null || ($c['custom_task_name'] ?? null) !== null ? ' <span class="badge badge-warning">Custom</span>' : '' ?></p>
     <h2 id="c-title" class="text-break"><?= h((string) $c['title']) ?></h2>
     <?php $quality = \YoloTask\Tasks\AdvertiserQuality::stats($pdo, (int) $c['advertiser_user_id']); ?>
     <div class="wallet-sub"><?= yolotask_campaign_badge((string) $c['status']) ?><span>By <strong><?= h((string) $c['advertiser_name']) ?></strong> <span class="text-break"><?= h((string) $c['advertiser_email']) ?></span></span><?php if ($quality['flagged']): ?><a class="badge badge-danger" href="appeals.php?view=flags">Quality flag</a><?php endif; ?></div>
@@ -188,7 +188,7 @@ ob_start();
         <li class="user-row" data-campaign="<?= (int) $c['id'] ?>">
           <div class="user-meta">
             <strong><a href="campaign.php?id=<?= (int) $c['id'] ?>">#<?= (int) $c['id'] ?> · <?= h((string) $c['title']) ?></a></strong>
-            <span class="text-xs text-faint text-break"><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format((int) $c['quantity']) ?> × <?= h(yolotask_money($c['unit_price_kobo'])) ?> = <?= h(yolotask_money($c['budget_kobo'])) ?> · <?= h((string) $c['advertiser_email']) ?></span>
+            <span class="text-xs text-faint text-break"><?= ($c['custom_platform_name'] ?? null) !== null || ($c['custom_task_name'] ?? null) !== null ? 'Custom · ' : '' ?><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format((int) $c['quantity']) ?> × <?= h(yolotask_money($c['unit_price_kobo'])) ?> = <?= h(yolotask_money($c['budget_kobo'])) ?> · <?= h((string) $c['advertiser_email']) ?></span>
             <span class="text-xs text-faint text-break"><?= h((string) $c['link_url']) ?></span>
             <span class="text-xs text-faint" data-interests>Interests: <?= h(implode(', ', $listInterests[(int) $c['id']] ?? ['all (none set)'])) ?></span>
             <span class="user-tags"><?= yolotask_campaign_badge((string) $c['status']) ?><?= yolotask_tier_badge((string) $c['tier']) ?><span class="text-xs text-faint"><?= (int) $c['approved_count'] ?>/<?= (int) $c['quantity'] ?> done<?= $c['submitted_at'] ? ' · submitted ' . h(yolotask_wat((string) $c['submitted_at'])) : '' ?></span></span>

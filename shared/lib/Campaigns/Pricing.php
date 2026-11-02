@@ -19,6 +19,29 @@ final class Pricing
 {
     public const MAX_PRICE_KOBO = 10000000; // ₦100,000 per task
 
+    public const CUSTOM_SLUG = 'custom';
+
+    public static function isCustom(?array $row): bool
+    {
+        return $row !== null && (string) ($row['slug'] ?? '') === self::CUSTOM_SLUG;
+    }
+
+    /** Custom-task rules from settings. @return array{enabled:bool,min:int,percent:int} */
+    public static function customRules(PDO $pdo): array
+    {
+        return [
+            'enabled' => \YoloTask\Core\Settings::int($pdo, 'campaigns.custom_enabled') === 1,
+            'min' => max(1, \YoloTask\Core\Settings::int($pdo, 'campaigns.custom_min_price_naira')) * 100,
+            'percent' => min(99, max(1, \YoloTask\Core\Settings::int($pdo, 'campaigns.custom_reward_percent'))),
+        ];
+    }
+
+    /** Earner reward for an advertiser-set custom price: percent of price, rounded down to the kobo. */
+    public static function customReward(int $priceKobo, int $percent): int
+    {
+        return intdiv($priceKobo * $percent, 100);
+    }
+
     public static function platforms(PDO $pdo, bool $activeOnly = true): array
     {
         $sql = 'SELECT id, slug, name, domains, is_active, sort_order FROM platforms' . ($activeOnly ? ' WHERE is_active = 1' : '') . ' ORDER BY sort_order, name';
@@ -71,6 +94,7 @@ final class Pricing
     {
         $row = self::taskType($pdo, $id);
         if ($row === null) throw new RuntimeException('Task type not found.');
+        if (self::isCustom($row)) throw new RuntimeException('The custom task is priced by each advertiser. Change its rules in Task settings.');
         $vals = [];
         foreach (['base_price_kobo', 'base_reward_kobo', 'premium_price_kobo', 'premium_reward_kobo'] as $k) {
             $v = $in[$k] ?? null;
@@ -114,7 +138,9 @@ final class Pricing
     /** Admin: platform name, link domains and active flag. */
     public static function savePlatform(PDO $pdo, int $adminId, int $id, string $name, string $domains, bool $active): void
     {
-        if (self::platform($pdo, $id) === null) throw new RuntimeException('Platform not found.');
+        $existing = self::platform($pdo, $id);
+        if ($existing === null) throw new RuntimeException('Platform not found.');
+        if (self::isCustom($existing)) throw new RuntimeException('Other app / website accepts any link. Turn it on or off in Task settings.');
         $name = trim($name);
         if (mb_strlen($name) < 2 || mb_strlen($name) > 60) throw new RuntimeException('Give the platform a name of 2 to 60 characters.');
         $list = CampaignLinks::parseDomains($domains);

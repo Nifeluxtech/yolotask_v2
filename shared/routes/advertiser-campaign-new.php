@@ -36,7 +36,7 @@ if ($editId > 0) {
     if ((string) $draft['status'] !== 'draft') yolotask_redirect('campaign.php?id=' . $editId);
 }
 $self = 'campaign-new.php' . ($editId > 0 ? '?id=' . $editId : '');
-$fields = ['title', 'platform_id', 'task_type_id', 'tier', 'link_url', 'instructions', 'proof_requirements', 'quantity', 'ends_at'];
+$fields = ['title', 'platform_id', 'task_type_id', 'tier', 'link_url', 'instructions', 'proof_requirements', 'quantity', 'ends_at', 'custom_platform_name', 'custom_task_name', 'custom_price'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     yolotask_csrf_or_back($self);
@@ -73,6 +73,7 @@ $val = static function (string $k) use ($old, $draft): string {
     if ($old !== null) return (string) ($old[$k] ?? '');
     if ($draft !== null) {
         if ($k === 'ends_at') return $draft['ends_at'] ? yolotask_wat((string) $draft['ends_at'], 'Y-m-d') : '';
+        if ($k === 'custom_price') return $draft['custom_task_name'] !== null ? (string) intdiv((int) $draft['unit_price_kobo'], 100) : '';
         return (string) ($draft[$k] ?? '');
     }
     return $k === 'tier' ? 'basic' : '';
@@ -85,8 +86,13 @@ if ($old !== null) {
 } else {
     $chosenInterests = [];
 }
+$custom = Pricing::customRules($pdo);
 $platforms = Pricing::platforms($pdo);
 $types = Pricing::taskTypes($pdo);
+if (!$custom['enabled']) {
+    $platforms = array_values(array_filter($platforms, static fn (array $p): bool => !Pricing::isCustom($p)));
+    $types = array_values(array_filter($types, static fn (array $t): bool => !Pricing::isCustom($t)));
+}
 $wallet = Wallet::forUser($pdo, $uid);
 $maxQty = Settings::int($pdo, 'campaigns.max_quantity');
 $minQty = Settings::int($pdo, 'campaigns.min_quantity');
@@ -109,14 +115,23 @@ ob_start();
         <div class="field"><label class="label" for="platform_id">Platform</label>
           <select class="input" id="platform_id" name="platform_id" required>
             <option value="">Choose…</option>
-            <?php foreach ($platforms as $p): ?><option value="<?= (int) $p['id'] ?>" data-domains="<?= h((string) $p['domains']) ?>"<?= $val('platform_id') === (string) $p['id'] ? ' selected' : '' ?>><?= h((string) $p['name']) ?></option><?php endforeach; ?>
+            <?php foreach ($platforms as $p): ?><option value="<?= (int) $p['id'] ?>" data-domains="<?= h((string) $p['domains']) ?>"<?= Pricing::isCustom($p) ? ' data-custom="1"' : '' ?><?= $val('platform_id') === (string) $p['id'] ? ' selected' : '' ?>><?= h((string) $p['name']) ?></option><?php endforeach; ?>
           </select></div>
         <div class="field"><label class="label" for="task_type_id">Task</label>
           <select class="input" id="task_type_id" name="task_type_id" required>
             <option value="">Choose…</option>
-            <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>" data-base="<?= (int) $t['base_price_kobo'] ?>" data-premium="<?= (int) $t['premium_price_kobo'] ?>" data-hint="<?= h((string) $t['proof_hint']) ?>"<?= $val('task_type_id') === (string) $t['id'] ? ' selected' : '' ?>><?= h((string) $t['name']) ?> · <?= h(Money::format((int) $t['base_price_kobo'])) ?></option><?php endforeach; ?>
+            <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= Pricing::isCustom($t) ? ' data-custom="1"' : '' ?> data-base="<?= (int) $t['base_price_kobo'] ?>" data-premium="<?= (int) $t['premium_price_kobo'] ?>" data-hint="<?= h((string) $t['proof_hint']) ?>"<?= $val('task_type_id') === (string) $t['id'] ? ' selected' : '' ?>><?= h((string) $t['name']) ?><?= Pricing::isCustom($t) ? '' : ' · ' . h(Money::format((int) $t['base_price_kobo'])) ?></option><?php endforeach; ?>
           </select></div>
       </div>
+      <div class="field" data-custom-platform hidden><label class="label" for="custom_platform_name">App or website name</label>
+        <input class="input" id="custom_platform_name" name="custom_platform_name" maxlength="60" value="<?= h($val('custom_platform_name')) ?>" placeholder="e.g. Nifelux App">
+        <p class="input-hint">Earners see this name on the task card. Any https:// link is accepted.</p></div>
+      <div class="field" data-custom-task hidden><label class="label" for="custom_task_name">Your task</label>
+        <input class="input" id="custom_task_name" name="custom_task_name" maxlength="80" value="<?= h($val('custom_task_name')) ?>" placeholder="e.g. Download and sign up">
+        <p class="input-hint">A few words. Explain the steps in the instructions below.</p></div>
+      <div class="field" data-custom-task hidden><label class="label" for="custom_price">Your price per task (₦)</label>
+        <input class="input" id="custom_price" name="custom_price" type="number" min="<?= intdiv($custom['min'], 100) ?>" max="<?= intdiv(Pricing::MAX_PRICE_KOBO, 100) ?>" step="1" inputmode="numeric" value="<?= h($val('custom_price')) ?>" placeholder="<?= intdiv($custom['min'], 100) ?>">
+        <p class="input-hint">At least <?= h(Money::format($custom['min'])) ?>. Earners receive <?= (int) $custom['percent'] ?>% of it. Premium does not change your price.</p></div>
       <fieldset class="field tier-choice"><legend class="label">Audience</legend>
         <label class="radio-card"><input type="radio" name="tier" value="basic"<?= $val('tier') !== 'targeted' ? ' checked' : '' ?>><span><strong>Standard</strong><span class="text-xs text-faint">Any verified earner can take it.</span></span></label>
         <label class="radio-card"><input type="radio" name="tier" value="targeted"<?= $val('tier') === 'targeted' ? ' checked' : '' ?>><span><strong>Premium</strong><span class="text-xs text-faint">Shown first in the feed, higher reward for earners. 1.5× price.</span></span></label>
@@ -142,19 +157,31 @@ ob_start();
   </section>
   <p class="text-center text-sm"><a href="<?= $draft ? 'campaign.php?id=' . (int) $draft['id'] : 'campaigns.php' ?>">Back</a></p>
 </div>
+<style>[data-custom-platform][hidden],[data-custom-task][hidden]{display:none}</style>
 <script>
 (function () {
   var f = document.querySelector('[data-campaign-form]'); if (!f) return;
   var out = f.querySelector('[data-cost]'), note = f.querySelector('[data-cost-note]');
+  var pct = <?= (int) $custom['percent'] ?>;
+  function sel(s) { return s.options[s.selectedIndex] || {}; }
+  function toggle() {
+    var cp = !!(sel(f.platform_id).dataset || {}).custom, ct = !!(sel(f.task_type_id).dataset || {}).custom;
+    f.querySelectorAll('[data-custom-platform]').forEach(function (el) { el.hidden = !cp; });
+    f.querySelectorAll('[data-custom-task]').forEach(function (el) { el.hidden = !ct; });
+    f.custom_platform_name.required = cp; f.custom_task_name.required = ct; f.custom_price.required = ct;
+    return ct;
+  }
   var fmt = function (k) { return '\u20A6' + (k / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   function update() {
     var opt = f.task_type_id.options[f.task_type_id.selectedIndex];
     var q = parseInt(f.quantity.value, 10);
     var tier = (f.querySelector('input[name=tier]:checked') || {}).value;
-    if (!opt || !opt.value || !q || q < 1) { out.textContent = '\u2014'; return; }
-    var unit = parseInt(tier === 'targeted' ? opt.dataset.premium : opt.dataset.base, 10);
+    if (!opt || !opt.value || !q || q < 1) { toggle(); out.textContent = '\u2014'; return; }
+    var ct = toggle();
+    var unit = ct ? (parseInt(f.custom_price.value, 10) || 0) * 100 : parseInt(tier === 'targeted' ? opt.dataset.premium : opt.dataset.base, 10);
+    if (!unit) { out.textContent = '\u2014'; note.textContent = 'Enter your price per task.'; return; }
     out.textContent = fmt(unit * q);
-    note.textContent = fmt(unit) + ' per task \u00D7 ' + q.toLocaleString('en-NG') + '. Unused money comes back to your wallet.';
+    note.textContent = fmt(unit) + ' per task \u00D7 ' + q.toLocaleString('en-NG') + (ct ? ' (earner gets ' + fmt(Math.floor(unit * pct / 100)) + ')' : '') + '. Unused money comes back to your wallet.';
     if (!f.proof_requirements.value && opt.dataset.hint) f.proof_requirements.placeholder = opt.dataset.hint;
   }
   f.addEventListener('input', update); f.addEventListener('change', update); update();

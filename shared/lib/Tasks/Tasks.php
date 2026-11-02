@@ -45,7 +45,7 @@ final class Tasks
         $where .= ' AND ' . $interestSql;
         if ($bind) $args['ix_me'] = $earnerId;
         if ($platformId !== null && $platformId > 0) { $where .= ' AND c.platform_id = :p'; $args['p'] = $platformId; }
-        $select = "SELECT c.id, c.title, c.tier, c.unit_reward_kobo, c.quantity, c.approved_count, c.pending_count, c.ends_at, p.name platform_name, p.slug platform_slug, t.name task_type_name,
+        $select = "SELECT c.id, c.title, c.tier, c.unit_reward_kobo, c.quantity, c.approved_count, c.pending_count, c.ends_at, COALESCE(c.custom_platform_name, p.name) platform_name, p.slug platform_slug, COALESCE(c.custom_task_name, t.name) task_type_name,
             (SELECT COUNT(*) FROM task_reservations r3 WHERE r3.campaign_id = c.id AND r3.status = 'active' AND r3.expires_at > UTC_TIMESTAMP()) reserved_count
             FROM campaigns c JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id {$where}";
         return Pagination::query($pdo, "SELECT COUNT(*) FROM campaigns c {$where}", $select . " ORDER BY c.tier = 'targeted' DESC, c.approved_at DESC, c.id DESC", $args, $page, self::PAGE_SIZE);
@@ -54,7 +54,7 @@ final class Tasks
     /** Tasks the earner has started and not yet submitted. */
     public static function inProgress(PDO $pdo, int $earnerId): array
     {
-        $stmt = $pdo->prepare("SELECT r.campaign_id, r.expires_at, c.title, c.unit_reward_kobo, p.name platform_name, t.name task_type_name FROM task_reservations r
+        $stmt = $pdo->prepare("SELECT r.campaign_id, r.expires_at, c.title, c.unit_reward_kobo, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name FROM task_reservations r
             JOIN campaigns c ON c.id = r.campaign_id JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id
             WHERE r.earner_user_id = :u AND r.status = 'active' AND r.expires_at > UTC_TIMESTAMP() AND c.status IN ('live', 'paused') ORDER BY r.expires_at");
         $stmt->execute(['u' => $earnerId]);

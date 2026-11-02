@@ -114,7 +114,7 @@ final class Submissions
             && empty($s['appeal_id']);
     }
 
-    private const SELECT = 'SELECT s.*, c.title campaign_title, c.status campaign_status, c.advertiser_user_id, c.link_url, c.quantity, p.name platform_name, t.name task_type_name,
+    private const SELECT = 'SELECT s.*, c.title campaign_title, c.status campaign_status, c.advertiser_user_id, c.link_url, c.quantity, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
         u.display_name earner_name, u.email earner_email,
         (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id,
         (SELECT ap.id FROM submission_appeals ap WHERE ap.submission_id = s.id) appeal_id,

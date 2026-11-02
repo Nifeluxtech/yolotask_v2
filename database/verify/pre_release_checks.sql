@@ -19,9 +19,10 @@ SELECT 'missing_system_account' AS problem, x.code FROM (
 -- 3. At least one active admin.
 SELECT 'no_active_admin' AS problem FROM (SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active') t WHERE t.n = 0;
 
--- 4. Catalog priced sensibly (reward below price, both positive).
+-- 4. Catalog priced sensibly (reward below price, both positive). The 'custom'
+--    task type is priced per campaign by the advertiser, so it is skipped here.
 SELECT 'bad_price' AS problem, slug, base_price_kobo, base_reward_kobo, premium_price_kobo, premium_reward_kobo FROM task_types
-WHERE base_reward_kobo <= 0 OR premium_reward_kobo <= 0 OR base_reward_kobo >= base_price_kobo OR premium_reward_kobo >= premium_price_kobo;
+WHERE slug <> 'custom' AND (base_reward_kobo <= 0 OR premium_reward_kobo <= 0 OR base_reward_kobo >= base_price_kobo OR premium_reward_kobo >= premium_price_kobo);
 
 -- 5. Bank account numbers encrypted at rest, enc2: (AES-256-GCM) or legacy enc1: (libsodium).
 --    Run scripts/encrypt-bank-details.php if not.
