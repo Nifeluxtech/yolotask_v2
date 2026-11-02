@@ -57,8 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     yolotask_redirect('catalog.php');
 }
 
-$types = Pricing::taskTypes($pdo, false);
-$platforms = Pricing::platforms($pdo, false);
+// The custom platform and task type are governed by Task settings, not priced here.
+$types = array_values(array_filter(Pricing::taskTypes($pdo, false), static fn (array $t): bool => !Pricing::isCustom($t)));
+$platforms = array_values(array_filter(Pricing::platforms($pdo, false), static fn (array $p): bool => !Pricing::isCustom($p)));
 $csrf = Csrf::token();
 $dec = static fn ($k): string => Money::decimal((int) $k);
 ob_start();

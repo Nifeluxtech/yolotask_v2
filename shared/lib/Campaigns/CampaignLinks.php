@@ -79,10 +79,14 @@ final class CampaignLinks
     }
 
     /** True when another open campaign already targets this link with this task type. */
-    public static function duplicateOpen(PDO $pdo, string $hash, int $taskTypeId, ?int $exceptCampaignId = null): bool
+    public static function duplicateOpen(PDO $pdo, string $hash, int $taskTypeId, ?int $exceptCampaignId = null, ?string $customTask = null): bool
     {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM campaigns WHERE link_hash = :h AND task_type_id = :t AND status IN ('pending_approval', 'live', 'paused') AND id <> :id");
-        $stmt->execute(['h' => $hash, 't' => $taskTypeId, 'id' => $exceptCampaignId ?? 0]);
+        // Custom tasks on one link are told apart by their wording (case-insensitive collation).
+        $extra = $customTask !== null ? ' AND custom_task_name = :ct' : '';
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM campaigns WHERE link_hash = :h AND task_type_id = :t AND status IN ('pending_approval', 'live', 'paused') AND id <> :id" . $extra);
+        $args = ['h' => $hash, 't' => $taskTypeId, 'id' => $exceptCampaignId ?? 0];
+        if ($customTask !== null) $args['ct'] = $customTask;
+        $stmt->execute($args);
         return (int) $stmt->fetchColumn() > 0;
     }
 }

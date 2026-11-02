@@ -137,7 +137,7 @@ final class Appeals
     }
 
     private const SELECT = "SELECT a.*, s.status submission_status, s.attempts, s.comment earner_note, s.unit_price_kobo, s.unit_reward_kobo, s.decision_source submission_decision_source, s.reward_status,
-        c.title campaign_title, c.status campaign_status, c.link_url, c.instructions current_instructions, c.instructions_version current_version, p.name platform_name, t.name task_type_name,
+        c.title campaign_title, c.status campaign_status, c.link_url, c.instructions current_instructions, c.instructions_version current_version, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
         eu.display_name earner_name, eu.email earner_email, au.display_name advertiser_name, au.email advertiser_email,
         rv.display_name resolver_name, ov.display_name overrider_name, rj.display_name rejecter_name,
         (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = a.submission_id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id,

@@ -36,6 +36,10 @@ final class Settings
         'tasks.proof_max_bytes' => '2097152',
         'campaigns.min_quantity' => '1',
         'campaigns.max_quantity' => '100000',
+        // Custom tasks (rows seeded by migration 0016).
+        'campaigns.custom_enabled' => '1',          // advertisers may use Other app / website and Custom task
+        'campaigns.custom_min_price_naira' => '100', // lowest price per custom task, whole naira
+        'campaigns.custom_reward_percent' => '80',   // earner share of a custom task price (1-99), rounded down
         // Phase 5 appeals, reviewer queues and advertiser quality flag (rows seeded by migration 0008).
         'appeals.window_hours' => '72',
         'reviews.claim_minutes' => '30',

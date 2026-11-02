@@ -31,6 +31,9 @@ $fields = [
     'tasks.auto_approve_max_hours' => ['Longest auto-approve window advertisers may pick (hours)', 12, 720, ''],
     'campaigns.min_quantity' => ['Minimum campaign quantity', 1, 100000, ''],
     'campaigns.max_quantity' => ['Maximum campaign quantity', 1, 100000, ''],
+    'campaigns.custom_enabled' => ['Allow custom apps, websites and tasks (1 = on, 0 = off)', 0, 1, 'Advertisers name their own app or site and task, and set their own price.'],
+    'campaigns.custom_min_price_naira' => ['Lowest price per custom task (₦)', 1, 100000, ''],
+    'campaigns.custom_reward_percent' => ['Earner share of a custom task price (%)', 1, 99, 'Rounded down. The rest is YOLOTASK revenue. Applies to new campaigns only.'],
 ];
 
 // Phase 5: appeals, reviewer queues and the advertiser quality flag (own form).
