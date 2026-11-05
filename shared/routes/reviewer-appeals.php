@@ -111,18 +111,18 @@ if ($detail) {
     <?php if ($ownDecision): ?>
       <p class="text-sm">You made the original decision on this proof, so another reviewer must handle the appeal.</p>
     <?php elseif ($mine): ?>
-      <form method="post" action="appeal.php?id=<?= (int) $a['id'] ?>" class="stack"><?= $hidden((int) $a['id']) ?>
+      <form method="post" data-live action="appeal.php?id=<?= (int) $a['id'] ?>" class="stack"><?= $hidden((int) $a['id']) ?>
         <div class="field"><label class="label" for="note">Decision note (the earner sees this)</label><textarea class="input" id="note" name="note" rows="3" minlength="5" maxlength="500" required></textarea></div>
         <div class="review-actions">
-          <button class="btn btn-primary btn-sm" type="submit" name="action" value="overturn" data-confirm="Overturn and pay the earner <?= h(yolotask_money($a['unit_reward_kobo'])) ?>?">Overturn and pay</button>
-          <button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="uphold">Uphold rejection</button>
+          <button class="btn btn-primary btn-sm" type="submit" name="action" value="overturn" data-live-busy="Overturning…" data-confirm="Overturn and pay the earner <?= h(yolotask_money($a['unit_reward_kobo'])) ?>?">Overturn and pay</button>
+          <button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="uphold" data-live-busy="Upholding…">Uphold rejection</button>
         </div>
       </form>
-      <form method="post" action="appeal.php?id=<?= (int) $a['id'] ?>"><?= $hidden((int) $a['id']) ?><button class="btn btn-ghost btn-sm" type="submit" name="action" value="release">Release to queue</button></form>
+      <form method="post" data-live action="appeal.php?id=<?= (int) $a['id'] ?>"><?= $hidden((int) $a['id']) ?><button class="btn btn-ghost btn-sm" type="submit" name="action" value="release" data-live-busy="Releasing…">Release to queue</button></form>
     <?php elseif ($taken): ?>
       <p class="text-sm">Another reviewer is working on this appeal. It returns to the queue if they release it or their claim expires.</p>
     <?php else: ?>
-      <form method="post" action="appeal.php?id=<?= (int) $a['id'] ?>"><?= $hidden((int) $a['id']) ?><button class="btn btn-primary btn-block" type="submit" name="action" value="claim">Claim this appeal</button></form>
+      <form method="post" data-live action="appeal.php?id=<?= (int) $a['id'] ?>"><?= $hidden((int) $a['id']) ?><button class="btn btn-primary btn-block" type="submit" name="action" value="claim" data-live-busy="Claiming…">Claim this appeal</button></form>
     <?php endif; ?>
   </section>
   <?php endif; ?>

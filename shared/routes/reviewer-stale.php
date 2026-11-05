@@ -72,7 +72,7 @@ ob_start();
   <?php else: ?>
     <ul class="user-list">
       <?php foreach ($list['rows'] as $s): $mine = $s['claim_user_id'] !== null && (int) $s['claim_user_id'] === $rid; $v = $mine ? Instructions::version($pdo, (int) $s['campaign_id'], (int) $s['instructions_version']) : null; ?>
-        <li class="user-row submission-row" data-stale="<?= (int) $s['id'] ?>">
+        <li class="user-row submission-row" data-stale="<?= (int) $s['id'] ?>" data-live-row="s<?= (int) $s['id'] ?>">
           <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? '')) ?>
           <div class="user-meta">
             <strong>#<?= (int) $s['id'] ?> · <?= h((string) $s['campaign_title']) ?></strong>
@@ -82,14 +82,14 @@ ob_start();
               <?php if ($v !== null): ?><details open><summary class="text-sm">Instructions (version <?= (int) $v['version'] ?>)</summary><div class="instructions text-break text-sm"><?= nl2br(h((string) $v['instructions'])) ?></div><p class="text-xs text-faint text-break">Proof required: <?= h((string) $v['proof_requirements']) ?></p></details><?php endif; ?>
               <span class="user-tags"><span class="badge badge-success" data-claim="mine">Yours until <?= h(yolotask_wat((string) $s['claim_expires_at'], 'g:i A')) ?></span></span>
               <div class="review-actions">
-                <form method="post" action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve">Approve</button></form>
-                <form method="post" action="<?= h($action) ?>" class="inline-form"><?= $hidden((int) $s['id']) ?><input class="input" name="reason" minlength="3" maxlength="255" required placeholder="Reason" aria-label="Reject reason"><button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="reject">Reject</button></form>
-                <form method="post" action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-ghost btn-sm" type="submit" name="action" value="release">Release</button></form>
+                <form method="post" data-live action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve" data-live-leave data-live-busy="Approving…">Approve</button></form>
+                <form method="post" data-live action="<?= h($action) ?>" class="inline-form"><?= $hidden((int) $s['id']) ?><input class="input" name="reason" minlength="3" maxlength="255" required placeholder="Reason" aria-label="Reject reason"><button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="reject" data-live-leave data-live-busy="Rejecting…">Reject</button></form>
+                <form method="post" data-live action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-ghost btn-sm" type="submit" name="action" value="release" data-live-busy="Releasing…">Release</button></form>
               </div>
             <?php elseif ($s['claim_user_id'] !== null): ?>
               <span class="user-tags"><span class="badge badge-warning" data-claim="taken">Claimed by <?= h((string) $s['claim_reviewer_name']) ?></span></span>
             <?php else: ?>
-              <form method="post" action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-secondary btn-sm" type="submit" name="action" value="claim">Claim</button></form>
+              <form method="post" data-live action="<?= h($action) ?>"><?= $hidden((int) $s['id']) ?><button class="btn btn-secondary btn-sm" type="submit" name="action" value="claim" data-live-busy="Claiming…">Claim</button></form>
             <?php endif; ?>
           </div>
         </li>
