@@ -892,6 +892,14 @@ select, textarea {
 .error-card p { margin: 0; }
 .error-page { padding-bottom: 0; }
 
+/* Live forms (reviewer queues): rows slide out at once, the claimed row flashes */
+[data-live-row] { transition: opacity 220ms ease, transform 220ms ease; }
+[data-live-row].is-leaving { opacity: 0; transform: translateX(24px); pointer-events: none; }
+[data-live-row].is-busy { opacity: .6; pointer-events: none; }
+[data-live-row].is-fresh { animation: live-fresh 900ms ease; }
+@keyframes live-fresh { from { background: var(--primary-soft); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { [data-live-row] { transition: none; } [data-live-row].is-fresh { animation: none; } }
+
 /* ============================================================
    YOLOTASK signature layer — carries V1's identity into V2:
    deep navy, glowing cyan-to-indigo gradients, floating orbs,

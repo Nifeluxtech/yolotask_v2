@@ -222,6 +222,85 @@
     });
   }
 
+
+  /* ---------- Live forms: submit in the background and swap the page content (no reload) ----------
+     Mark a <form method="post"> with data-live. The server keeps its normal POST -> 303 -> GET flow;
+     we fetch it, show the flash as a toast and swap <main>. Rows marked data-live-row slide out at once
+     when the pressed button carries data-live-leave. Without fetch the form submits normally. */
+  function initLiveForms() {
+    if (!window.fetch || !window.DOMParser || !window.URLSearchParams) return;
+    var main = document.getElementById('main');
+    if (!main) return;
+    var busy = false;
+
+    document.addEventListener('submit', function (event) {
+      var form = event.target;
+      if (event.defaultPrevented || !form.matches || !form.matches('form[data-live]')) return;
+      if (busy) { event.preventDefault(); return; }
+      var submitter = event.submitter || form.querySelector('[type=submit][data-live-last]') || null;
+      event.preventDefault();
+      busy = true;
+
+      var body = new URLSearchParams();
+      new FormData(form).forEach(function (v, k) { if (typeof v === 'string') body.append(k, v); });
+      if (submitter && submitter.name) body.append(submitter.name, submitter.value);
+
+      var row = form.closest('[data-live-row]');
+      var leaving = !!(row && submitter && submitter.hasAttribute('data-live-leave'));
+      var buttons = form.querySelectorAll('button, input[type=submit]');
+      var label = submitter ? submitter.textContent : '';
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (submitter && submitter.getAttribute('data-live-busy')) submitter.textContent = submitter.getAttribute('data-live-busy');
+      if (row) row.classList.add(leaving ? 'is-leaving' : 'is-busy');
+
+      var restore = function () {
+        buttons.forEach(function (b) { b.disabled = false; });
+        if (submitter && submitter.getAttribute('data-live-busy')) submitter.textContent = label;
+        if (row) row.classList.remove('is-leaving', 'is-busy');
+        busy = false;
+      };
+
+      fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: body,
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'fetch' },
+        redirect: 'follow'
+      }).then(function (res) {
+        return res.text().then(function (html) { return { res: res, html: html }; });
+      }).then(function (r) {
+        var doc = new DOMParser().parseFromString(r.html, 'text/html');
+        var next = doc.getElementById('main');
+        if (!r.res.ok || !next) { window.location.href = r.res.url || window.location.href; return; }
+        doc.querySelectorAll('.toast-container .toast').forEach(function (t) {
+          var msg = t.querySelector('.toast-msg');
+          var type = (t.className.match(/toast-(success|error|warning|info)/) || [])[1] || 'info';
+          if (msg) showToast(msg.textContent.trim(), type);
+        });
+        var swap = function () {
+          var keep = row ? row.getAttribute('data-live-row') : null;
+          main.innerHTML = next.innerHTML;
+          if (doc.title) document.title = doc.title;
+          var url = r.res.url ? new URL(r.res.url) : null;
+          if (url && url.origin === window.location.origin && (url.pathname + url.search) !== (window.location.pathname + window.location.search)) {
+            history.pushState({ live: 1 }, '', url.pathname + url.search);
+          }
+          if (keep) {
+            var same = main.querySelector('[data-live-row="' + keep + '"]');
+            if (same) same.classList.add('is-fresh');
+          }
+          busy = false;
+        };
+        if (leaving && !reduceMotion.matches) setTimeout(swap, 120); else swap();
+      }).catch(function () {
+        restore();
+        showToast('Network problem. Nothing changed, please try again.', 'error');
+      });
+    });
+
+    window.addEventListener('popstate', function (e) { if (e.state && e.state.live) window.location.reload(); });
+  }
+
   /* ---------- Boot ---------- */
   function boot() {
     initTheme();
@@ -233,6 +312,7 @@
     initConfirmAndCountdown();
     initCopyAndAnnouncements();
     initChipSelect();
+    initLiveForms();
   }
 
   if (document.readyState === 'loading') {
