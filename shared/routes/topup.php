@@ -69,6 +69,7 @@ ob_start();
       <p class="cashback-offer text-sm" role="note"><span class="badge badge-success">Get <?= h(Referrals::percent($cashbackBps)) ?> cashback on deposits</span><?php if ($cashbackMin > 0): ?> <span class="text-faint">Minimum top-up for cashback: <?= h(yolotask_money($cashbackMin)) ?>.</span><?php endif; ?></p>
     <?php endif; ?>
     <p class="text-sm text-faint">You will pay on AfrStar's secure page by bank transfer. Your wallet is credited automatically as soon as AfrStar confirms the payment. No fees.</p>
+    <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Deposits from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>
     <form method="post" action="topup.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
       <div class="field">
