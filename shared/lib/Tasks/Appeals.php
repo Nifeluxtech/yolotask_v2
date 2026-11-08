@@ -339,13 +339,9 @@ final class Appeals
         $cid = (int) $c['id'];
         $price = (int) $s['unit_price_kobo'];
         $unspent = (int) $c['funded_kobo'] - (int) $c['spent_kobo'] - (int) $c['refunded_kobo'];
-        $reserved = 0;
-        if (in_array((string) $c['status'], ['live', 'paused'], true)) {
-            $r = $pdo->prepare("SELECT COUNT(*) FROM task_reservations WHERE campaign_id = :c AND status = 'active' AND expires_at > UTC_TIMESTAMP()");
-            $r->execute(['c' => $cid]);
-            $reserved = (int) $r->fetchColumn();
-        }
-        $free = $unspent - ((int) $c['pending_count'] + $reserved) * $price;
+        // Escrow already promised: pending proofs and live reservations, each at its own price.
+        $reserved = in_array((string) $c['status'], ['live', 'paused'], true) ? Campaigns::reservedValue($pdo, $c) : 0;
+        $free = $unspent - Campaigns::pendingValue($pdo, $cid) - $reserved;
         $fromEscrow = max(0, min($price, $free));
         $shortfall = $price - $fromEscrow;
         $fromWallet = 0;

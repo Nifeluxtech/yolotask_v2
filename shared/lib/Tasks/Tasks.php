@@ -5,7 +5,6 @@ namespace YoloTask\Tasks;
 use PDO;
 use RuntimeException;
 use YoloTask\Campaigns\Campaigns;
-use YoloTask\Campaigns\Interests;
 use YoloTask\Core\Settings;
 use YoloTask\Growth\Levels;
 use YoloTask\Security\Audit;
@@ -22,10 +21,10 @@ use YoloTask\Support\Pagination;
  * can never take the last slot together. Expired reservations stop counting
  * immediately; cron marks them expired.
  * Phase 6: the earner's level (Growth\Levels) sets how many tasks they may
- * hold at once and whether premium (targeted) tasks are in their feed.
- * Interests: a premium task is shown and reservable only when the earner's
- * interests overlap the campaign's (Campaigns\Interests); enforced in the
- * feed query and again under the campaign lock in start().
+ * hold at once. Every live campaign is open to every earner.
+ * A reservation records the campaign's price and reward when it is made
+ * (migration 0017), and the submission is made at that price, so a later
+ * price change never alters a task the earner already started.
  */
 final class Tasks
 {
@@ -40,21 +39,17 @@ final class Tasks
             AND NOT EXISTS (SELECT 1 FROM submissions s2 JOIN campaigns c2 ON c2.id = s2.campaign_id WHERE s2.earner_user_id = :me4 AND s2.status IN ('pending', 'approved') AND c2.link_hash = c.link_hash AND c2.task_type_id = c.task_type_id)
             AND c.quantity + c.extra_approved_count > c.approved_count + c.pending_count + (SELECT COUNT(*) FROM task_reservations r2 WHERE r2.campaign_id = c.id AND r2.status = 'active' AND r2.expires_at > UTC_TIMESTAMP())";
         $args = ['me' => $earnerId, 'me2' => $earnerId, 'me3' => $earnerId, 'me4' => $earnerId];
-        if (!Levels::premiumAccess($pdo, $earnerId)) $where .= " AND c.tier <> 'targeted'"; // Phase 6: premium tasks follow the earner's level
-        [$interestSql, $bind] = Interests::feedCondition($pdo, $earnerId); // premium tasks follow the earner's interests
-        $where .= ' AND ' . $interestSql;
-        if ($bind) $args['ix_me'] = $earnerId;
         if ($platformId !== null && $platformId > 0) { $where .= ' AND c.platform_id = :p'; $args['p'] = $platformId; }
-        $select = "SELECT c.id, c.title, c.tier, c.unit_reward_kobo, c.quantity, c.approved_count, c.pending_count, c.ends_at, COALESCE(c.custom_platform_name, p.name) platform_name, p.slug platform_slug, COALESCE(c.custom_task_name, t.name) task_type_name,
+        $select = "SELECT c.id, c.title, c.unit_reward_kobo, c.quantity, c.approved_count, c.pending_count, c.ends_at, COALESCE(c.custom_platform_name, p.name) platform_name, p.slug platform_slug, COALESCE(c.custom_task_name, t.name) task_type_name,
             (SELECT COUNT(*) FROM task_reservations r3 WHERE r3.campaign_id = c.id AND r3.status = 'active' AND r3.expires_at > UTC_TIMESTAMP()) reserved_count
             FROM campaigns c JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id {$where}";
-        return Pagination::query($pdo, "SELECT COUNT(*) FROM campaigns c {$where}", $select . " ORDER BY c.tier = 'targeted' DESC, c.approved_at DESC, c.id DESC", $args, $page, self::PAGE_SIZE);
+        return Pagination::query($pdo, "SELECT COUNT(*) FROM campaigns c {$where}", $select . " ORDER BY c.approved_at DESC, c.id DESC", $args, $page, self::PAGE_SIZE);
     }
 
     /** Tasks the earner has started and not yet submitted. */
     public static function inProgress(PDO $pdo, int $earnerId): array
     {
-        $stmt = $pdo->prepare("SELECT r.campaign_id, r.expires_at, c.title, c.unit_reward_kobo, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name FROM task_reservations r
+        $stmt = $pdo->prepare("SELECT r.campaign_id, r.expires_at, c.title, COALESCE(r.unit_reward_kobo, c.unit_reward_kobo) unit_reward_kobo, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name FROM task_reservations r
             JOIN campaigns c ON c.id = r.campaign_id JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id
             WHERE r.earner_user_id = :u AND r.status = 'active' AND r.expires_at > UTC_TIMESTAMP() AND c.status IN ('live', 'paused') ORDER BY r.expires_at");
         $stmt->execute(['u' => $earnerId]);
@@ -64,7 +59,7 @@ final class Tasks
     /** The earner's reservation for a campaign, or null. */
     public static function reservation(PDO $pdo, int $campaignId, int $earnerId): ?array
     {
-        $stmt = $pdo->prepare('SELECT id, status, expires_at, started_count, expires_at > UTC_TIMESTAMP() AS still_valid FROM task_reservations WHERE campaign_id = :c AND earner_user_id = :u');
+        $stmt = $pdo->prepare('SELECT id, status, expires_at, started_count, unit_price_kobo, unit_reward_kobo, expires_at > UTC_TIMESTAMP() AS still_valid FROM task_reservations WHERE campaign_id = :c AND earner_user_id = :u');
         $stmt->execute(['c' => $campaignId, 'u' => $earnerId]);
         $row = $stmt->fetch();
         return is_array($row) ? $row : null;
@@ -76,16 +71,13 @@ final class Tasks
         $uid = self::requireEarner($user);
         if (Throttle::tooMany($pdo, 'task_start', (string) $uid, 30, 600)) throw new RuntimeException('You are starting tasks too quickly. Wait a few minutes.');
         $minutes = max(5, Settings::int($pdo, 'tasks.reservation_minutes'));
-        $level = Levels::forEarner($pdo, $uid); // Phase 6: the earner's level sets tasks held at once and premium access
+        $level = Levels::forEarner($pdo, $uid); // Phase 6: the earner's level sets how many tasks they may hold at once
         $maxActive = max(1, (int) $level['max_active']);
         $pdo->beginTransaction();
         try {
             $c = Campaigns::lockRow($pdo, $campaignId);
             if ((string) $c['status'] !== 'live' || ($c['ends_at'] !== null && strtotime((string) $c['ends_at'] . ' UTC') <= time())) throw new RuntimeException('This task is no longer available.');
             if ((int) $c['advertiser_user_id'] === $uid) throw new RuntimeException('This task is no longer available.');
-            if ((string) $c['tier'] === 'targeted' && !$level['premium']) throw new RuntimeException('Premium tasks unlock at a higher earner level. Keep completing tasks to level up.');
-            $block = Interests::premiumBlock($pdo, $uid, $c);
-            if ($block !== null) throw new RuntimeException($block);
             $sub = $pdo->prepare('SELECT id FROM submissions WHERE campaign_id = :c AND earner_user_id = :u');
             $sub->execute(['c' => $campaignId, 'u' => $uid]);
             if ($sub->fetchColumn() !== false) throw new RuntimeException('You have already submitted this task.');
@@ -104,12 +96,14 @@ final class Tasks
             $held->execute(['c' => $campaignId]);
             if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= Campaigns::capacity($c)) throw new RuntimeException('All slots for this task are taken right now. Check back later.');
 
+            // The slot is reserved at the campaign's current price and reward.
+            $price = ['pp' => (int) $c['unit_price_kobo'], 'pr' => (int) $c['unit_reward_kobo']];
             if ($mine === null) {
-                $pdo->prepare('INSERT INTO task_reservations (campaign_id, earner_user_id, status, expires_at) VALUES (:c, :u, \'active\', DATE_ADD(UTC_TIMESTAMP(), INTERVAL :m MINUTE))')
-                    ->execute(['c' => $campaignId, 'u' => $uid, 'm' => $minutes]);
+                $pdo->prepare('INSERT INTO task_reservations (campaign_id, earner_user_id, status, expires_at, unit_price_kobo, unit_reward_kobo) VALUES (:c, :u, \'active\', DATE_ADD(UTC_TIMESTAMP(), INTERVAL :m MINUTE), :pp, :pr)')
+                    ->execute(['c' => $campaignId, 'u' => $uid, 'm' => $minutes] + $price);
             } else {
-                $pdo->prepare("UPDATE task_reservations SET status = 'active', expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL :m MINUTE), started_count = started_count + 1 WHERE id = :id")
-                    ->execute(['m' => $minutes, 'id' => $mine['id']]);
+                $pdo->prepare("UPDATE task_reservations SET status = 'active', expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL :m MINUTE), started_count = started_count + 1, unit_price_kobo = :pp, unit_reward_kobo = :pr WHERE id = :id")
+                    ->execute(['m' => $minutes, 'id' => $mine['id']] + $price);
             }
             $exp = self::lockReservation($pdo, $campaignId, $uid);
             Audit::record($pdo, $uid, 'task.started', 'campaign', $campaignId);
@@ -148,7 +142,7 @@ final class Tasks
 
     public static function lockReservation(PDO $pdo, int $campaignId, int $earnerId): ?array
     {
-        $stmt = $pdo->prepare('SELECT id, status, expires_at FROM task_reservations WHERE campaign_id = :c AND earner_user_id = :u FOR UPDATE');
+        $stmt = $pdo->prepare('SELECT id, status, expires_at, unit_price_kobo, unit_reward_kobo FROM task_reservations WHERE campaign_id = :c AND earner_user_id = :u FOR UPDATE');
         $stmt->execute(['c' => $campaignId, 'u' => $earnerId]);
         $row = $stmt->fetch();
         return is_array($row) ? $row : null;

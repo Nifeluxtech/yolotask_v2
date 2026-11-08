@@ -43,9 +43,12 @@ final class Submissions
                 throw new RuntimeException('Your time for this task ran out. Start it again if slots are still free.');
             }
             $hours = (int) $c['auto_approve_hours'];
+            // The price the slot was reserved at (migration 0017); older reservations use the campaign's.
+            $price = $res['unit_price_kobo'] !== null ? (int) $res['unit_price_kobo'] : (int) $c['unit_price_kobo'];
+            $reward = $res['unit_reward_kobo'] !== null ? (int) $res['unit_reward_kobo'] : (int) $c['unit_reward_kobo'];
             $pdo->prepare("INSERT INTO submissions (campaign_id, earner_user_id, status, comment, instructions_version, unit_price_kobo, unit_reward_kobo, submitted_at, auto_approve_at)
                 VALUES (:c, :u, 'pending', :cm, :v, :p, :r, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL :h HOUR))")
-                ->execute(['c' => $campaignId, 'u' => $uid, 'cm' => $comment, 'v' => $c['instructions_version'], 'p' => $c['unit_price_kobo'], 'r' => $c['unit_reward_kobo'], 'h' => $hours]);
+                ->execute(['c' => $campaignId, 'u' => $uid, 'cm' => $comment, 'v' => $c['instructions_version'], 'p' => $price, 'r' => $reward, 'h' => $hours]);
             $id = (int) $pdo->lastInsertId();
             Proofs::store($pdo, $id, 1, $img);
             $pdo->prepare("UPDATE task_reservations SET status = 'submitted' WHERE id = :id")->execute(['id' => $res['id']]);
@@ -91,9 +94,11 @@ final class Submissions
             $held->execute(['c' => $c['id'], 'u' => $uid]);
             if ((int) $c['approved_count'] + (int) $c['pending_count'] + (int) $held->fetchColumn() >= Campaigns::capacity($c)) throw new RuntimeException('All slots for this task are taken right now. Try again later.');
             $attempt = (int) $s['attempts'] + 1;
-            $pdo->prepare("UPDATE submissions SET status = 'pending', attempts = :a, comment = :cm, instructions_version = :v, reject_reason = NULL, decision_source = NULL, decided_by_user_id = NULL, decided_at = NULL,
+            // A resubmission takes a fresh slot, so it is made at the campaign's current price and reward
+            // (the same as before unless the campaign was repriced since the first attempt).
+            $pdo->prepare("UPDATE submissions SET status = 'pending', attempts = :a, comment = :cm, instructions_version = :v, unit_price_kobo = :p, unit_reward_kobo = :r, reject_reason = NULL, decision_source = NULL, decided_by_user_id = NULL, decided_at = NULL,
                 submitted_at = UTC_TIMESTAMP(), auto_approve_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL :h HOUR) WHERE id = :id")
-                ->execute(['a' => $attempt, 'cm' => $comment, 'v' => $c['instructions_version'], 'h' => (int) $c['auto_approve_hours'], 'id' => $submissionId]);
+                ->execute(['a' => $attempt, 'cm' => $comment, 'v' => $c['instructions_version'], 'p' => (int) $c['unit_price_kobo'], 'r' => (int) $c['unit_reward_kobo'], 'h' => (int) $c['auto_approve_hours'], 'id' => $submissionId]);
             Proofs::store($pdo, $submissionId, $attempt, $img);
             if ($res !== null) $pdo->prepare("UPDATE task_reservations SET status = 'submitted' WHERE id = :id")->execute(['id' => $res['id']]);
             $pdo->prepare('UPDATE campaigns SET pending_count = pending_count + 1, rejected_count = GREATEST(rejected_count, 1) - 1 WHERE id = :id')->execute(['id' => $c['id']]);
