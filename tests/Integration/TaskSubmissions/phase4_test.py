@@ -178,26 +178,27 @@ e1, e2, e3, e4, e5 = earners
 
 # ---------- catalog seed and admin pricing
 check('8 platforms seeded', one("SELECT COUNT(*) FROM platforms WHERE slug IN ('instagram','tiktok','x','facebook','youtube','whatsapp','telegram','threads')") == '8')
-check('follow priced ₦25 / ₦15, premium ₦38 / ₦23', db("SELECT base_price_kobo, base_reward_kobo, premium_price_kobo, premium_reward_kobo FROM task_types WHERE slug = 'follow'")[0] == ['2500', '1500', '3800', '2300'])
-check('watch priced ₦20 / ₦12, premium ₦30 / ₦18', db("SELECT base_price_kobo, base_reward_kobo, premium_price_kobo, premium_reward_kobo FROM task_types WHERE slug = 'watch'")[0] == ['2000', '1200', '3000', '1800'])
+check('follow priced ₦25 / ₦15', db("SELECT base_price_kobo, base_reward_kobo FROM task_types WHERE slug = 'follow'")[0] == ['2500', '1500'])
+check('watch priced ₦20 / ₦12', db("SELECT base_price_kobo, base_reward_kobo FROM task_types WHERE slug = 'watch'")[0] == ['2000', '1200'])
 s, l, h = admin.get('/catalog.php')
 check('admin catalog page lists task types and platforms', s == 200 and 'data-task-type="follow"' in h and 'data-platform="telegram"' in h)
+check('catalog has one price and reward per task type (no premium fields)', 'name="base_price"' in h and 'name="base_reward"' in h and 'premium' not in h.lower())
 follow_id = int(one("SELECT id FROM task_types WHERE slug = 'follow'"))
 like_id = int(one("SELECT id FROM task_types WHERE slug = 'like'"))
 comment_id = int(one("SELECT id FROM task_types WHERE slug = 'comment'"))
 ig_id = int(one("SELECT id FROM platforms WHERE slug = 'instagram'"))
 tt_id = int(one("SELECT id FROM platforms WHERE slug = 'tiktok'"))
-admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'x', 'base_price': '10', 'base_reward': '12', 'premium_price': '23', 'premium_reward': '15', 'is_active': '1'})
+admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'x', 'base_price': '10', 'base_reward': '12', 'is_active': '1'})
 check('admin cannot set reward above price', one(f"SELECT base_price_kobo FROM task_types WHERE id = {like_id}") == '1500')
-admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'Screenshot of the post showing your like.', 'base_price': '16', 'base_reward': '10', 'premium_price': '24', 'premium_reward': '15', 'is_active': '1'})
+admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'Screenshot of the post showing your like.', 'base_price': '16', 'base_reward': '10', 'is_active': '1'})
 check('admin edits like price', one(f"SELECT base_price_kobo FROM task_types WHERE id = {like_id}") == '1600')
-admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'Screenshot of the post showing your like.', 'base_price': '15', 'base_reward': '10', 'premium_price': '23', 'premium_reward': '15', 'is_active': '1'})
-admin.post('/catalog.php', {'_csrf': 'bad', 'action': 'save_type', 'id': like_id, 'name': 'Hacked', 'proof_hint': '', 'base_price': '99', 'base_reward': '1', 'premium_price': '99', 'premium_reward': '1', 'is_active': '1'})
+admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'save_type', 'id': like_id, 'name': 'Like', 'proof_hint': 'Screenshot of the post showing your like.', 'base_price': '15', 'base_reward': '10', 'is_active': '1'})
+admin.post('/catalog.php', {'_csrf': 'bad', 'action': 'save_type', 'id': like_id, 'name': 'Hacked', 'proof_hint': '', 'base_price': '99', 'base_reward': '1', 'is_active': '1'})
 check('catalog change without CSRF refused', one(f"SELECT name FROM task_types WHERE id = {like_id}") == 'Like')
 s, l, h = admin.get('/catalog.php')
 admin.post('/catalog.php', {'_csrf': admin.csrf(h), 'action': 'add_type', 'name': f'Save post {tag}', 'base_price': '30', 'base_reward': '20'})
-r = db(f"SELECT premium_price_kobo, premium_reward_kobo, is_active FROM task_types WHERE name = 'Save post {tag}'")
-check('admin adds task type with premium default 1.5x', r and r[0] == ['4500', '3000', '1'], r)
+r = db(f"SELECT base_price_kobo, base_reward_kobo, is_active FROM task_types WHERE name = 'Save post {tag}'")
+check('admin adds task type with its price and reward', r and r[0] == ['3000', '2000', '1'], r)
 # (php -S falls back to index.php for unknown paths; Apache returns 404. Either way no catalog.)
 s, l, x = e1.get('/catalog.php')
 check('earner cannot open admin catalog', 'data-task-type=' not in x)
@@ -212,9 +213,9 @@ check('advertiser wallet funded ₦1,000', balance(aid) == (100000, 0), balance(
 # ---------- campaign create validation
 s, l, h = adv.get('/campaign-new.php')
 check('create page loads with platform + task selects and cost preview', s == 200 and 'name="platform_id"' in h and 'data-cost' in h)
+check('create page has no tier choice and no interest picker', 'name="tier"' not in h and 'interests[]' not in h and 'premium' not in h.lower())
 tok = adv.csrf(h)
-INTEREST1 = one("SELECT id FROM interests WHERE is_active = 1 ORDER BY sort_order, id LIMIT 1")  # every new campaign needs 1-3 interests
-base = {'_csrf': tok, 'interests[]': INTEREST1, 'title': 'Follow Bola on Instagram', 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': 'basic',
+base = {'_csrf': tok, 'title': 'Follow Bola on Instagram', 'platform_id': ig_id, 'task_type_id': follow_id,
         'link_url': f'https://www.instagram.com/bola_{tag}/?utm_source=x&igshid=abc', 'instructions': 'Follow the page with your own account.',
         'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': '3', 'ends_at': ''}
 
@@ -311,10 +312,10 @@ check('advertiser emailed on approval', any('live' in m['subject'] for m in mail
 # a second campaign that admin rejects (refund)
 s, l = create(adv, {'title': 'TikTok follow', 'platform_id': tt_id, 'link_url': f'https://www.tiktok.com/@bola_{tag}', 'quantity': '2', 'tier': 'targeted'})
 c2 = int(l.split('=')[1])
-check('targeted campaign uses premium price ₦38', one(f"SELECT unit_price_kobo FROM campaigns WHERE id = {c2}") == '3800')
+check('a posted tier is ignored: every new campaign is standard at the base price ₦25', db(f"SELECT tier, unit_price_kobo, unit_reward_kobo FROM campaigns WHERE id = {c2}")[0] == ['basic', '2500', '1500'])
 s, l, h = adv.get(f'/campaign.php?id={c2}')
 adv.post(f'/campaign.php?id={c2}', {'_csrf': adv.csrf(h), 'campaign_id': c2, 'action': 'submit'})
-check('second campaign funded (₦76)', balance(aid) == (90000 - 7600, 0), balance(aid))
+check('second campaign funded (₦50)', balance(aid) == (90000 - 5000, 0), balance(aid))
 s, l, h = admin.get('/campaigns.php')
 admin.post('/campaigns.php', {'_csrf': admin.csrf(h), 'campaign_id': c2, 'action': 'reject', 'reason': '', 'back': 'campaigns.php'})
 check('reject without reason refused', one(f"SELECT status FROM campaigns WHERE id = {c2}") == 'pending_approval')

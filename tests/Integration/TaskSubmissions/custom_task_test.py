@@ -85,12 +85,11 @@ CP = int(one("SELECT id FROM platforms WHERE slug = 'custom'"))
 CT = int(one("SELECT id FROM task_types WHERE slug = 'custom'"))
 IG = int(one("SELECT id FROM platforms WHERE slug = 'instagram'"))
 FOLLOW = int(one("SELECT id FROM task_types WHERE slug = 'follow'"))
-INTEREST = one("SELECT id FROM interests WHERE is_active = 1 ORDER BY id LIMIT 1")
 LINK = f'https://nifelux-{tag}.example.com/app?ref=1'
 
 
 def form(**kw):
-    d = {'title': f'CT campaign {tag}', 'platform_id': CP, 'task_type_id': CT, 'tier': 'basic', 'link_url': LINK,
+    d = {'title': f'CT campaign {tag}', 'platform_id': CP, 'task_type_id': CT, 'link_url': LINK,
          'instructions': 'Download the app and create an account.', 'proof_requirements': 'Screenshot of your profile page',
          'quantity': '10', 'ends_at': '', 'custom_platform_name': 'Nifelux App', 'custom_task_name': 'Download and sign up', 'custom_price': '150'}
     d.update({k: str(v) for k, v in kw.items()})
@@ -101,7 +100,7 @@ def create(c, data):
     s, l, h = c.req('/campaign-new.php')
     m = re.search(r'name="_csrf" value="([^"]*)"', h)
     body = dict(data); body['_csrf'] = m.group(1) if m else ''
-    body = list(body.items()) + ([('interests[]', INTEREST)] if INTEREST else [])
+    body = list(body.items())
     r = urllib.request.Request(c.base + '/campaign-new.php', data=urllib.parse.urlencode(body).encode(), headers={'User-Agent': 'Mozilla/5.0'})
     try:
         resp = c.op.open(r, timeout=30); s, l = resp.status, resp.headers.get('Location')
@@ -170,10 +169,12 @@ try:
     check('admin minimum N200 enforced', x is None and '200' in err, err)
     setting('campaigns.custom_min_price_naira', '100')
 
-    # Catalog platform with a custom task, own price; tier does not change price.
+    # Catalog platform with a custom task, own price. Premium is retired (migration 0017):
+    # a stale tier=targeted field from an old form is ignored and the campaign is standard.
     x, err = create(ca, form(title=f'CT ig {tag}', platform_id=IG, custom_platform_name='', link_url=f'https://instagram.com/ct{tag}', tier='targeted', custom_price='250'))
     if x: made.append(x)
-    check('Instagram + custom task keeps own price under Premium', x and db(f"SELECT unit_price_kobo, unit_reward_kobo, custom_platform_name FROM campaigns WHERE id = {x}")[0] == ['25000', '20000', 'NULL'], err)
+    check('Instagram + custom task keeps own price', x and db(f"SELECT unit_price_kobo, unit_reward_kobo, custom_platform_name FROM campaigns WHERE id = {x}")[0] == ['25000', '20000', 'NULL'], err)
+    check('stale tier=targeted field ignored: campaign is standard', x and one(f"SELECT tier FROM campaigns WHERE id = {x}") == 'basic', err)
     x, err = create(ca, form(title=f'CT igbad {tag}', platform_id=IG, link_url='https://example.com/notig'))
     if x: made.append(x)
     check('Instagram still checks its domains', x is None and 'instagram' in err.lower(), err)
@@ -190,7 +191,6 @@ try:
         SELECT {adv}, {CP}, {CT}, 'Nifelux App', 'Download and sign up', 'CT live {tag}', link_url, link_normalized, link_hash, instructions, proof_requirements, 15000, 12000, 10, 150000, 'live', UTC_TIMESTAMP()
         FROM campaigns WHERE id = {cid}""")
     live = int(one(f"SELECT id FROM campaigns WHERE title = 'CT live {tag}'")); made.append(live)
-    if INTEREST: db(f"INSERT INTO campaign_interests (campaign_id, interest_id) VALUES ({live}, {INTEREST})")
     x, err = create(ca, form(title=f'CT dup {tag}', custom_task_name='download AND sign up'))
     if x: made.append(x)
     check('duplicate link + same task (any case) blocked', x is None and 'already running' in err, err)
@@ -226,7 +226,7 @@ try:
 finally:
     setting('campaigns.custom_enabled', '1'); setting('campaigns.custom_min_price_naira', '100'); setting('campaigns.custom_reward_percent', '80')
     ids = ','.join(str(i) for i in made) or '0'
-    for sql in [f"DELETE FROM campaign_interests WHERE campaign_id IN ({ids})", f"DELETE FROM campaign_instructions WHERE campaign_id IN ({ids})",
+    for sql in [f"DELETE FROM campaign_instructions WHERE campaign_id IN ({ids})",
                 f"DELETE FROM campaigns WHERE id IN ({ids}) OR advertiser_user_id IN ({','.join(map(str, created_users))})"]:
         try: db(sql)
         except Exception as e: print('cleanup:', e)
