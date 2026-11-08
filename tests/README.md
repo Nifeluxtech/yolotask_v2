@@ -43,10 +43,9 @@ Needs migration 0009, the fake AfrStar gateway on 8499 (started by
 run-servers.sh; the test writes payments.local.php + afrstar.key like the
 Phase 3 test) and Pillow. Registrations wait 3 s for the sign-up form timing
 guard, so the suite takes about 90 s. Sections 8b/8c cover the referral
-network/device allowance (default 3) and interests (catalog, earner and
-campaign selection, premium targeting in the feed and at reservation,
-legacy and disabled interests, authorization, CSRF). Phase 4/5/6 campaign
-helpers send one interest because every new campaign needs 1–3.
+network/device allowance (default 3) and the retirement of interests and
+premium targeting (interest pages 404, no prompts or picker, every campaign
+open to every earner, data left dormant).
 
 ## Phase 7 integration test (leaderboard, levels page)
 
@@ -120,3 +119,22 @@ Run every suite one at a time (each needs the servers; rate limits are reset
 by the runner). The forwarder test needs `afrstar.key` in the config dir,
 which the Phase 3/5/6 suites write, so run it after one of them. Reset `rate_limits` and
 `login_attempts` between suites.
+
+## Retire-premium test (migration 0017, scripts/retire-premium.php)
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/retire_premium_test.py
+
+Builds premium campaigns the way the previous release stored them (draft,
+pending approval, live with work in flight, paused with every slot held,
+cancelled), runs the script (dry run, real run, rerun) and checks the refund
+rule, ledger postings and key, notifications, idempotency, in-flight premium
+rewards, base prices for new work, the feed for earners without interests,
+404 on the old interest routes and the reconciliations. Custom tasks
+(migration 0016): a premium custom-task campaign keeps its own price (no
+refund), a standard one is never touched, a premium campaign on the custom
+platform with a listed task type is repriced, and the custom-task flow still
+works after the run.
+
+The local servers use `tests/Integration/PaymentCallbacks/router.php`, so a
+path with no file behind it answers 404 like the cPanel Apache vhosts
+(plain `php -S` would fall back to index.php with 200).
