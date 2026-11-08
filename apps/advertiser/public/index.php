@@ -31,7 +31,7 @@ $roleTitle = 'Advertiser';
 $roleSlug = 'advertiser';
 $subtitle = 'Real people. Real actions. Measurable growth.';
 $description = 'Launch campaigns that pay real Nigerians to follow, engage, review and sign up — and only pay for actions that pass verification.';
-$heroChips = ['Pay per verified action', 'Targeted reach', 'Escrow-protected budgets'];
+$heroChips = ['Pay per verified action', 'Real people, real accounts', 'Escrow-protected budgets'];
 $headerAction = ['url' => 'login.php', 'label' => 'Sign in'];
 $primaryAction = ['url' => 'register.php', 'label' => 'Create advertiser account'];
 $secondaryAction = ['url' => 'login.php', 'label' => 'Sign in'];
