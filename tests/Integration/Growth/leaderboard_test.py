@@ -519,8 +519,8 @@ try:
     # ======================================================================
     # 7. Levels page
     # ======================================================================
-    levels = [dict(zip(['id', 'name', 'min_approved', 'rate', 'max', 'premium'], [int(r[0]), r[1], int(r[2]), int(r[3]), int(r[4]), int(r[5])]))
-              for r in db("SELECT id, name, min_approved, min_approval_rate, max_active_reservations, premium_access FROM earner_levels WHERE is_active = 1 ORDER BY min_approved, min_approval_rate, id")]
+    levels = [dict(zip(['id', 'name', 'min_approved', 'rate', 'max'], [int(r[0]), r[1], int(r[2]), int(r[3]), int(r[4])]))
+              for r in db("SELECT id, name, min_approved, min_approval_rate, max_active_reservations FROM earner_levels WHERE is_active = 1 ORDER BY min_approved, min_approval_rate, id")]
     rate = round(60 * 100 / 70, 1)
     cur_i = -1
     for i, lv in enumerate(levels):
@@ -534,7 +534,7 @@ try:
     check('stats line: approved, rejected, approval rate', '60 approved · 10 rejected · ' + ('%g' % rate) + '% approval rate' in h)
     cur_block = re.search(r'<li class="level-item is-current"[^>]*>.*?</li>', h, re.S)
     check('current level highlighted', cur is not None and cur_block and '<span>' + cur['name'] + '</span>' in cur_block.group(0) and 'Your level' in cur_block.group(0), cur)
-    check('benefits shown per level (tasks held, premium)', all(f"Up to {lv['max']}" in h for lv in levels) and 'Premium tasks' in h)
+    check('benefits shown per level (tasks held, no premium tasks)', all(f"Up to {lv['max']}" in h for lv in levels) and 'premium' not in h.lower())
     if nxt is not None:
         need = max(0, nxt['min_approved'] - 60)
         span = max(1, nxt['min_approved'] - (cur['min_approved'] if cur else 0))
@@ -548,13 +548,13 @@ try:
     s, l, ha = admin.get('/levels.php')
     tok = Client.field(ha, '_csrf')
     admin.post('/levels.php', {'_csrf': tok, 'action': 'save', 'id': '0', 'name': f'Zen{lt}', 'min_approved': '999999', 'min_rate': '99', 'max_active': '9', 'active': '1'})
-    admin.post('/levels.php', {'_csrf': tok, 'action': 'save', 'id': '0', 'name': f'Hid{lt}', 'min_approved': '999998', 'min_rate': '0', 'max_active': '8', 'premium': '1'})
+    admin.post('/levels.php', {'_csrf': tok, 'action': 'save', 'id': '0', 'name': f'Hid{lt}', 'min_approved': '999998', 'min_rate': '0', 'max_active': '8'})
     zen = one(f"SELECT id FROM earner_levels WHERE name = 'Zen{lt}'")
     hid = one(f"SELECT id FROM earner_levels WHERE name = 'Hid{lt}'")
     check('admin added an active and an inactive level', zen and hid and one(f'SELECT is_active FROM earner_levels WHERE id = {hid}') == '0')
     s, l, h = C['lv'].get('/levels.php')
     zb = re.search(r'<li class="level-item[^"]*"[^>]*>(?:(?!</li>).)*Zen' + lt + r'(?:(?!</li>).)*</li>', h, re.S)
-    check('new active level appears on the earner page with its benefits', zb and 'Up to 9' in zb.group(0) and 'Not included' in zb.group(0) and '999,999+ approved tasks · 99%+ approval rate' in zb.group(0))
+    check('new active level appears on the earner page with its benefits', zb and 'Up to 9' in zb.group(0) and 'Withdrawal fee' in zb.group(0) and 'Premium' not in zb.group(0) and '999,999+ approved tasks · 99%+ approval rate' in zb.group(0))
     check('inactive level is hidden', f'Hid{lt}' not in h)
     s, l, hp = Client(M).get('/levels.php')
     check('public page reflects the new level and hides the inactive one', s == 200 and f'Zen{lt}' in hp and f'Hid{lt}' not in hp)
@@ -586,7 +586,7 @@ try:
     s, l, hi = pc.get('/')
     check('home page links to the levels page', 'href="levels.php"' in hi)
     s, l, h = C['lv'].get('/levels.php')
-    check('earner levels page links to leaderboard and interests', 'href="leaderboard.php"' in h and 'href="interests.php"' in h)
+    check('earner levels page links to leaderboard, not to interests', 'href="leaderboard.php"' in h and 'interests.php' not in h and 'interest' not in h.lower())
 finally:
     cleanup()
 

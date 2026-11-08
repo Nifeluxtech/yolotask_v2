@@ -3,16 +3,16 @@
 register pages), self-referral / alias abuse, the per-referrer network and
 device allowance (referrals.ip_allowance: sign-ups 1-3 accepted and paid,
 4th flagged, admin limit change, referrer's own device always flagged) with
-admin review, interests (admin catalog, earner 1-3, campaign 1-3, premium
-targeting in feed and reservation, legacy / disabled interests, onboarding), earner milestones (defaults, stacking, admin
+admin review, interests and premium targeting retired (migration 0017: no
+routes, prompts or targeting; every campaign open to every earner), earner milestones (defaults, stacking, admin
 add/edit/disable, catch-up sweep, only work after the referral), every
 approval path paying milestones (advertiser, auto, admin, reviewer stale
 queue, appeal overturn), idempotency, approval reversal flagging (no
 claw-back) and admin payout reversal, advertiser deposit commission on the
 AfrStar callback and the admin review-credit path (double callback, rate
 changes, 0% skipped, programme off then catch-up), no commission on admin
-credits or bonuses, admin bonuses, earner levels (held-task limits, premium
-feed, approval rate), notifications (inbox, bell, read / read all, email
+credits or bonuses, admin bonuses, earner levels (held-task limits,
+approval rate), notifications (inbox, bell, read / read all, email
 switches, security emails always on, every category), announcements
 (audience, schedule, banner, withdraw), pruning, authorization, CSRF and
 reconciliation (ledger + database/verify/referral_award_reconciliation.sql).
@@ -232,8 +232,8 @@ for k, v in [('tasks.reward_hold_hours', '0'), ('tasks.resubmission_cap', '1'), 
              ('appeals.window_hours', '72'), ('referrals.enabled', '1'), ('referrals.commission_bps', '500'), ('levels.enabled', '1'),
              ('notifications.retention_days', '90'), ('money.withdraw_daily_count', '3')]:
     setting(k, v)
-db("UPDATE earner_levels SET min_approved = 0, min_approval_rate = 0, max_active_reservations = 3, premium_access = 1, is_active = 1 WHERE name = 'Starter'")
-db("UPDATE earner_levels SET min_approved = 50, min_approval_rate = 80, max_active_reservations = 4, premium_access = 1, is_active = 1 WHERE name = 'Bronze'")
+db("UPDATE earner_levels SET min_approved = 0, min_approval_rate = 0, max_active_reservations = 3, is_active = 1 WHERE name = 'Starter'")
+db("UPDATE earner_levels SET min_approved = 50, min_approval_rate = 80, max_active_reservations = 4, is_active = 1 WHERE name = 'Bronze'")
 db("UPDATE referral_milestones SET is_active = 0 WHERE NOT (task_count = 10 AND reward_kobo = 10000) AND NOT (task_count = 25 AND reward_kobo = 20000)")
 
 # ======================================================================
@@ -420,14 +420,12 @@ def fund(u, naira, why='Phase 6 test funding'):
     admin.post('/wallets.php', {'_csrf': admin.csrf(h), 'action': 'adjust', 'user_id': u, 'idem': uuid.uuid4().hex, 'direction': 'credit', 'amount': str(naira), 'reason': why})
 
 
-INT = [r[0] for r in db("SELECT id FROM interests WHERE is_active = 1 ORDER BY sort_order, id")]
-
-
-def campaign(client, title, slug, qty, tier='basic', approve=True, interests=None):
+def campaign(client, title, slug, qty, approve=True, extra=None):
     s, l, h = client.get('/campaign-new.php')
-    data = {'_csrf': client.csrf(h), 'interests[]': interests or [INT[0]], 'title': title, 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': tier,
+    data = {'_csrf': client.csrf(h), 'title': title, 'platform_id': ig_id, 'task_type_id': follow_id,
             'link_url': f'https://instagram.com/{slug}_{tag}', 'instructions': f'Follow {slug} with your own account and keep following.',
             'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': str(qty), 'ends_at': ''}
+    data.update(extra or {})
     s, l, b = client.post('/campaign-new.php', data)
     cid = int(l.split('=')[1])
     s, l, h = client.get(f'/campaign.php?id={cid}')
@@ -724,29 +722,25 @@ check('admin levels page lists the levels', s == 200 and 'Starter' in h and 'Gol
 bronze = int(one("SELECT id FROM earner_levels WHERE name = 'Bronze' ORDER BY id LIMIT 1"))
 starter = int(one("SELECT id FROM earner_levels WHERE name = 'Starter' ORDER BY id LIMIT 1"))
 tok = admin.csrf(h)
-lv = lambda i, name, a, rate, mx, prem: admin.post('/levels.php', dict({'_csrf': tok, 'action': 'save', 'id': i, 'name': name, 'min_approved': a, 'min_rate': rate, 'max_active': mx, 'active': '1'}, **({'premium': '1'} if prem else {})))
-lv(bronze, 'Bronze', 3, 101, 4, True)
+check('admin levels page has no premium setting', 'name="premium"' not in h and 'premium' not in h.lower())
+lv = lambda i, name, a, rate, mx: admin.post('/levels.php', {'_csrf': tok, 'action': 'save', 'id': i, 'name': name, 'min_approved': a, 'min_rate': rate, 'max_active': mx, 'active': '1'})
+lv(bronze, 'Bronze', 3, 101, 4)
 check('approval rate above 100 refused', one(f"SELECT min_approval_rate FROM earner_levels WHERE id = {bronze}") == '80')
-admin.post('/levels.php', {'_csrf': 'bad', 'action': 'save', 'id': bronze, 'name': 'Bronze', 'min_approved': 3, 'min_rate': 80, 'max_active': 4, 'premium': '1', 'active': '1'})
+admin.post('/levels.php', {'_csrf': 'bad', 'action': 'save', 'id': bronze, 'name': 'Bronze', 'min_approved': 3, 'min_rate': 80, 'max_active': 4, 'active': '1'})
 check('level change without CSRF refused', one(f"SELECT min_approved FROM earner_levels WHERE id = {bronze}") == '50')
-lv(bronze, 'Bronze', 3, 80, 4, True)
-lv(starter, 'Starter', 0, 0, 3, False)
-check('admin edits Bronze (3 tasks, 80%, hold 4) and Starter (no premium)', db(f"SELECT min_approved, min_approval_rate, max_active_reservations FROM earner_levels WHERE id = {bronze}")[0] == ['3', '80', '4']
-      and one(f"SELECT premium_access FROM earner_levels WHERE id = {starter}") == '0')
+lv(bronze, 'Bronze', 3, 80, 4)
+lv(starter, 'Starter', 0, 0, 3)
+check('admin edits Bronze (3 tasks, 80%, hold 4) and Starter (hold 3)', db(f"SELECT min_approved, min_approval_rate, max_active_reservations FROM earner_levels WHERE id = {bronze}")[0] == ['3', '80', '4']
+      and db(f"SELECT min_approved, max_active_reservations FROM earner_levels WHERE id = {starter}")[0] == ['0', '3'])
 s, l, h = X['x1'].get('/dashboard.php')
 check('X1 (3 approved, 100%) is Bronze now', '>Bronze<' in h and 'hold up to 4 tasks' in h)
-for k_ in X:  # levels decide premium access here; interests are tested in section 8c
-    db(f"INSERT IGNORE INTO user_interests (user_id, interest_id) VALUES ({ids[k_]}, {INT[0]})")
 cs = [campaign(adv, f'Follow Bola P6 lvl {i}', f'bolap6l{i}', 3) for i in range(5)]
-cp = campaign(adv, 'Premium follow P6', 'bolap6prem', 3, tier='targeted')
-check('premium (targeted) campaign live', one(f"SELECT tier FROM campaigns WHERE id = {cp}") == 'targeted' and one(f"SELECT status FROM campaigns WHERE id = {cp}") == 'live')
+cp = campaign(adv, 'Open follow P6', 'bolap6open', 3, extra={'tier': 'targeted'})
+check('a posted tier is ignored: the campaign is standard at the base price', db(f"SELECT tier, status, unit_price_kobo FROM campaigns WHERE id = {cp}")[0] == ['basic', 'live', '2500'])
 s, l, h = X['x4'].get('/tasks.php')
-check('Starter feed hides premium tasks', 'Premium follow P6' not in h and 'Follow Bola P6 lvl 0' in h)
-start(X['x4'], cp)
-msg, _ = X['x4'].flash('/tasks.php')
-check('Starter cannot start a premium task', one(f"SELECT COUNT(*) FROM task_reservations WHERE campaign_id = {cp} AND earner_user_id = {ids['x4']}") == '0' and 'higher earner level' in msg, msg)
+check('Starter feed shows every live campaign, no premium badge', 'Open follow P6' in h and 'Follow Bola P6 lvl 4' in h and 'premium' not in h.lower(), ('Open follow P6' in h, 'Follow Bola P6 lvl 4' in h, 'premium' in h.lower()))
 s, l, h = X['x1'].get('/tasks.php')
-check('Bronze feed shows premium tasks', 'Premium follow P6' in h)
+check('Bronze feed shows the same campaigns', 'Open follow P6' in h and 'Follow Bola P6 lvl 4' in h)
 for c_ in cs[:3]:
     start(X['x4'], c_)
 start(X['x4'], cs[3])
@@ -768,12 +762,12 @@ s, l, h = X['x1'].get('/dashboard.php')
 check('approval rate below the level minimum drops X1 back to Starter (3 of 4 = 75%)', '>Starter<' in h and '75% approval rate' in h, re.findall(r'level-badge[^>]*>.*?<span[^>]*>([^<]*)<', h))
 setting('levels.enabled', '0')
 s, l, h = X['x4'].get('/tasks.php')
-check('levels off: everyone sees premium tasks, limit from task settings', 'Premium follow P6' in h)
+check('levels off: the feed is unchanged', 'Open follow P6' in h)
 s, l, h = X['x4'].get('/dashboard.php')
 check('levels off: no level badge', 'level-badge' not in h)
 setting('levels.enabled', '1')
-lv(bronze, 'Bronze', 50, 80, 4, True)
-lv(starter, 'Starter', 0, 0, 3, True)
+lv(bronze, 'Bronze', 50, 80, 4)
+lv(starter, 'Starter', 0, 0, 3)
 db("UPDATE task_reservations SET status = 'released' WHERE status = 'active' AND earner_user_id IN (" + ','.join(str(ids[k]) for k in X) + ")")
 
 # ======================================================================
@@ -876,95 +870,32 @@ ok, out = reconcile_ok()
 check('reconciliation OK after the allowance payouts', ok, out)
 
 # ======================================================================
-# 8c. Interests: admin catalog, earner + campaign selection, premium targeting
+# 8c. Interests and premium targeting are retired (migration 0017)
 # ======================================================================
-SEED = ['Music & Entertainment', 'Sports & Betting', 'Fashion & Beauty', 'Tech & Gadgets', 'Crypto & Finance', 'Food & Lifestyle', 'Education',
-        'Religion & Inspiration', 'Business & Marketing', 'Gaming', 'Comedy', 'News & Politics']
-seeded = db("SELECT name, is_active FROM interests WHERE name IN (" + ','.join("'" + n.replace("'", "''") + "'" for n in SEED) + ") ORDER BY sort_order, id")
-check('12 Nigerian-market interests seeded active in order', [r[0] for r in seeded] == SEED and all(r[1] == '1' for r in seeded), seeded)
-check('placeholder 0002_settings_catalog_interests.sql removed (implemented in 0009, never applied)', not os.path.exists(ROOT + '/database/migrations/0002_settings_catalog_interests.sql')
-      and one("SELECT COUNT(*) FROM schema_migrations WHERE filename LIKE '0002_settings%'") == '0')
-iid_of = lambda n: int(one("SELECT id FROM interests WHERE name = '" + n.replace("'", "''") + "'"))
-MUSIC, SPORTS, FASHION, TECH = iid_of('Music & Entertainment'), iid_of('Sports & Betting'), iid_of('Fashion & Beauty'), iid_of('Tech & Gadgets')
-
-s, l, h = admin.get('/interests.php')
-check('admin Interests page (Growth tab) lists the catalog', s == 200 and 'Music &amp; Entertainment' in h and 'name="name"' in h and 'href="interests.php"' in h)
-tok = admin.csrf(h)
-hname = f'Health {tag}'
-admin.post('/interests.php', {'_csrf': 'bad', 'action': 'add', 'name': hname})
-check('add interest without CSRF refused', one(f"SELECT COUNT(*) FROM interests WHERE name = '{hname}'") == '0')
-admin.post('/interests.php', {'_csrf': tok, 'action': 'add', 'name': hname})
-HEALTH = int(one(f"SELECT id FROM interests WHERE name = '{hname}'") or 0)
-check('admin adds an interest (active, last, audited)', HEALTH > 0 and one(f"SELECT is_active FROM interests WHERE id = {HEALTH}") == '1'
-      and one(f"SELECT COUNT(*) FROM audit_log WHERE event_key = 'admin.interest_added' AND target_id = {HEALTH}") == '1')
-admin.post('/interests.php', {'_csrf': tok, 'action': 'add', 'name': hname.upper()})
-msg, _ = admin.flash('/interests.php')
-check('duplicate name refused (case-insensitive)', 'already exists' in msg and one(f"SELECT COUNT(*) FROM interests WHERE name = '{hname}'") == '1', msg)
-admin.post('/interests.php', {'_csrf': tok, 'action': 'add', 'name': 'x'})
-admin.post('/interests.php', {'_csrf': tok, 'action': 'add', 'name': '<b>bad</b>'})
-check('too short / HTML names refused', one("SELECT COUNT(*) FROM interests WHERE name IN ('x', '<b>bad</b>')") == '0')
-hname2 = f'Health & Fitness {tag}'
-admin.post('/interests.php', {'_csrf': tok, 'action': 'save', 'id': HEALTH, 'name': hname2, 'active': '1'})
-check('admin renames an interest', one(f"SELECT name FROM interests WHERE id = {HEALTH}") == hname2)
-order = lambda: [int(r[0]) for r in db("SELECT id FROM interests WHERE is_active = 1 ORDER BY sort_order, id")]
-before = order()
-admin.post('/interests.php', {'_csrf': tok, 'action': 'move', 'id': HEALTH, 'dir': 'up'})
-after = order()
-check('admin moves an interest up one place', after.index(HEALTH) == before.index(HEALTH) - 1, (before.index(HEALTH), after.index(HEALTH)))
-admin.post('/interests.php', {'_csrf': 'bad', 'action': 'move', 'id': HEALTH, 'dir': 'down'})
-check('reorder without CSRF refused', order() == after)
-s, l, h = admin.get('/interests.php')
-check('admin page shows the new name in its new place', hname2.replace('&', '&amp;') in h and h.index(hname2.replace('&', '&amp;')) < h.index('News &amp; Politics'))
-s, l, h = Client(ADM).get('/interests.php')
-check('admin interests page needs an admin session', s == 303 and l == 'login.php')
-check('advertiser and reviewer portals have no interests page', not os.path.exists(ROOT + '/apps/advertiser/public/interests.php') and not os.path.exists(ROOT + '/apps/reviewer/public/interests.php')
-      and 'data-chip-select' not in adv.get('/interests.php')[2])
-before_n = one("SELECT COUNT(*) FROM interests")
-X['x1'].post('/interests.php', {'_csrf': X['x1'].csrf(path='/interests.php'), 'action': 'add', 'name': f'Hack {tag}'})
-check('earner cannot add to the catalog (earner page only saves own choice)', one("SELECT COUNT(*) FROM interests") == before_n)
-
-# earner: no interests -> prompts; min/max validation; onboarding after verification
-emi = {k: f'p6{k}{tag}@gmail.com' for k in ['ni', 'nt', 'nz', 'nh']}
-ni = make_user('earner', emi['ni'], PW, 'Ngozi Music')
-nt = make_user('earner', emi['nt'], PW, 'Tunde Tech')
+check('interest tables left dormant in the database', [one(f"SHOW TABLES LIKE '{t_}'") for t_ in ('interests', 'user_interests', 'campaign_interests')] == ['interests', 'user_interests', 'campaign_interests'])
+check('premium columns left dormant in the database', one("SHOW COLUMNS FROM task_types LIKE 'premium_price_kobo'") == 'premium_price_kobo' and one("SHOW COLUMNS FROM campaigns LIKE 'tier'") == 'tier'
+      and one("SHOW COLUMNS FROM earner_levels LIKE 'premium_access'") == 'premium_access')
+check('no interests page or Interests library in the code', not any(os.path.exists(ROOT + p_) for p_ in ('/apps/earner/public/interests.php', '/apps/admin/public/interests.php', '/apps/advertiser/public/interests.php',
+      '/shared/routes/interests.php', '/shared/routes/admin-interests.php', '/shared/lib/Campaigns/Interests.php')))
+for who_, cl_, path_ in [('earner', X['x1'], '/interests.php'), ('earner onboarding', X['x1'], '/interests.php?welcome=1'), ('admin', admin, '/interests.php'), ('advertiser', adv, '/interests.php')]:
+    s, l, h = cl_.get(path_)
+    check(f'{who_} {path_} is 404', s == 404 and 'data-chip-select' not in h, s)
+s, l, h = X['x1'].post('/interests.php', {'_csrf': X['x1'].csrf(path='/tasks.php'), 'interests[]': '1'})
+check('posting to the old earner interests page is 404 too', s == 404)
+emi = {k: f'p6{k}{tag}@gmail.com' for k in ['nz']}
 nz = make_user('earner', emi['nz'], PW, 'Zainab None')
-nh = make_user('earner', emi['nh'], PW, 'Hauwa Health')
-NI, NT, NZ, NH = Client(E), Client(E), Client(E), Client(E)
-check('interest earners sign in', NI.login(emi['ni'], PW) and NT.login(emi['nt'], PW) and NZ.login(emi['nz'], PW) and NH.login(emi['nh'], PW))
-s, l, h = NI.get('/dashboard.php')
-check('dashboard prompts an earner with no interests', 'data-interest-prompt' in h and 'href="interests.php"' in h)
-s, l, h = NI.get('/tasks.php')
-check('task feed prompts an earner with no interests', 'data-interest-prompt' in h)
-s, l, h = NI.get('/account.php')
-check('account page has an Interests section', 'id="interests"' in h and 'Choose interests' in h)
-s, l, h = NI.get('/interests.php')
-active_n = int(one("SELECT COUNT(*) FROM interests WHERE is_active = 1"))
-check('interests page: mobile chip picker with every active interest, limit 3', s == 200 and h.count('name="interests[]"') == active_n and 'data-chip-select' in h and 'data-chip-max="3"' in h and 'class="chip"' in h)
-etok = NI.csrf(h)
-mine = lambda u: sorted(int(r[0]) for r in db(f"SELECT interest_id FROM user_interests WHERE user_id = {u}"))
-NI.post('/interests.php', {'_csrf': etok})
-msg, _ = NI.flash('/interests.php')
-check('earner must choose at least 1 interest', mine(ni) == [] and 'at least 1' in msg, msg)
-NI.post('/interests.php', {'_csrf': etok, 'interests[]': [MUSIC, SPORTS, FASHION, TECH]})
-msg, _ = NI.flash('/interests.php')
-check('earner may choose at most 3 interests', mine(ni) == [] and 'up to 3' in msg, msg)
-NI.post('/interests.php', {'_csrf': etok, 'interests[]': ['abc']})
-NI.post('/interests.php', {'_csrf': etok, 'interests[]': ['999999']})
-check('unknown / malformed interest ids refused', mine(ni) == [])
-NI.post('/interests.php', {'_csrf': 'bad', 'interests[]': [MUSIC]})
-check('saving interests without CSRF refused', mine(ni) == [])
-NI.post('/interests.php', {'_csrf': etok, 'interests[]': [MUSIC, SPORTS, MUSIC]})
-check('earner saves 2 interests (duplicates ignored, audited)', mine(ni) == sorted([MUSIC, SPORTS])
-      and one(f"SELECT COUNT(*) FROM audit_log WHERE event_key = 'account.interests_updated' AND actor_user_id = {ni}") == '1', mine(ni))
-s, l, h = NI.get('/dashboard.php')
-check('dashboard prompt gone once interests are chosen', 'data-interest-prompt' not in h)
-s, l, h = NI.get('/account.php')
-check('account page lists the chosen interests', 'Music &amp; Entertainment' in h and 'Sports &amp; Betting' in h and 'Change interests' in h)
-NT.post('/interests.php', {'_csrf': NT.csrf(path='/interests.php'), 'interests[]': [TECH]})
-NH.post('/interests.php', {'_csrf': NH.csrf(path='/interests.php'), 'interests[]': [HEALTH]})
-check('other earners save 1 interest each', mine(nt) == [TECH] and mine(nh) == [HEALTH])
+NZ = Client(E)
+check('earner with no interests signs in', NZ.login(emi['nz'], PW))
+for page_ in ('/dashboard.php', '/tasks.php', '/account.php', '/levels.php'):
+    s, l, h = NZ.get(page_)
+    check(f'earner {page_}: no interest prompt or link, no premium', s == 200 and 'interests.php' not in h and 'data-interest' not in h and 'premium' not in h.lower(), page_)
+for page_ in ('/levels.php', '/leaders.php', '/campaigns.php', '/catalog.php'):
+    s, l, h = admin.get(page_)
+    check(f'admin {page_}: no Interests tab or premium', s == 200 and 'interests.php' not in h and 'premium' not in h.lower(), page_)
+s, l, h = adv.get('/campaign-new.php')
+check('advertiser campaign form: no tier choice, no interest picker', s == 200 and 'name="tier"' not in h and 'interests[]' not in h and 'data-chip-select' not in h and 'premium' not in h.lower())
 
-# onboarding: a brand-new earner is offered the interests step right after confirming the email
+# onboarding: confirming the email goes straight to the dashboard
 onb = f'p6onb{tag}@gmail.com'
 c = Client(E)
 s, l, h = c.get('/register.php')
@@ -975,168 +906,33 @@ m = [x for x in mails_to(onb) if re.search(r'Your code: (\d{6})', x['text'])]
 vcode = re.search(r'Your code: (\d{6})', m[-1]['text']).group(1) if m else ''
 s, l, h = c.get('/verify.php')
 s, l, _ = c.post('/verify.php', {'_csrf': c.csrf(h), 'action': 'code', 'code': vcode})
-check('after confirming the email a new earner is sent to the interests step', s == 303 and l == 'interests.php?welcome=1', (s, l))
-s, l, h = c.get('/interests.php?welcome=1')
-check('onboarding step: welcome copy, chip picker and Skip for now', 'What are you into?' in h and 'Skip for now' in h and 'data-chip-select' in h)
-c.post('/interests.php?welcome=1', {'_csrf': c.csrf(h), 'interests[]': [FASHION]})
-check('onboarding save goes on to the dashboard', mine(uid(onb)) == [FASHION])
+check('after confirming the email a new earner goes to the dashboard (no interests step)', s == 303 and l == 'dashboard.php', (s, l))
 
-# advertiser: campaign interests required (1-3), editable while draft / pending, admin edits during approval
-s, l, h = adv.get('/campaign-new.php')
-check('campaign form has the interest chip picker (required, max 3)', 'data-chip-select' in h and h.count('name="interests[]"') == active_n and 'Audience interests' in h)
-before_c = int(one('SELECT COUNT(*) FROM campaigns'))
-
-
-def new_campaign(client, title, slug, tier='targeted', interests=None):
-    s, l, h = client.get('/campaign-new.php')
-    data = {'_csrf': client.csrf(h), 'title': title, 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': tier,
-            'link_url': f'https://instagram.com/{slug}_{tag}', 'instructions': f'Follow {slug} with your own account and keep following.',
-            'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': '3', 'ends_at': ''}
-    if interests is not None:
-        data['interests[]'] = interests
-    return client.post('/campaign-new.php', data)
-
-
-new_campaign(adv, 'No interest campaign', 'nointc')
-msg, _ = adv.flash('/campaign-new.php')
-check('campaign without interests refused (server-side)', int(one('SELECT COUNT(*) FROM campaigns')) == before_c and 'at least 1' in msg, msg)
-new_campaign(adv, 'Four interest campaign', 'fourintc', interests=[MUSIC, SPORTS, FASHION, TECH])
-msg, _ = adv.flash('/campaign-new.php')
-check('campaign with 4 interests refused', int(one('SELECT COUNT(*) FROM campaigns')) == before_c and 'up to 3' in msg, msg)
-s, l, b = new_campaign(adv, 'Premium fashion P6', 'premfash', interests=[FASHION, TECH])
-cf = int(l.split('=')[1]) if l and 'campaign.php?id=' in l else 0
-cint = lambda c_: sorted(int(r[0]) for r in db(f"SELECT interest_id FROM campaign_interests WHERE campaign_id = {c_}"))
-check('premium draft saved with 2 interests', cf > 0 and cint(cf) == sorted([FASHION, TECH]), (l, cint(cf) if cf else None))
-s, l, h = adv.get(f'/campaign-new.php?id={cf}')
-check('draft edit form keeps the chosen interests checked', re.search(r'value="%d" checked' % FASHION, h) is not None and re.search(r'value="%d" checked' % TECH, h) is not None)
-data = {'_csrf': adv.csrf(h), 'title': 'Premium fashion P6', 'platform_id': ig_id, 'task_type_id': follow_id, 'tier': 'targeted', 'link_url': f'https://instagram.com/premfash_{tag}',
-        'instructions': 'Follow premfash with your own account and keep following.', 'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': '3', 'ends_at': '', 'interests[]': [TECH]}
-adv.post(f'/campaign-new.php?id={cf}', data)
-check('draft edit replaces the interests', cint(cf) == [TECH], cint(cf))
-s, l, h = adv.get(f'/campaign.php?id={cf}')
-check('campaign page shows an editable Audience interests card while draft', 'Audience interests' in h and 'value="interests"' in h)
-atok = adv.csrf(h)
-adv.post(f'/campaign.php?id={cf}', {'_csrf': atok, 'campaign_id': cf, 'action': 'interests', 'interests[]': [MUSIC, SPORTS, FASHION, TECH]})
-check('campaign page edit with 4 interests refused', cint(cf) == [TECH])
-adv.post(f'/campaign.php?id={cf}', {'_csrf': 'bad', 'campaign_id': cf, 'action': 'interests', 'interests[]': [FASHION]})
-check('campaign interests edit without CSRF refused', cint(cf) == [TECH])
-fund(advid, 2000, 'Interest campaigns')
-adv.post(f'/campaign.php?id={cf}', {'_csrf': atok, 'campaign_id': cf, 'action': 'submit'})
-check('premium campaign funded and waiting for approval', one(f"SELECT status FROM campaigns WHERE id = {cf}") == 'pending_approval')
-adv.post(f'/campaign.php?id={cf}', {'_csrf': atok, 'campaign_id': cf, 'action': 'interests', 'interests[]': [FASHION]})
-check('advertiser can still edit interests while pending approval (audited)', cint(cf) == [FASHION]
-      and one(f"SELECT COUNT(*) FROM audit_log WHERE event_key = 'campaign.interests_updated' AND target_id = {cf}") == '1')
-s, l, h = R2.get(f'/campaign.php?id={cf}')
-R2.post(f'/campaign.php?id={cf}', {'_csrf': R2.csrf(path='/campaigns.php'), 'campaign_id': cf, 'action': 'interests', 'interests[]': [TECH]})
-check("another advertiser cannot see or edit this campaign's interests", s == 404 and cint(cf) == [FASHION])
-s, l, h = admin.get('/campaigns.php')
-check('admin approval queue shows the campaign interests', f'data-campaign="{cf}"' in h and 'Interests: Fashion &amp; Beauty' in h)
-s, l, h = admin.get(f'/campaign.php?id={cf}')
-check('admin campaign view shows the interests with an edit form during approval', 'Audience interests' in h and 'Fashion &amp; Beauty' in h and 'value="interests"' in h)
-admin.post('/campaigns.php', {'_csrf': 'bad', 'campaign_id': cf, 'action': 'interests', 'back': f'campaign.php?id={cf}', 'interests[]': [TECH]})
-check('admin interest edit without CSRF refused', cint(cf) == [FASHION])
-admin.post('/campaigns.php', {'_csrf': admin.csrf(h), 'campaign_id': cf, 'action': 'interests', 'back': f'campaign.php?id={cf}', 'interests[]': []})
-check('admin edit with no interests refused', cint(cf) == [FASHION])
-admin.post('/campaigns.php', {'_csrf': admin.csrf(h), 'campaign_id': cf, 'action': 'interests', 'back': f'campaign.php?id={cf}', 'interests[]': [FASHION, MUSIC]})
-check('admin edits the campaign interests during approval (audited)', cint(cf) == sorted([FASHION, MUSIC])
-      and one(f"SELECT COUNT(*) FROM audit_log WHERE event_key = 'admin.campaign_interests_updated' AND target_id = {cf} AND actor_user_id = {admid}") == '1')
-admin.post('/campaigns.php', {'_csrf': admin.csrf(h), 'campaign_id': cf, 'action': 'approve', 'back': 'campaigns.php'})
-check('premium campaign approved and live', one(f"SELECT status FROM campaigns WHERE id = {cf}") == 'live')
-adv.post(f'/campaign.php?id={cf}', {'_csrf': atok, 'campaign_id': cf, 'action': 'interests', 'interests[]': [TECH]})
-msg, _ = adv.flash(f'/campaign.php?id={cf}')
-check('advertiser cannot change interests once live', cint(cf) == sorted([FASHION, MUSIC]) and 'waiting for approval' in msg, msg)
-X['x1'].post(f'{A}/campaign.php?id={cf}', {'_csrf': 'x', 'campaign_id': cf, 'action': 'interests', 'interests[]': [TECH]})
-check('an earner session cannot edit campaign interests', cint(cf) == sorted([FASHION, MUSIC]))
-# a draft without interests (made before interests existed) cannot be funded until they are chosen
-s, l, b = new_campaign(adv, 'Old style draft P6', 'oldstyle', tier='basic', interests=[TECH])
-cold = int(l.split('=')[1])
-db(f"DELETE FROM campaign_interests WHERE campaign_id = {cold}")
-s, l, h = adv.get(f'/campaign.php?id={cold}')
-adv.post(f'/campaign.php?id={cold}', {'_csrf': adv.csrf(h), 'campaign_id': cold, 'action': 'submit'})
-msg, _ = adv.flash(f'/campaign.php?id={cold}')
-check('a draft with no interests cannot be funded (choose 1 to 3 first)', one(f"SELECT status FROM campaigns WHERE id = {cold}") == 'draft' and 'Choose 1 to 3 interests' in msg, msg)
-adv.post(f'/campaign.php?id={cold}', {'_csrf': adv.csrf(h), 'campaign_id': cold, 'action': 'delete'})
-
-# targeting: premium tasks by overlap, in the feed AND at reservation
-cbasic = campaign(adv, 'Standard tech P6', 'stdtech', 3, interests=[TECH])
-s, l, h = NI.get('/tasks.php')
-check('earner with an overlapping interest (Music) sees the premium task', 'Premium fashion P6' in h)
-s, l, h = X['x2'].get('/tasks.php')
-check('another Music earner sees it too', 'Premium fashion P6' in h)
-s, l, h = NT.get('/tasks.php')
-check('earner without overlap (Tech) does not see it', 'Premium fashion P6' not in h and 'Standard tech P6' in h)
+# every campaign is open to every earner; nothing reads or writes interest rows any more
+ci_rows = one("SELECT COUNT(*) FROM campaign_interests")
+ui_rows = one("SELECT COUNT(*) FROM user_interests")
+copen = campaign(adv, 'Everyone follow P6', 'everyone', 3, extra={'tier': 'targeted', 'interests[]': '1'})
+check('new campaign: standard, base price, no interest rows written', db(f"SELECT tier, unit_price_kobo, unit_reward_kobo FROM campaigns WHERE id = {copen}")[0] == ['basic', '2500', '1500']
+      and one("SELECT COUNT(*) FROM campaign_interests") == ci_rows)
 s, l, h = NZ.get('/tasks.php')
-check('earner with no interests sees no premium task, standard tasks still shown', 'Premium fashion P6' not in h and 'Standard tech P6' in h and 'data-interest-prompt' in h)
-s, l, h = NT.get(f'/task.php?id={cf}')
-check('opening the premium task directly explains the interest match, Start disabled', 'data-interest-block' in h and 'interested in' in h and re.search(r'value="start" disabled', h) is not None)
-start(NT, cf)
-msg, _ = NT.flash('/tasks.php')
+check('earner with no interests sees the campaign in the feed', 'Everyone follow P6' in h)
+s, l, h = NZ.get(f'/task.php?id={copen}')
+check('task page: reward shown, Start enabled, no premium badge or interest block', '+₦15.00' in h and 'value="start"' in h and re.search(r'value="start" disabled', h) is None and 'data-interest' not in h and 'premium' not in h.lower())
 held = lambda u, c_: one(f"SELECT COUNT(*) FROM task_reservations WHERE campaign_id = {c_} AND earner_user_id = {u} AND status = 'active'")
-check('reservation endpoint refuses a non-matching earner', held(nt, cf) == '0' and 'interested in' in msg, msg)
-start(NZ, cf)
-msg, _ = NZ.flash('/tasks.php')
-check('reservation endpoint refuses an earner with no interests', held(nz, cf) == '0' and 'Choose your interests' in msg, msg)
-start(NI, cf)
-check('matching earner reserves the premium task', held(ni, cf) == '1')
-start(NZ, cbasic)
-check('standard tasks ignore interests (no-interest earner reserves one)', held(nz, cbasic) == '1')
-admin.post('/campaigns.php', {'_csrf': admin.csrf(path='/campaigns.php'), 'campaign_id': cf, 'action': 'interests', 'back': f'campaign.php?id={cf}', 'interests[]': [FASHION, TECH]})
-s, l, h = NT.get('/tasks.php')
-check('admin retargets the live campaign (+Tech): Tech earner now sees it', cint(cf) == sorted([FASHION, TECH]) and 'Premium fashion P6' in h)
-s, l, h = X['x2'].get('/tasks.php')
-check('Music-only earner no longer sees it; the reservation already held stays', 'Premium fashion P6' not in h and held(ni, cf) == '1')
-# legacy premium campaign (no interests) matches every earner who has chosen interests
-clegacy = campaign(adv, 'Legacy premium P6', 'legacyprem', 3, tier='targeted', interests=[FASHION])
-db(f"DELETE FROM campaign_interests WHERE campaign_id = {clegacy}")
-s, l, h = NT.get('/tasks.php')
-s2, l2, h2 = NZ.get('/tasks.php')
-check('legacy premium campaign (no interests) shown to an earner with any interests, not to one with none', 'Legacy premium P6' in h and 'Legacy premium P6' not in h2)
-start(NT, clegacy)
-start(NZ, clegacy)
-check('legacy premium: reservable with any interests, refused with none', held(nt, clegacy) == '1' and held(nz, clegacy) == '0')
-s, l, h = admin.get(f'/campaign.php?id={clegacy}')
-check('admin sees a legacy campaign as matching all earners with interests', 'matches every earner who has chosen interests' in h)
-# disabled interest: ignored on both sides, hidden from pickers, refused on save; re-enabling restores
-chealth = campaign(adv, 'Premium health P6', 'premhealth', 3, tier='targeted', interests=[HEALTH])
-s, l, h = NH.get('/tasks.php')
-check('Health earner sees the Health premium task', 'Premium health P6' in h)
-admin.post('/interests.php', {'_csrf': admin.csrf(path='/interests.php'), 'action': 'save', 'id': HEALTH, 'name': hname2})
-check('admin disables an interest (audited)', one(f"SELECT is_active FROM interests WHERE id = {HEALTH}") == '0'
-      and one(f"SELECT COUNT(*) FROM audit_log WHERE event_key = 'admin.interest_disabled' AND target_id = {HEALTH}") == '1')
-check('disabling keeps existing selections (for re-enable)', mine(nh) == [HEALTH] and cint(chealth) == [HEALTH])
-s, l, h = NH.get('/tasks.php')
-check('earner whose only interest is disabled sees no premium tasks and is prompted again', 'Premium health P6' not in h and 'Premium fashion P6' not in h and 'data-interest-prompt' in h)
-s, l, h = NI.get('/tasks.php')
-check("campaign whose only interest is disabled falls back to 'matches all with interests'", 'Premium health P6' in h)
-s, l, h = NH.get('/interests.php')
-check('disabled interest hidden from the earner picker', hname2.replace('&', '&amp;') not in h)
-s, l, h = adv.get('/campaign-new.php')
-check('disabled interest hidden from the campaign picker', hname2.replace('&', '&amp;') not in h)
-NH.post('/interests.php', {'_csrf': NH.csrf(path='/interests.php'), 'interests[]': [HEALTH]})
-msg, _ = NH.flash('/interests.php')
-check('saving a disabled interest is refused', 'no longer available' in msg, msg)
-new_campaign(adv, 'Disabled interest campaign', 'disint', interests=[HEALTH])
-msg, _ = adv.flash('/campaign-new.php')
-check('new campaign with a disabled interest refused', 'no longer available' in msg, msg)
-admin.post('/interests.php', {'_csrf': admin.csrf(path='/interests.php'), 'action': 'save', 'id': HEALTH, 'name': hname2, 'active': '1'})
-s, l, h = NH.get('/tasks.php')
-check('re-enabling restores the earner match', 'Premium health P6' in h)
-# cannot disable below 3 active
-act = [int(r[0]) for r in db("SELECT id FROM interests WHERE is_active = 1 ORDER BY id")]
-db("UPDATE interests SET is_active = 0 WHERE id IN (" + ','.join(str(i) for i in act[3:]) + ")")
-admin.post('/interests.php', {'_csrf': admin.csrf(path='/interests.php'), 'action': 'save', 'id': act[0], 'name': one(f"SELECT name FROM interests WHERE id = {act[0]}")})
-msg, _ = admin.flash('/interests.php')
-check('admin cannot leave fewer than 3 interests active', one(f"SELECT is_active FROM interests WHERE id = {act[0]}") == '1' and 'at least 3' in msg, msg)
-db("UPDATE interests SET is_active = 1 WHERE id IN (" + ','.join(str(i) for i in act[3:]) + ")")
-# tidy: the test interest goes back to disabled, seeded order restored, reservations released
-db(f"UPDATE interests SET is_active = 0 WHERE id = {HEALTH}")
-for i_, n_ in enumerate(SEED):
-    db(f"UPDATE interests SET sort_order = {(i_ + 1) * 10} WHERE name = '" + n_.replace("'", "''") + "'")
-db("UPDATE task_reservations SET status = 'released' WHERE status = 'active' AND earner_user_id IN (" + ','.join(str(u) for u in (ni, nt, nz, nh)) + ")")
-for c_ in (cf, cbasic, clegacy, chealth):
-    admin.post('/campaigns.php', {'_csrf': admin.csrf(path='/campaigns.php'), 'campaign_id': c_, 'action': 'cancel', 'reason': 'Interest tests done', 'back': 'campaigns.php'})
+start(NZ, copen)
+check('earner with no interests reserves it, at the campaign price', held(nz, copen) == '1'
+      and db(f"SELECT unit_price_kobo, unit_reward_kobo FROM task_reservations WHERE campaign_id = {copen} AND earner_user_id = {nz}")[0] == ['2500', '1500'])
+s, l, h = adv.get(f'/campaign.php?id={copen}')
+check('advertiser campaign page: no audience interests card, no premium', s == 200 and 'Audience interests' not in h and 'value="interests"' not in h and 'premium' not in h.lower())
+adv.post(f'/campaign.php?id={copen}', {'_csrf': adv.csrf(h), 'campaign_id': copen, 'action': 'interests', 'interests[]': '1'})
+s, l, h = admin.get(f'/campaign.php?id={copen}')
+check('admin campaign page: no interests card, no premium', s == 200 and 'Audience interests' not in h and 'premium' not in h.lower())
+admin.post('/campaigns.php', {'_csrf': admin.csrf(h), 'campaign_id': copen, 'action': 'interests', 'back': f'campaign.php?id={copen}', 'interests[]': '1'})
+check('old interest actions on campaign pages do nothing', one("SELECT COUNT(*) FROM campaign_interests") == ci_rows and one("SELECT COUNT(*) FROM user_interests") == ui_rows)
+db(f"UPDATE task_reservations SET status = 'released' WHERE status = 'active' AND earner_user_id = {nz}")
+admin.post('/campaigns.php', {'_csrf': admin.csrf(path='/campaigns.php'), 'campaign_id': copen, 'action': 'cancel', 'reason': 'Retirement checks done', 'back': 'campaigns.php'})
 ok, out = reconcile_ok()
-check('reconciliation OK after interest campaigns', ok, out)
+check('reconciliation OK after the retirement checks', ok, out)
 
 # ======================================================================
 # 9. Notifications: inbox, bell, read, settings, every category

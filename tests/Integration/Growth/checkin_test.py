@@ -155,7 +155,7 @@ def checkin(client, csrf=True):
 
 
 def level_form(client, level, **over):
-    data = {'action': 'save', 'id': level[0], 'name': level[1], 'min_approved': level[2], 'min_rate': level[3], 'max_active': level[4], 'premium': '1', 'active': '1'}
+    data = {'action': 'save', 'id': level[0], 'name': level[1], 'min_approved': level[2], 'min_rate': level[3], 'max_active': level[4], 'active': '1'}
     data.update(over)
     s, l, h = client.get('/levels.php')
     data['_csrf'] = client.csrf(h)
@@ -229,7 +229,7 @@ for bad, msg in (('abc', 'in naira'), ('-5', 'in naira'), ('10000.01', 'between 
     f, _ = level_form(admin, starter, checkin_reward=bad)
     check(f'check-in reward "{bad}" refused', msg in f and one(f"SELECT checkin_reward_kobo FROM earner_levels WHERE id = {starter[0]}") == '0', f)
 s, l, h = admin.get('/levels.php')
-admin.post('/levels.php', {'action': 'save', 'id': starter[0], 'name': starter[1], 'min_approved': starter[2], 'min_rate': starter[3], 'max_active': starter[4], 'premium': '1', 'active': '1', 'checkin_reward': '20'})
+admin.post('/levels.php', {'action': 'save', 'id': starter[0], 'name': starter[1], 'min_approved': starter[2], 'min_rate': starter[3], 'max_active': starter[4], 'active': '1', 'checkin_reward': '20'})
 check('level save without CSRF refused', one(f"SELECT checkin_reward_kobo FROM earner_levels WHERE id = {starter[0]}") == '0')
 level_form(c1, starter, checkin_reward='999')
 s, l, h = c1.get(ADM + '/levels.php')
@@ -294,7 +294,7 @@ check('unverified earner cannot check in', 'Confirm your email' in f and rows(un
 # ======================================================================
 # 7. Per-level amount; levels off = no reward
 # ======================================================================
-db("INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, premium_access, is_active, checkin_reward_kobo) VALUES ('CheckinTest', 0, 0, 3, 1, 1, 3500)")
+db("INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, is_active, checkin_reward_kobo) VALUES ('CheckinTest', 0, 0, 3, 1, 3500)")
 cklevel = one("SELECT id FROM earner_levels WHERE name = 'CheckinTest'")
 s, l, h = c3.get('/dashboard.php')
 check('a different level shows its own amount (₦35, CheckinTest level)', '₦35.00' in h and 'CheckinTest level' in h)
