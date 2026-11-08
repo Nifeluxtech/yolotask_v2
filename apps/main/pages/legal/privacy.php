@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 $docTitle = 'Privacy Policy';
-$docUpdated = 'Last updated: October 2026';
+$docUpdated = 'Last updated: November 2026';
 ob_start();
 ?>
 <h2>1. Information We Collect</h2>
@@ -14,7 +14,7 @@ ob_start();
       <h2>2. How We Use It</h2>
       <ul>
         <li>Processing transactions, withdrawals and campaign funding.</li>
-        <li>Matching earners to targeted campaigns via interests and demographics.</li>
+        <li>Showing earners the campaigns open to them and verifying completed tasks.</li>
         <li>Sending announcements, security alerts and support messages.</li>
       </ul>
 
