@@ -53,6 +53,21 @@ as the hub and relay SPLUG's callbacks to it.
 - Non-matching unknown orders keep the old behaviour (404, logged, unmatched
   review when the merchant number matches).
 
+### Registered clients (order registration API)
+
+Sites without a fixed order prefix register each order before sending the
+customer to AfrStar: `POST https://yolotask.com.ng/hooks/afrstar/register.php`
+with JSON `{"order_sn","callback_url"}` and headers `X-Hub-Client`,
+`X-Hub-Timestamp` (Unix seconds, within 5 minutes) and `X-Hub-Signature`
+(hex HMAC-SHA256 of `<timestamp>.<raw body>` with the client's secret).
+Clients and secrets live under `clients` in `config-private/afrstar-forward.php`
+(never in Git). Rows go to `afrstar_forward_registrations` (migration 0018).
+Fixed `routes` win over registrations; `YTP`/`YTW` and any order_sn a route
+matches cannot be registered; an order_sn belongs to the first client that
+registers it (409 for others). Answers: 201 registered, 200 updated, 401,
+409, 422 (`bad_order_sn`, `reserved_order_sn`, `bad_callback_url`,
+`host_not_allowed`).
+
 ### Switching SPLUG onto the hub
 1. Deploy, run `scripts/migrate.php` (applies 0007), create
    `config-private/afrstar-forward.php` with the SPLUG route.
