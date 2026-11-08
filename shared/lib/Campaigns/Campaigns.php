@@ -83,7 +83,6 @@ final class Campaigns
         if ($platform === null || !(int) $platform['is_active']) throw new RuntimeException('Choose a platform.');
         $type = Pricing::taskType($pdo, (int) ($in['task_type_id'] ?? 0));
         if ($type === null || !(int) $type['is_active']) throw new RuntimeException('Choose a task type.');
-        $tier = ($in['tier'] ?? 'basic') === 'targeted' ? 'targeted' : 'basic';
         $custom = Pricing::customRules($pdo);
         $customPlatform = null;
         $customTask = null;
@@ -130,11 +129,10 @@ final class Campaigns
             $reward = Pricing::customReward($price, $custom['percent']);
             $unit = ['price' => $price, 'reward' => $reward, 'margin' => $price - $reward];
         } else {
-            $unit = Pricing::unit($type, $tier);
+            $unit = Pricing::unit($type);
         }
         if ($unit['reward'] <= 0 || $unit['margin'] <= 0) throw new RuntimeException('This task type is not priced yet. Choose another.');
-        $interests = Interests::parseSelection($pdo, $in['interests'] ?? null); // 1-3 active interests, required on every new campaign
-        return ['custom_platform' => $customPlatform, 'custom_task' => $customTask, 'interests' => $interests, 'title' => $title, 'platform' => $platform, 'type' => $type, 'tier' => $tier, 'link' => $link, 'instructions' => $text['instructions'],
+        return ['custom_platform' => $customPlatform, 'custom_task' => $customTask, 'title' => $title, 'platform' => $platform, 'type' => $type, 'link' => $link, 'instructions' => $text['instructions'],
             'proof' => $text['proof'], 'quantity' => $qty, 'ends_at' => $endsAt, 'price' => $unit['price'], 'reward' => $unit['reward'], 'budget' => $unit['price'] * $qty];
     }
 
@@ -153,13 +151,12 @@ final class Campaigns
         $v = self::validateInput($pdo, $in);
         $pdo->beginTransaction();
         try {
-            $pdo->prepare('INSERT INTO campaigns (advertiser_user_id, platform_id, task_type_id, custom_platform_name, custom_task_name, title, link_url, link_normalized, link_hash, instructions, proof_requirements, tier, unit_price_kobo, unit_reward_kobo, quantity, budget_kobo, auto_approve_hours, ends_at)
-                VALUES (:u, :p, :t, :cp, :ct, :ti, :l, :ln, :lh, :i, :pr, :tier, :price, :reward, :q, :b, :aa, :e)')
+            $pdo->prepare('INSERT INTO campaigns (advertiser_user_id, platform_id, task_type_id, custom_platform_name, custom_task_name, title, link_url, link_normalized, link_hash, instructions, proof_requirements, unit_price_kobo, unit_reward_kobo, quantity, budget_kobo, auto_approve_hours, ends_at)
+                VALUES (:u, :p, :t, :cp, :ct, :ti, :l, :ln, :lh, :i, :pr, :price, :reward, :q, :b, :aa, :e)')
                 ->execute(['u' => $uid, 'p' => $v['platform']['id'], 't' => $v['type']['id'], 'cp' => $v['custom_platform'], 'ct' => $v['custom_task'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
-                    'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'],
+                    'i' => $v['instructions'], 'pr' => $v['proof'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'],
                     'aa' => self::advertiserAutoApproveHours($pdo, $uid), 'e' => $v['ends_at']]);
             $id = (int) $pdo->lastInsertId();
-            Interests::setForCampaign($pdo, $id, $v['interests']);
             Instructions::record($pdo, $id, 1, $v['instructions'], $v['proof'], $uid);
             Audit::record($pdo, $uid, 'campaign.created', 'campaign', $id);
             $pdo->commit();
@@ -178,12 +175,11 @@ final class Campaigns
         $v = self::validateInput($pdo, $in, $id);
         $pdo->beginTransaction();
         try {
-            $upd = $pdo->prepare("UPDATE campaigns SET platform_id = :p, task_type_id = :t, custom_platform_name = :cp, custom_task_name = :ct, title = :ti, link_url = :l, link_normalized = :ln, link_hash = :lh, instructions = :i, proof_requirements = :pr, tier = :tier,
+            $upd = $pdo->prepare("UPDATE campaigns SET platform_id = :p, task_type_id = :t, custom_platform_name = :cp, custom_task_name = :ct, title = :ti, link_url = :l, link_normalized = :ln, link_hash = :lh, instructions = :i, proof_requirements = :pr,
                 unit_price_kobo = :price, unit_reward_kobo = :reward, quantity = :q, budget_kobo = :b, ends_at = :e WHERE id = :id AND status = 'draft'");
             $upd->execute(['p' => $v['platform']['id'], 't' => $v['type']['id'], 'cp' => $v['custom_platform'], 'ct' => $v['custom_task'], 'ti' => $v['title'], 'l' => $v['link']['url'], 'ln' => $v['link']['normalized'], 'lh' => $v['link']['hash'],
-                'i' => $v['instructions'], 'pr' => $v['proof'], 'tier' => $v['tier'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'], 'e' => $v['ends_at'], 'id' => $id]);
+                'i' => $v['instructions'], 'pr' => $v['proof'], 'price' => $v['price'], 'reward' => $v['reward'], 'q' => $v['quantity'], 'b' => $v['budget'], 'e' => $v['ends_at'], 'id' => $id]);
             Instructions::replaceDraft($pdo, $id, $v['instructions'], $v['proof']);
-            Interests::setForCampaign($pdo, $id, $v['interests']);
             Audit::record($pdo, (int) $user['id'], 'campaign.updated', 'campaign', $id);
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -208,37 +204,6 @@ final class Campaigns
             $pdo->prepare('UPDATE campaigns SET instructions = :i, proof_requirements = :p, instructions_version = :v WHERE id = :id')
                 ->execute(['i' => $text['instructions'], 'p' => $text['proof'], 'v' => $version, 'id' => $id]);
             Audit::record($pdo, $uid, 'campaign.instructions_updated', 'campaign', $id);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            throw $e;
-        }
-    }
-
-    /** Advertiser: change the interests while the campaign is a draft or waiting for approval. */
-    public static function updateInterests(PDO $pdo, array $user, int $id, mixed $input): void
-    {
-        $uid = (int) $user['id'];
-        self::ownedBy($pdo, $id, $uid);
-        $ids = Interests::parseSelection($pdo, $input);
-        self::writeInterests($pdo, $id, $ids, ['draft', 'pending_approval'], $uid, 'campaign.interests_updated', 'Interests can only be changed while the campaign is a draft or waiting for approval.');
-    }
-
-    /** Admin: view/edit interests during approval (and while the campaign runs). */
-    public static function adminUpdateInterests(PDO $pdo, int $adminId, int $id, mixed $input): void
-    {
-        $ids = Interests::parseSelection($pdo, $input);
-        self::writeInterests($pdo, $id, $ids, ['pending_approval', 'live', 'paused'], $adminId, 'admin.campaign_interests_updated', 'Interests can be changed while the campaign is waiting for approval, live or paused.');
-    }
-
-    private static function writeInterests(PDO $pdo, int $id, array $ids, array $states, int $actorId, string $event, string $closedMessage): void
-    {
-        $pdo->beginTransaction();
-        try {
-            $c = self::lockRow($pdo, $id);
-            if (!in_array((string) $c['status'], $states, true)) throw new RuntimeException($closedMessage);
-            Interests::setForCampaign($pdo, $id, $ids);
-            Audit::record($pdo, $actorId, $event, 'campaign', $id);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -279,7 +244,6 @@ final class Campaigns
             if ((string) $c['status'] !== 'draft') throw new RuntimeException('This campaign has already been submitted.');
             if ($c['ends_at'] !== null && strtotime((string) $c['ends_at'] . ' UTC') <= time()) throw new RuntimeException('The end date has passed. Edit the campaign first.');
             if (CampaignLinks::duplicateOpen($pdo, (string) $c['link_hash'], (int) $c['task_type_id'], $id, $c['custom_task_name'] !== null ? (string) $c['custom_task_name'] : null)) throw new RuntimeException('A campaign for this link and task type is already running.');
-            if (Interests::forCampaign($pdo, $id) === []) throw new RuntimeException('Choose 1 to ' . Interests::MAX . ' interests for this campaign before funding it.');
             if ($wallet['status'] !== 'active') throw new RuntimeException('Your wallet is on hold. Contact support.');
             $budget = (int) $c['budget_kobo'];
             if ($wallet['available_kobo'] < $budget) {
@@ -316,7 +280,7 @@ final class Campaigns
     {
         if (!in_array((string) $c['status'], self::CLOSED, true)) return 0;
         $unspent = (int) $c['funded_kobo'] - (int) $c['spent_kobo'] - (int) $c['refunded_kobo'];
-        $refund = $unspent - (int) $c['pending_count'] * (int) $c['unit_price_kobo'];
+        $refund = $unspent - self::pendingValue($pdo, (int) $c['id']);
         if ($refund <= 0) return 0;
         $wallet = Wallet::find($pdo, (int) $c['advertiser_user_id']);
         if ($wallet === null) throw new RuntimeException('Advertiser wallet missing.');
@@ -330,6 +294,30 @@ final class Campaigns
         $pdo->prepare("INSERT INTO campaign_funding_events (campaign_id, event, amount_kobo, ledger_transaction_id, note) VALUES (:c, 'refund', :a, :t, :n)")
             ->execute(['c' => $id, 'a' => $refund, 't' => $tx['id'], 'n' => mb_substr($note, 0, 255)]);
         return $refund;
+    }
+
+    /**
+     * Escrow that pending submissions still need: the sum of each one's own
+     * price (a submission keeps the price it was made at, so after a reprice
+     * a campaign can hold pending work at more than one price).
+     */
+    public static function pendingValue(PDO $pdo, int $campaignId): int
+    {
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(unit_price_kobo), 0) FROM submissions WHERE campaign_id = :c AND status = 'pending'");
+        $stmt->execute(['c' => $campaignId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Escrow promised to active, unexpired reservations: each at the price
+     * recorded when it was reserved (migration 0017), or the campaign's
+     * current price for reservations made before that.
+     */
+    public static function reservedValue(PDO $pdo, array $c): int
+    {
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(COALESCE(unit_price_kobo, :p)), 0) FROM task_reservations WHERE campaign_id = :c AND status = 'active' AND expires_at > UTC_TIMESTAMP()");
+        $stmt->execute(['p' => (int) $c['unit_price_kobo'], 'c' => (int) $c['id']]);
+        return (int) $stmt->fetchColumn();
     }
 
     // ---------------------------------------------------------------- admin review
