@@ -216,7 +216,7 @@ def admin_fee(percent, csrf=True):
 
 
 def level_form(client, level, **over):
-    data = {'action': 'save', 'id': level[0], 'name': level[1], 'min_approved': level[2], 'min_rate': level[3], 'max_active': level[4], 'premium': '1', 'active': '1'}
+    data = {'action': 'save', 'id': level[0], 'name': level[1], 'min_approved': level[2], 'min_rate': level[3], 'max_active': level[4], 'active': '1'}
     data.update(over)
     s, l, h = client.get('/levels.php')
     data['_csrf'] = client.csrf(h)
@@ -376,7 +376,7 @@ s, l, h = earner.get('/withdraw.php')
 check('form shows the level rate and the standard rate', 'data-fee-rate="500"' in h and 'level rate; standard 10%' in h, re.findall(r'data-fee-rate[^<]+<', h))
 s, l, h = preview(earner, '1234.56')
 check('preview at the level rate: ₦1,234.56 @5% → fee ₦61.72 (61.728 rounded down), net ₦1,172.84', preview_numbers(h) == ('₦1,234.56', '₦61.72', '₦1,172.84') and 'level)' in h, preview_numbers(h))
-db("INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, premium_access, is_active, withdrawal_fee_bps) VALUES ('FeeTest', 0, 0, 3, 1, 1, 250)")
+db("INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, is_active, withdrawal_fee_bps) VALUES ('FeeTest', 0, 0, 3, 1, 250)")
 feetest = one("SELECT id FROM earner_levels WHERE name = 'FeeTest'")
 s, l, h = preview(earner, '1234.56')
 check('a different level gets its own rate (FeeTest 2.5%: fee ₦30.86)', preview_numbers(h) == ('₦1,234.56', '₦30.86', '₦1,203.70'), preview_numbers(h))
