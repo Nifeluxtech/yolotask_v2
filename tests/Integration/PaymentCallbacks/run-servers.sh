@@ -3,6 +3,7 @@
 #   8401 main (AfrStar callback hooks), 8402 earner, 8403 advertiser, 8404 reviewer, 8405 admin,
 #   8499 fake AfrStar gateway.
 # Usage: YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh [stop]
+# Unknown paths answer 404 through error.php, like the cPanel Apache vhosts (router.php).
 # YT_PHP_ARGS adds php flags, e.g. simulate a host without ext-sodium:
 #   YT_PHP_ARGS="-d disable_functions=sodium_crypto_secretbox,sodium_crypto_secretbox_open"
 set -euo pipefail
@@ -15,7 +16,7 @@ pkill -f "fake_afrstar.py 8499" 2>/dev/null || true
 [[ "${1:-}" == "stop" ]] && exit 0
 sleep 0.5
 start() { # port docroot
-  YOLOTASK_CONFIG_DIR="$CFG" PHP_CLI_SERVER_WORKERS=4 setsid nohup php ${YT_PHP_ARGS:-} -d log_errors=1 -d error_log="$LOGS/php-$1.log" -S "127.0.0.1:$1" -t "$ROOT/$2" >"$LOGS/srv-$1.log" 2>&1 < /dev/null &
+  YOLOTASK_CONFIG_DIR="$CFG" PHP_CLI_SERVER_WORKERS=4 setsid nohup php ${YT_PHP_ARGS:-} -d log_errors=1 -d error_log="$LOGS/php-$1.log" -S "127.0.0.1:$1" -t "$ROOT/$2" "$ROOT/tests/Integration/PaymentCallbacks/router.php" >"$LOGS/srv-$1.log" 2>&1 < /dev/null &
 }
 start 8401 apps/main/public
 start 8402 apps/earner/public
