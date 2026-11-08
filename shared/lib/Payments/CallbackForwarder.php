@@ -46,7 +46,7 @@ final class CallbackForwarder
     {
         if ($configDir === null && self::$cache !== null) return self::$cache;
         $dir = $configDir ?? (string) (function_exists('yolotask_config') ? (yolotask_config()['_config_dir'] ?? '') : '');
-        $out = ['routes' => [], 'ca_file' => null];
+        $out = ['routes' => [], 'ca_file' => null, 'clients' => []];
         $file = rtrim($dir, '/') . '/afrstar-forward.php';
         if ($dir === '' || !is_file($file)) {
             if ($configDir === null) self::$cache = $out;
@@ -77,8 +77,36 @@ final class CallbackForwarder
             $seen[$r['name']] = true;
             $out['routes'][] = $r;
         }
+        // Registered clients: other sites that register each order (order_sn +
+        // callback URL) through hooks/afrstar/register.php, signed with their
+        // own secret. Invalid clients are dropped and logged.
+        $out['clients'] = [];
+        foreach ((array) ($loaded['clients'] ?? []) as $i => $client) {
+            $c = self::validateClient(is_array($client) ? $client : []);
+            if ($c === null || isset($out['clients'][$c['name']]) || isset($seen[$c['name']])) {
+                Logger::error('payments.forward_client_rejected', ['index' => $i]);
+                continue;
+            }
+            $c['allow_private'] = $allowPrivate;
+            $out['clients'][$c['name']] = $c;
+        }
         if ($configDir === null) self::$cache = $out;
         return $out;
+    }
+
+    /** @return array{name:string,secret:string,allowed_hosts:list<string>,timeout:int}|null */
+    public static function validateClient(array $client): ?array
+    {
+        $name = (string) ($client['name'] ?? '');
+        $secret = (string) ($client['secret'] ?? '');
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,39}$/', $name)) return null;
+        if (strlen($secret) < 32) return null;
+        $hosts = [];
+        foreach ((array) ($client['allowed_hosts'] ?? []) as $h) {
+            $h = strtolower(trim((string) $h));
+            if ($h !== '') $hosts[] = $h;
+        }
+        return ['name' => $name, 'secret' => $secret, 'allowed_hosts' => $hosts, 'timeout' => max(1, min(30, (int) ($client['timeout'] ?? 10)))];
     }
 
     /** @return array|null the normalised route, or null with $reason set */
@@ -147,11 +175,12 @@ final class CallbackForwarder
      */
     public static function handle(string $kind, string $raw, array $post, string $contentType, string $ip): ?array
     {
-        $routes = self::config()['routes'];
-        if ($routes === []) return null;
+        $cfg = self::config();
+        $routes = $cfg['routes'];
+        if ($routes === [] && $cfg['clients'] === []) return null;
         $payload = CallbackVerifier::parse($raw, $post);
         $orderSn = substr(trim(is_scalar($payload['order_sn'] ?? null) ? (string) $payload['order_sn'] : ''), 0, 64);
-        $route = self::match($orderSn, $routes);
+        $route = self::match($orderSn, $routes) ?? self::registeredRoute($orderSn, $cfg['clients']);
         if ($route === null) return null;
         if ($raw === '' && $post !== []) {
             // multipart/form-data: PHP consumed the body; re-encode the fields.
@@ -159,6 +188,53 @@ final class CallbackForwarder
             $contentType = 'application/x-www-form-urlencoded';
         }
         return self::forward($kind, $route, $raw, $contentType, $orderSn, $ip);
+    }
+
+    /** Route for an order a registered client recorded, or null. */
+    public static function registeredRoute(string $orderSn, array $clients): ?array
+    {
+        if ($orderSn === '' || $clients === [] || self::isOwnReference($orderSn)) return null;
+        try {
+            $stmt = Database::connection()->prepare('SELECT client, callback_url FROM afrstar_forward_registrations WHERE order_sn = :sn');
+            $stmt->execute([':sn' => $orderSn]);
+            $row = $stmt->fetch();
+        } catch (\Throwable $e) {
+            Logger::error('payments.forward_lookup_failed', ['exception' => get_class($e)]);
+            return null;
+        }
+        if (!$row || !isset($clients[$row['client']])) return null;
+        $client = $clients[$row['client']];
+        return self::validateRoute(['name' => $client['name'], 'pattern' => '/^/', 'url' => (string) $row['callback_url'], 'timeout' => $client['timeout']], (bool) $client['allow_private']);
+    }
+
+    /**
+     * Register (or update) one order for a client. Caller has already checked
+     * the signature. Returns [http status, response array].
+     * @return array{0:int,1:array<string,mixed>}
+     */
+    public static function register(array $client, string $orderSn, string $callbackUrl): array
+    {
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/', $orderSn)) return [422, ['ok' => false, 'error' => 'bad_order_sn']];
+        if (self::isOwnReference($orderSn)) return [422, ['ok' => false, 'error' => 'reserved_order_sn']];
+        if (self::match($orderSn, self::config()['routes']) !== null) return [422, ['ok' => false, 'error' => 'reserved_order_sn']];
+        if (strlen($callbackUrl) > 500) return [422, ['ok' => false, 'error' => 'bad_callback_url']];
+        $reason = null;
+        $route = self::validateRoute(['name' => $client['name'], 'pattern' => '/^/', 'url' => $callbackUrl], (bool) ($client['allow_private'] ?? false), $reason);
+        if ($route === null) return [422, ['ok' => false, 'error' => 'bad_callback_url', 'reason' => $reason]];
+        if ($client['allowed_hosts'] !== [] && !in_array($route['host'], $client['allowed_hosts'], true)) return [422, ['ok' => false, 'error' => 'host_not_allowed']];
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT client FROM afrstar_forward_registrations WHERE order_sn = :sn');
+        $stmt->execute([':sn' => $orderSn]);
+        $owner = $stmt->fetchColumn();
+        if ($owner !== false && $owner !== $client['name']) return [409, ['ok' => false, 'error' => 'order_sn_taken']];
+        if ($owner === false) {
+            $pdo->prepare('INSERT INTO afrstar_forward_registrations (order_sn, client, callback_url) VALUES (:sn, :c, :u)')
+                ->execute([':sn' => $orderSn, ':c' => $client['name'], ':u' => $callbackUrl]);
+            return [201, ['ok' => true, 'order_sn' => $orderSn, 'status' => 'registered']];
+        }
+        $pdo->prepare('UPDATE afrstar_forward_registrations SET callback_url = :u, updated_at = CURRENT_TIMESTAMP WHERE order_sn = :sn')
+            ->execute([':sn' => $orderSn, ':u' => $callbackUrl]);
+        return [200, ['ok' => true, 'order_sn' => $orderSn, 'status' => 'updated']];
     }
 
     /** @return array{status:int,body:string} */

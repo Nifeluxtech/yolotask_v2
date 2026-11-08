@@ -33,4 +33,14 @@ return [
         // Later, e.g. YOLOTASK V1 (TOP-... references):
         // ['name' => 'v1', 'pattern' => '/^TOP-/', 'url' => 'https://v1.example.com/api/afrstar-callback', 'timeout' => 10],
     ],
+
+    // Registered clients (no fixed prefix needed): the other site calls
+    // https://yolotask.com.ng/hooks/afrstar/register.php for each order with
+    // its order_sn and callback URL, signed with this secret (HMAC-SHA256 of
+    // "<timestamp>.<body>"). Callbacks for that order_sn are then relayed to
+    // that URL. Secret: at least 32 characters, shared only with that site.
+    // allowed_hosts (optional) limits which callback hosts it may register.
+    'clients' => [
+        // ['name' => 'mysite', 'secret' => 'CHANGE-ME-at-least-32-characters-long', 'allowed_hosts' => ['mysite.com'], 'timeout' => 10],
+    ],
 ];
