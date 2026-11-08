@@ -179,8 +179,11 @@ final class Ledger
                 HAVING approved_value <> c.spent_kobo OR approved_n <> c.approved_count OR pending_n <> c.pending_count LIMIT 50";
         foreach ($pdo->query($sql) as $r) $problems[] = "Campaign #{$r['id']} counters (spent {$r['spent_kobo']}, approved {$r['approved_count']}, pending {$r['pending_count']}) do not match its submissions";
 
-        $sql = "SELECT id, funded_kobo - spent_kobo - refunded_kobo unspent, pending_count * unit_price_kobo needed FROM campaigns
-                WHERE status IN ('completed', 'cancelled', 'ended', 'rejected') AND funded_kobo - spent_kobo - refunded_kobo <> pending_count * unit_price_kobo LIMIT 50";
+        // Pending work is needed at each submission's own price (a repriced campaign can hold more than one).
+        $sql = "SELECT c.id, c.funded_kobo - c.spent_kobo - c.refunded_kobo unspent,
+                       (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') needed FROM campaigns c
+                WHERE c.status IN ('completed', 'cancelled', 'ended', 'rejected')
+                  AND c.funded_kobo - c.spent_kobo - c.refunded_kobo <> (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') LIMIT 50";
         foreach ($pdo->query($sql) as $r) $problems[] = "Closed campaign #{$r['id']} still holds {$r['unspent']} in escrow (pending work needs {$r['needed']})";
 
         // Phase 5: approvals paid on appeal over a campaign's budget are all recorded.
