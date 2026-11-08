@@ -42,9 +42,15 @@ yolotask-v2/
 │   │   ├── 0008_appeals_reviewer_queue.sql
 │   │   ├── 0009_referrals_levels_notifications.sql
 │   │   ├── 0010_virtual_number_orders.sql          (placeholder)
-│   │   └── 0011_indexes_constraints_finalization.sql (placeholder)
+│   │   ├── 0011_indexes_constraints_finalization.sql (placeholder)
+│   │   ├── 0012_leaderboard.sql
+│   │   ├── 0013_deposit_cashback.sql
+│   │   ├── 0014_withdrawal_fee_daily_checkin.sql
+│   │   ├── 0015_leaderboard_all_time.sql
+│   │   ├── 0016_custom_tasks.sql
+│   │   └── 0017_retire_premium.sql
 │   ├── seeds/
-│   │   ├── 001_platforms_services_interests.sql
+│   │   ├── 001_platforms_services.sql
 │   │   ├── 002_default_settings_levels.sql
 │   │   └── 003_first_admin.instruction.md
 │   └── verify/

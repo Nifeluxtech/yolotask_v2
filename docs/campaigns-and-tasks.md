@@ -2,52 +2,64 @@
 
 ## Catalog and prices
 Admin → Tasks → Platforms & prices. Platforms carry the link domains a
-campaign link must use. Task types carry four admin-editable amounts (kobo in
-the DB): base price / base reward (standard campaigns) and premium price /
-premium reward (targeted campaigns). Price − reward = platform revenue.
-Campaigns snapshot price and reward at creation, so later price edits never
-change an existing campaign.
+campaign link must use. Each task type has one advertiser price and one
+earner reward (kobo in the DB: `base_price_kobo`, `base_reward_kobo`).
+Price − reward = platform revenue. Campaigns snapshot price and reward at
+creation, so later price edits never change an existing campaign.
 
 Seeded (migration 0005): Instagram, TikTok, X (Twitter), Facebook, YouTube,
 WhatsApp, Telegram, Threads; Follow ₦25/₦15, Like ₦15/₦10, Comment ₦40/₦25,
 Share/Repost ₦40/₦25, Subscribe ₦30/₦20, Join group/channel ₦30/₦20, Watch
-video ₦20/₦12. Premium = base × 1.5 rounded half-up to whole naira (Follow
-₦38/₦23, Like ₦23/₦15, Comment and Share ₦60/₦38, Subscribe and Join ₦45/₦30,
-Watch ₦30/₦18). "Targeted" (shown as Premium) means premium price, higher
-reward, first place in the feed and interest targeting (below).
+video ₦20/₦12.
 
-## Interests and premium targeting
+## Premium campaigns and interests (retired, migration 0017)
 
-Admin → Growth → Interests keeps the list (add, rename, reorder with ↑/↓,
-disable; never deleted). Seeded by migration 0009 for the Nigerian
-social-task market: Music & Entertainment, Sports & Betting, Fashion &
-Beauty, Tech & Gadgets, Crypto & Finance, Food & Lifestyle, Education,
-Religion & Inspiration, Business & Marketing, Gaming, Comedy, News &
-Politics. At least 3 must stay active.
+Premium ("targeted") campaigns and interests were removed in November 2026.
+Every campaign is standard: the catalog price and reward, shown to every
+earner, in one feed ordered by approval time. There is no tier choice, no
+interest picker, no interests page (the old `interests.php` URLs are 404 on
+every portal), no premium badge and no level gate.
 
-- Earners choose 1–3 (`interests.php`, linked from Account and from a
-  dashboard / task-feed prompt while they have none). A new earner is sent to
-  the interests step (`interests.php?welcome=1`, with "Skip for now") right
-  after confirming the email.
-- Every new campaign (standard or premium) chooses 1–3, validated server-side
-  on create, draft edit and funding. The advertiser can change them while the
-  campaign is a draft or waiting for approval; an admin can view and change
-  them during approval (and while live/paused) on the admin campaign page.
-  Changes are audited (`campaign.interests_updated`,
-  `admin.campaign_interests_updated`, `account.interests_updated`).
-- A premium campaign is shown in the feed and can be started only by an
-  earner whose level allows premium **and** who has at least one active
-  interest in common with it. Enforced in `Tasks::feed()` (SQL) and again in
-  `Tasks::start()` under the campaign lock. Earners with no interests see no
-  premium tasks until they choose. Standard tasks ignore interests.
-- Campaigns with no active interest (made before interests existed, or whose
-  interests were all disabled since) match every earner who has chosen at
-  least one interest. Earners with none still see no premium tasks.
-- Disabling an interest hides it from both pickers, refuses it on save and
-  ignores it for matching; existing selections stay in the database and come
-  back when it is enabled again. An earner whose only interests are disabled
-  is treated as having none (prompted again).
-- Reservations already held are not cancelled when targeting changes.
+- The data is left in place, unused, so the change is reversible:
+  `campaigns.tier`, `task_types.premium_price_kobo` / `premium_reward_kobo`
+  (now `DEFAULT 0`), `earner_levels.premium_access` and the `interests`,
+  `user_interests` and `campaign_interests` tables. No code reads or writes
+  them except `scripts/retire-premium.php`, which reads `campaigns.tier`.
+- `scripts/retire-premium.php` (run once after deploying 0017; safe to run
+  again, `--dry-run` to preview) converts every unfinished premium campaign
+  (draft, pending_approval, live, paused) to standard at its task type's
+  current price and reward through `Campaigns\Repricing`:
+  - work in flight keeps the premium reward: pending proofs keep their own
+    price, and active reservations are stamped with it
+    (`task_reservations.unit_price_kobo` / `unit_reward_kobo`);
+  - refund = (premium price − base price) × untaken slots (quantity + appeal
+    extras − approved − pending − active reservations), capped so the escrow
+    keeps enough for everything still owed; Dr campaign escrow / Cr
+    advertiser wallet, type `campaign_refund`, key
+    `retire-premium:<campaign id>`, a `refund` funding event and
+    `refunded_kobo`; `repriced_at` is set and `budget_kobo` keeps what was
+    funded;
+  - drafts are re-quoted (no money moved); finished campaigns are untouched;
+  - custom tasks (migration 0016): a campaign on the `custom` task type has
+    an advertiser-set price that premium never changed, so a premium one is
+    only switched to standard (price, reward and escrow unchanged, no
+    refund); a premium campaign on the `custom` platform ("Other app /
+    website") with a listed task type is repriced like any other. Standard
+    custom campaigns are never selected or touched;
+  - the advertiser gets an in-app notification (no email).
+- A rejected proof resubmitted later takes a fresh slot, so it is made at the
+  campaign's current price (`Tasks\Submissions::resubmit`).
+- Deploy order: release (cpanel-release.sh applies 0017 before switching
+  `current`) → `php scripts/retire-premium.php --config-dir=$HOME/yolotask-v2-live/config-private --dry-run`
+  → the same without `--dry-run`. `scripts/import-v1.php` still writes v1
+  targeted campaigns as `tier = 'targeted'`, so run the script again after a
+  v1 import.
+
+Building on this: a new paid option for campaigns can be added as a new
+priced dimension (catalog columns or a new table) without touching the
+dormant premium columns; `Campaigns\Repricing` already handles moving a
+funded campaign to a different per-task price with correct escrow refunds,
+and reservations already lock in the price an earner was shown.
 
 ## Campaign lifecycle
 `draft → pending_approval → live ⇄ paused → completed | cancelled | ended`,
@@ -56,7 +68,7 @@ or `pending_approval → rejected`.
 - **Draft**: title, platform, task type, https link (must be on the
   platform's domains; no IPs, credentials or ports; normalised and hashed),
   instructions, proof requirements, quantity 1–100,000, optional end date
-  (end of that day, Lagos time), standard/premium. No money moves.
+  (end of that day, Lagos time). No money moves.
 - **Submit**: the full budget (price × quantity) moves from the advertiser
   wallet into the campaign's own escrow ledger account (idempotent key
   `camp-fund:<id>`). Only one open campaign may target the same normalised
@@ -76,8 +88,10 @@ or `pending_approval → rejected`.
 ## Earners
 - Feed: live campaigns with free slots, not their own, not already done
   (including any campaign for the same link + task type they already have a
-  pending or approved submission for). Premium first.
-- **Start** reserves a slot for `tasks.reservation_minutes` (default 60);
+  pending or approved submission for). Newest approved first.
+- **Start** reserves a slot for `tasks.reservation_minutes` (default 60) at
+  the campaign's current price and reward (recorded on the reservation and
+  used when the proof is submitted);
   at most `tasks.max_active_reservations` (3) at once. Slots taken =
   approved + pending + unexpired reservations, checked under the campaign
   row lock, so the last slot cannot be taken twice. The link is shown after
@@ -167,12 +181,11 @@ An earner holds the highest active level in `earner_levels` whose approved
 task count and approval rate (approved ÷ approved + rejected; 100 % with
 nothing decided) they meet. The level sets how many tasks they may hold at
 once (replacing `tasks.max_active_reservations`, which stays the fallback
-when levels are off) and whether premium (targeted) campaigns appear in their
-feed and can be started. Defaults: Starter 0 tasks (hold 3), Bronze 50 / 80 %
-(4), Silver 200 / 85 % (5), Gold 500 / 90 % (6); premium is on for every
-level by default so premium campaigns keep reaching earners at launch (admins
-can switch it off for Starter). Admin → Tasks → Earner levels; levels on/off
-is `levels.enabled`.
+when levels are off), its withdrawal fee and its daily check-in reward
+(migration 0014). Defaults: Starter 0 tasks (hold 3), Bronze 50 / 80 %
+(4), Silver 200 / 85 % (5), Gold 500 / 90 % (6). Admin → Growth → Earner
+levels; levels on/off is `levels.enabled`. (The old per-level premium switch
+is gone; see "Premium campaigns and interests (retired)".)
 
 Every approval path (advertiser, auto, admin, reviewer stale queue, appeal
 overturn) calls `Growth\Referrals::afterApproval()` after it commits, which
