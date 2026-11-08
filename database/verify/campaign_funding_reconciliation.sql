@@ -14,6 +14,7 @@ WHERE e.escrow <> u.unspent;
 
 -- 3. Funded campaigns were funded with exactly their budget, once, plus any
 --    Phase 5 appeal top-ups (appeals overturned after the budget was used).
+--    A repriced campaign (repriced_at set) keeps budget_kobo = what was funded.
 SELECT 'funding' AS problem, c.id, c.status, c.budget_kobo, c.funded_kobo,
        (SELECT COALESCE(SUM(amount_kobo), 0) FROM campaign_funding_events f WHERE f.campaign_id = c.id AND f.event = 'lock') AS locked,
        (SELECT COALESCE(SUM(amount_kobo), 0) FROM campaign_funding_events f WHERE f.campaign_id = c.id AND f.event = 'appeal_topup') AS appeal_topups
@@ -35,9 +36,13 @@ FROM campaigns c LEFT JOIN submissions s ON s.campaign_id = c.id
 GROUP BY c.id, c.spent_kobo, c.approved_count, c.pending_count
 HAVING approved_value <> c.spent_kobo OR approved_n <> c.approved_count OR pending_n <> c.pending_count;
 
--- 6. Closed campaigns keep only the price of pending submissions.
-SELECT 'closed_escrow' AS problem, id, status, funded_kobo - spent_kobo - refunded_kobo AS unspent, pending_count * unit_price_kobo AS needed
-FROM campaigns WHERE status IN ('completed', 'cancelled', 'ended', 'rejected') AND funded_kobo - spent_kobo - refunded_kobo <> pending_count * unit_price_kobo;
+-- 6. Closed campaigns keep only the price of pending submissions (each at its
+--    own price: a campaign repriced by scripts/retire-premium.php can hold
+--    pending work at the old and the new price).
+SELECT 'closed_escrow' AS problem, c.id, c.status, c.funded_kobo - c.spent_kobo - c.refunded_kobo AS unspent,
+       (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') AS needed
+FROM campaigns c WHERE c.status IN ('completed', 'cancelled', 'ended', 'rejected')
+  AND c.funded_kobo - c.spent_kobo - c.refunded_kobo <> (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending');
 
 -- 7. Never more taken slots than quantity, except approvals paid on appeal
 --    over the budget (Phase 5), which are recorded in extra_approved_count.
