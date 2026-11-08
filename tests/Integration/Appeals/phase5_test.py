@@ -208,7 +208,7 @@ def debit(uid, naira, why='Phase 5 test debit'):
 
 def campaign(client, title, slug, qty, task=None):
     s, l, h = client.get('/campaign-new.php')
-    data = {'_csrf': client.csrf(h), 'interests[]': one("SELECT id FROM interests WHERE is_active = 1 ORDER BY sort_order, id LIMIT 1"), 'title': title, 'platform_id': ig_id, 'task_type_id': task or follow_id, 'tier': 'basic',
+    data = {'_csrf': client.csrf(h), 'title': title, 'platform_id': ig_id, 'task_type_id': task or follow_id,
             'link_url': f'https://instagram.com/{slug}_{tag}', 'instructions': f'Follow {slug} with your own account and keep following.',
             'proof_requirements': 'Screenshot showing you follow the page.', 'quantity': str(qty), 'ends_at': ''}
     s, l, b = client.post('/campaign-new.php', data)
