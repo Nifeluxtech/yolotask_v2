@@ -188,7 +188,7 @@
     });
   }
 
-  /* ---------- Interest chip pickers: live counter, lock at the maximum ---------- */
+  /* ---------- Chip pickers ([data-chip-select]): live counter, lock at the maximum ---------- */
   function initChipSelect() {
     document.querySelectorAll('[data-chip-select]').forEach(function (set) {
       var max = parseInt(set.getAttribute('data-chip-max'), 10) || 3;
