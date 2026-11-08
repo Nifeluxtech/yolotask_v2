@@ -12,10 +12,10 @@ use YoloTask\Security\Audit;
  * approved-task count and approval rate they meet. Approval rate =
  * approved / (approved + rejected) decided submissions; with nothing decided
  * yet it counts as 100%. The level sets how many tasks the earner may hold at
- * once (overriding tasks.max_active_reservations) and whether premium
- * ("targeted") tasks appear in their feed. With levels switched off
- * (levels.enabled = 0) or no active level matching, the plain settings apply
- * and every earner sees premium tasks.
+ * once (overriding tasks.max_active_reservations), its withdrawal fee
+ * override and its daily check-in reward. With levels switched off
+ * (levels.enabled = 0) or no active level matching, the plain settings apply.
+ * (earner_levels.premium_access is dormant since migration 0017.)
  */
 final class Levels
 {
@@ -29,16 +29,16 @@ final class Levels
     {
         $where = ($activeOnly ? ' WHERE is_active = 1' : '') . ' ORDER BY min_approved, min_approval_rate, id';
         try {
-            $rows = $pdo->query('SELECT id, name, min_approved, min_approval_rate, max_active_reservations, premium_access, is_active, withdrawal_fee_bps, checkin_reward_kobo FROM earner_levels' . $where)->fetchAll() ?: [];
+            $rows = $pdo->query('SELECT id, name, min_approved, min_approval_rate, max_active_reservations, is_active, withdrawal_fee_bps, checkin_reward_kobo FROM earner_levels' . $where)->fetchAll() ?: [];
         } catch (\PDOException) {
             try { // migration 0014 not applied yet: no level fee override, no check-in reward
-                $rows = $pdo->query('SELECT id, name, min_approved, min_approval_rate, max_active_reservations, premium_access, is_active, NULL withdrawal_fee_bps, 0 checkin_reward_kobo FROM earner_levels' . $where)->fetchAll() ?: [];
+                $rows = $pdo->query('SELECT id, name, min_approved, min_approval_rate, max_active_reservations, is_active, NULL withdrawal_fee_bps, 0 checkin_reward_kobo FROM earner_levels' . $where)->fetchAll() ?: [];
             } catch (\PDOException) {
                 return []; // migration 0009 not applied yet
             }
         }
         foreach ($rows as &$r) {
-            foreach (['id', 'min_approved', 'min_approval_rate', 'max_active_reservations', 'premium_access', 'is_active', 'checkin_reward_kobo'] as $k) $r[$k] = (int) $r[$k];
+            foreach (['id', 'min_approved', 'min_approval_rate', 'max_active_reservations', 'is_active', 'checkin_reward_kobo'] as $k) $r[$k] = (int) $r[$k];
             $r['withdrawal_fee_bps'] = $r['withdrawal_fee_bps'] === null ? null : (int) $r['withdrawal_fee_bps'];
         }
         return $rows;
@@ -57,14 +57,14 @@ final class Levels
 
     /**
      * The earner's current level, the next one and progress.
-     * @return array{enabled:bool,level:?array,next:?array,approved:int,rejected:int,rate:float,max_active:int,premium:bool,progress:int}
+     * @return array{enabled:bool,level:?array,next:?array,approved:int,rejected:int,rate:float,max_active:int,progress:int}
      */
     public static function forEarner(PDO $pdo, int $earnerId): array
     {
         $s = self::stats($pdo, $earnerId);
         $default = max(1, Settings::int($pdo, 'tasks.max_active_reservations'));
         $out = ['enabled' => false, 'level' => null, 'next' => null, 'approved' => $s['approved'], 'rejected' => $s['rejected'], 'rate' => $s['rate'],
-            'max_active' => $default, 'premium' => true, 'progress' => 0];
+            'max_active' => $default, 'progress' => 0];
         if (!self::enabled($pdo)) return $out;
         $levels = self::all($pdo, true);
         if ($levels === []) return $out;
@@ -76,7 +76,6 @@ final class Levels
         $out['next'] = $levels[$idx + 1] ?? null; // levels after the highest one met are all not met yet
         if ($out['level'] !== null) {
             $out['max_active'] = max(1, $out['level']['max_active_reservations']);
-            $out['premium'] = (bool) $out['level']['premium_access'];
         }
         if ($out['next'] !== null) {
             $from = $out['level']['min_approved'] ?? 0;
@@ -93,11 +92,6 @@ final class Levels
         return self::forEarner($pdo, $earnerId)['max_active'];
     }
 
-    public static function premiumAccess(PDO $pdo, int $earnerId): bool
-    {
-        return self::forEarner($pdo, $earnerId)['premium'];
-    }
-
     public const MAX_CHECKIN_KOBO = 1000000; // ₦10,000 per day
 
     /**
@@ -105,7 +99,7 @@ final class Levels
      * fee (null = the base rate; never above the base). $checkinKobo = the
      * daily check-in reward (0 = no check-in reward for this level).
      */
-    public static function save(PDO $pdo, int $adminId, ?int $id, string $name, int $minApproved, int $minRate, int $maxActive, bool $premium, bool $active, ?int $withdrawalFeeBps = null, int $checkinKobo = 0): int
+    public static function save(PDO $pdo, int $adminId, ?int $id, string $name, int $minApproved, int $minRate, int $maxActive, bool $active, ?int $withdrawalFeeBps = null, int $checkinKobo = 0): int
     {
         $name = trim($name);
         if (mb_strlen($name) < 2 || mb_strlen($name) > 40) throw new RuntimeException('Give the level a name of 2 to 40 characters.');
@@ -118,8 +112,8 @@ final class Levels
         }
         if ($checkinKobo < 0 || $checkinKobo > self::MAX_CHECKIN_KOBO) throw new RuntimeException('The daily check-in reward must be between ₦0 and ' . \YoloTask\Money\Money::format(self::MAX_CHECKIN_KOBO) . '.');
         if ($id === null) {
-            $pdo->prepare('INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, premium_access, is_active, withdrawal_fee_bps, checkin_reward_kobo, updated_by_user_id) VALUES (:n, :a, :r, :m, :p, :act, :f, :c, :u)')
-                ->execute(['n' => $name, 'a' => $minApproved, 'r' => $minRate, 'm' => $maxActive, 'p' => $premium ? 1 : 0, 'act' => $active ? 1 : 0, 'f' => $withdrawalFeeBps, 'c' => $checkinKobo, 'u' => $adminId]);
+            $pdo->prepare('INSERT INTO earner_levels (name, min_approved, min_approval_rate, max_active_reservations, is_active, withdrawal_fee_bps, checkin_reward_kobo, updated_by_user_id) VALUES (:n, :a, :r, :m, :act, :f, :c, :u)')
+                ->execute(['n' => $name, 'a' => $minApproved, 'r' => $minRate, 'm' => $maxActive, 'act' => $active ? 1 : 0, 'f' => $withdrawalFeeBps, 'c' => $checkinKobo, 'u' => $adminId]);
             $id = (int) $pdo->lastInsertId();
             Audit::record($pdo, $adminId, 'admin.level_added', 'earner_level', $id);
         } else {
@@ -127,8 +121,8 @@ final class Levels
             $chk->execute(['id' => $id]);
             $old = $chk->fetch();
             if (!is_array($old)) throw new RuntimeException('Level not found.');
-            $pdo->prepare('UPDATE earner_levels SET name = :n, min_approved = :a, min_approval_rate = :r, max_active_reservations = :m, premium_access = :p, is_active = :act, withdrawal_fee_bps = :f, checkin_reward_kobo = :c, updated_by_user_id = :u WHERE id = :id')
-                ->execute(['n' => $name, 'a' => $minApproved, 'r' => $minRate, 'm' => $maxActive, 'p' => $premium ? 1 : 0, 'act' => $active ? 1 : 0, 'f' => $withdrawalFeeBps, 'c' => $checkinKobo, 'u' => $adminId, 'id' => $id]);
+            $pdo->prepare('UPDATE earner_levels SET name = :n, min_approved = :a, min_approval_rate = :r, max_active_reservations = :m, is_active = :act, withdrawal_fee_bps = :f, checkin_reward_kobo = :c, updated_by_user_id = :u WHERE id = :id')
+                ->execute(['n' => $name, 'a' => $minApproved, 'r' => $minRate, 'm' => $maxActive, 'act' => $active ? 1 : 0, 'f' => $withdrawalFeeBps, 'c' => $checkinKobo, 'u' => $adminId, 'id' => $id]);
             Audit::record($pdo, $adminId, 'admin.level_updated', 'earner_level', $id);
             $oldFee = $old['withdrawal_fee_bps'] === null ? null : (int) $old['withdrawal_fee_bps'];
             if ($oldFee !== $withdrawalFeeBps) Audit::record($pdo, $adminId, 'admin.level_withdrawal_fee_changed', 'earner_level', $id);
