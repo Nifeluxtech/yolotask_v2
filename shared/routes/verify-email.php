@@ -8,13 +8,9 @@ use YoloTask\Security\Csrf;
 use YoloTask\Security\EmailVerification;
 use YoloTask\Security\Throttle;
 
-/** Onboarding: a new earner with no interests picks them right after confirming the email. */
+/** Where a user lands right after confirming the email (the onboarding hook; the dashboard for now). */
 function yolotask_after_verify(PDO $pdo, string $role, int $userId): string
 {
-    try {
-        if ($role === 'earner' && \YoloTask\Campaigns\Interests::forUser($pdo, $userId) === []) return 'interests.php?welcome=1';
-    } catch (Throwable) {
-    }
     return 'dashboard.php';
 }
 

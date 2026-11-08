@@ -62,8 +62,8 @@ $res = Tasks::reservation($pdo, $id, $uid);
 $working = $res !== null && (string) $res['status'] === 'active' && (int) $res['still_valid'] === 1 && in_array((string) $c['status'], ['live', 'paused'], true);
 $left = Campaigns::slotsLeft($c);
 $canStart = !$working && $submission === null && (string) $c['status'] === 'live' && $left > 0 && !empty($user['email_verified_at']);
-$interestBlock = (!$working && $submission === null) ? \YoloTask\Campaigns\Interests::premiumBlock($pdo, $uid, $c) : null;
-if ($interestBlock !== null) $canStart = false;
+// The reward this earner gets: what their proof was made at, else what their slot was reserved at, else the campaign's.
+$reward = $submission !== null ? (int) $submission['unit_reward_kobo'] : ($working && $res['unit_reward_kobo'] !== null ? (int) $res['unit_reward_kobo'] : (int) $c['unit_reward_kobo']);
 $maxMb = round(Settings::int($pdo, 'tasks.proof_max_bytes') / 1048576, 1);
 $csrf = Csrf::token();
 ob_start();
@@ -72,21 +72,12 @@ ob_start();
   <section class="card card-glow dash-hero" aria-labelledby="task-title">
     <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?></p>
     <h2 id="task-title" class="text-break"><?= h((string) $c['title']) ?></h2>
-    <div class="wallet-balance"><span class="amount">+<?= h(yolotask_money($c['unit_reward_kobo'])) ?></span></div>
+    <div class="wallet-balance"><span class="amount">+<?= h(yolotask_money($reward)) ?></span></div>
     <div class="wallet-sub">
       <span>Slots left <strong><?= number_format($left) ?></strong></span>
       <?php if ($c['ends_at']): ?><span>Ends <strong><?= h(yolotask_wat((string) $c['ends_at'], 'j M Y')) ?></strong></span><?php endif; ?>
-      <?= yolotask_tier_badge((string) $c['tier']) ?>
     </div>
   </section>
-
-  <?php if ($interestBlock !== null): ?>
-    <section class="card notice-card notice-warning" role="status" data-interest-block>
-      <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
-      <div><strong>Premium task for matching interests</strong><p class="text-sm text-faint"><?= h($interestBlock) ?></p></div>
-      <a class="btn btn-primary btn-sm" href="interests.php">Interests</a>
-    </section>
-  <?php endif; ?>
 
   <?php if ($submission !== null): ?>
     <section class="card notice-card" role="status">

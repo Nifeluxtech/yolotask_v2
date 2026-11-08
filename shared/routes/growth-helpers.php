@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** View helpers for the Phase 6 admin growth pages (referrals, levels, interests, announcements). */
+/** View helpers for the Phase 6 admin growth pages (referrals, levels, leaderboard, announcements). */
 
 require_once __DIR__ . '/tasks-helpers.php';
 
@@ -17,7 +17,6 @@ function yolotask_admin_growth_tabs(PDO $pdo, string $active): string
         'referrals' => ['Referrals', 'referrals.php', $flagged],
         'levels' => ['Earner levels', 'levels.php', 0],
         'leaders' => ['Leaderboard', 'leaders.php', 0],
-        'interests' => ['Interests', 'interests.php', 0],
         'announcements' => ['Announcements', 'announcements.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Growth sections">';

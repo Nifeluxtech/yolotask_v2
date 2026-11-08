@@ -21,7 +21,6 @@ try {
     $working = Tasks::inProgress($pdo, $uid);
     $platforms = Pricing::platforms($pdo);
     $stats = Tasks::earnerStats($pdo, $uid);
-    $hasInterests = \YoloTask\Campaigns\Interests::forUser($pdo, $uid) !== [];
 } catch (Throwable $e) {
     Logger::error('tasks.feed_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     yolotask_error_page(500);
@@ -35,14 +34,6 @@ ob_start();
       <span class="verify-icon"><?= yolotask_nav_icon('bell') ?></span>
       <div><strong>Confirm your email to start earning</strong><p class="text-sm text-faint">You can browse tasks now. Starting one needs a confirmed email.</p></div>
       <a class="btn btn-primary btn-sm" href="verify.php">Confirm now</a>
-    </section>
-  <?php endif; ?>
-
-  <?php if (!$hasInterests): ?>
-    <section class="card notice-card interest-prompt" role="status" data-interest-prompt>
-      <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
-      <div><strong>Choose your interests to see premium tasks</strong><p class="text-sm text-faint">Premium tasks pay more and are matched to your interests. Standard tasks below are open to you now.</p></div>
-      <a class="btn btn-primary btn-sm" href="interests.php">Choose</a>
     </section>
   <?php endif; ?>
 
@@ -81,8 +72,7 @@ ob_start();
           <li class="tx-row task-row">
             <span class="tx-icon platform-icon" data-platform="<?= h((string) $c['platform_slug']) ?>"><?= h(mb_substr((string) $c['platform_name'], 0, 1)) ?></span>
             <div class="tx-meta"><strong><a href="task.php?id=<?= (int) $c['id'] ?>"><?= h((string) $c['title']) ?></a></strong>
-              <span class="text-xs text-faint"><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format($left) ?> slot<?= $left === 1 ? '' : 's' ?> left</span>
-              <?php if (($c['tier'] ?? '') === 'targeted'): ?><span class="user-tags"><?= yolotask_tier_badge('targeted') ?></span><?php endif; ?></div>
+              <span class="text-xs text-faint"><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format($left) ?> slot<?= $left === 1 ? '' : 's' ?> left</span></div>
             <div class="tx-amount"><span class="tx-in">+<?= h(yolotask_money($c['unit_reward_kobo'])) ?></span><a class="btn btn-secondary btn-sm" href="task.php?id=<?= (int) $c['id'] ?>">View</a></div>
           </li>
         <?php endforeach; ?>

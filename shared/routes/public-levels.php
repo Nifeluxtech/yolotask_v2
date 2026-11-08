@@ -32,11 +32,11 @@ $docEyebrow = 'YOLOTASK LEVELS';
 $docUpdated = 'Levels and benefits as set by YOLOTASK today.';
 ob_start();
 ?>
-<p>Every earner on YOLOTASK has a level. Your level grows with your approved tasks and your approval rate (approved ÷ approved + rejected), and each level decides how many tasks you can hold at once and whether premium tasks, which pay more, are open to you.</p>
+<p>Every earner on YOLOTASK has a level. Your level grows with your approved tasks and your approval rate (approved ÷ approved + rejected), and each level decides how many tasks you can hold at once, your withdrawal fee and, where offered, your daily check-in reward.</p>
 <?php if ($failed): ?>
   <p class="text-faint">Levels could not be loaded right now. Please check back in a moment.</p>
 <?php elseif (!$enabled || $levels === []): ?>
-  <p>Levels are paused right now: every earner can hold up to <?= (int) $defaultHeld ?> tasks at once and premium tasks are open to everyone with matching interests.</p>
+  <p>Levels are paused right now: every earner can hold up to <?= (int) $defaultHeld ?> tasks at once.</p>
 <?php else: ?>
   <h2>Levels and benefits</h2>
   <?= yolotask_levels_list($levels, null, ['base_fee' => \YoloTask\Money\Fees::withdrawalBaseBps($pdo), 'checkin_on' => \YoloTask\Growth\Checkin::enabled($pdo)]) ?>
@@ -44,7 +44,6 @@ ob_start();
 <h2>Good to know</h2>
 <ul>
   <li>Your level updates on its own as tasks are approved or rejected. A low approval rate can move you down a level.</li>
-  <li>Premium tasks also need at least one interest that matches the campaign; you pick your interests after signing up.</li>
   <li>YOLOTASK pays for real, verified work only. Fake proofs lead to rejection and account suspension.</li>
 </ul>
 <p><a class="btn btn-primary" href="<?= h($earnerUrl) ?>/register.php">Start earning</a> <a class="btn btn-ghost" href="<?= h($earnerUrl) ?>/login.php">Sign in</a></p>

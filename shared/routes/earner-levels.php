@@ -34,10 +34,10 @@ ob_start();
   <p class="text-xs fw-bold text-primary">EARNER LEVELS</p>
   <?php if (!$info['enabled']): ?>
     <h2 id="lv-title">Levels are paused</h2>
-    <p class="text-sm text-faint">Right now every earner can hold up to <?= (int) $info['max_active'] ?> tasks at once and premium tasks are open to everyone with matching interests.</p>
+    <p class="text-sm text-faint">Right now every earner can hold up to <?= (int) $info['max_active'] ?> tasks at once.</p>
   <?php else: ?>
     <h2 id="lv-title"><?= $currentId !== null ? 'You are ' . h((string) $info['level']['name']) : 'Your first level is close' ?></h2>
-    <p class="text-sm text-faint" data-level-stats><?= number_format($info['approved']) ?> approved · <?= number_format($info['rejected']) ?> rejected · <?= h($rate) ?>% approval rate · hold up to <?= (int) $info['max_active'] ?> tasks<?= $info['premium'] ? ' · premium tasks unlocked' : ' · no premium tasks' ?></p>
+    <p class="text-sm text-faint" data-level-stats><?= number_format($info['approved']) ?> approved · <?= number_format($info['rejected']) ?> rejected · <?= h($rate) ?>% approval rate · hold up to <?= (int) $info['max_active'] ?> tasks</p>
     <?php if ($next !== null): ?>
       <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= (int) $info['progress'] ?>" aria-label="Progress to <?= h((string) $next['name']) ?>"><span class="progress-bar" style="width:<?= (int) $info['progress'] ?>%"></span></div>
       <p class="text-sm" data-level-missing><?= $missing !== [] ? 'You need ' . h(implode(' and ', $missing)) : 'You meet the requirements; your level updates with your next decided task' ?> to reach <strong><?= h((string) $next['name']) ?></strong>.</p>
@@ -60,7 +60,6 @@ ob_start();
   <ul class="stack dash-tips">
     <li><strong>Approved tasks</strong><p class="text-sm text-faint">Every approved task counts toward your level, for life.</p></li>
     <li><strong>Approval rate</strong><p class="text-sm text-faint">Approved ÷ (approved + rejected). Careful, honest proofs keep it high; a rejection lowers it and can move you down a level.</p></li>
-    <li><strong>Premium tasks</strong><p class="text-sm text-faint">Premium tasks pay more. You see them when your level allows it and they match <a href="interests.php">your interests</a>.</p></li>
     <li><strong>See where you rank</strong><p class="text-sm text-faint"><a href="leaderboard.php">Leaderboard</a> · <a href="tasks.php">Find tasks</a></p></li>
   </ul>
 </section>

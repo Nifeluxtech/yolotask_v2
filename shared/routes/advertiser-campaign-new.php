@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 use YoloTask\Campaigns\Campaigns;
-use YoloTask\Campaigns\Interests;
 use YoloTask\Campaigns\Pricing;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
@@ -36,13 +35,12 @@ if ($editId > 0) {
     if ((string) $draft['status'] !== 'draft') yolotask_redirect('campaign.php?id=' . $editId);
 }
 $self = 'campaign-new.php' . ($editId > 0 ? '?id=' . $editId : '');
-$fields = ['title', 'platform_id', 'task_type_id', 'tier', 'link_url', 'instructions', 'proof_requirements', 'quantity', 'ends_at', 'custom_platform_name', 'custom_task_name', 'custom_price'];
+$fields = ['title', 'platform_id', 'task_type_id', 'link_url', 'instructions', 'proof_requirements', 'quantity', 'ends_at', 'custom_platform_name', 'custom_task_name', 'custom_price'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     yolotask_csrf_or_back($self);
     $in = [];
     foreach ($fields as $f) $in[$f] = yolotask_post_str($f);
-    $in['interests'] = is_array($_POST['interests'] ?? null) ? array_values(array_filter($_POST['interests'], 'is_string')) : (is_string($_POST['interests'] ?? null) ? [$_POST['interests']] : []);
     try {
         if ($draft === null) {
             if (Throttle::tooMany($pdo, 'campaign_create', (string) $uid, 20, 3600)) throw new RuntimeException('You have created many campaigns in the last hour. Please wait a little.');
@@ -76,16 +74,8 @@ $val = static function (string $k) use ($old, $draft): string {
         if ($k === 'custom_price') return $draft['custom_task_name'] !== null ? (string) intdiv((int) $draft['unit_price_kobo'], 100) : '';
         return (string) ($draft[$k] ?? '');
     }
-    return $k === 'tier' ? 'basic' : '';
+    return '';
 };
-$interestOptions = Interests::options($pdo);
-if ($old !== null) {
-    $chosenInterests = is_array($old['interests'] ?? null) ? $old['interests'] : [];
-} elseif ($draft !== null) {
-    $chosenInterests = array_keys(Interests::forCampaign($pdo, (int) $draft['id']));
-} else {
-    $chosenInterests = [];
-}
 $custom = Pricing::customRules($pdo);
 $platforms = Pricing::platforms($pdo);
 $types = Pricing::taskTypes($pdo);
@@ -120,7 +110,7 @@ ob_start();
         <div class="field"><label class="label" for="task_type_id">Task</label>
           <select class="input" id="task_type_id" name="task_type_id" required>
             <option value="">Choose…</option>
-            <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= Pricing::isCustom($t) ? ' data-custom="1"' : '' ?> data-base="<?= (int) $t['base_price_kobo'] ?>" data-premium="<?= (int) $t['premium_price_kobo'] ?>" data-hint="<?= h((string) $t['proof_hint']) ?>"<?= $val('task_type_id') === (string) $t['id'] ? ' selected' : '' ?>><?= h((string) $t['name']) ?><?= Pricing::isCustom($t) ? '' : ' · ' . h(Money::format((int) $t['base_price_kobo'])) ?></option><?php endforeach; ?>
+            <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= Pricing::isCustom($t) ? ' data-custom="1"' : '' ?> data-base="<?= (int) $t['base_price_kobo'] ?>" data-hint="<?= h((string) $t['proof_hint']) ?>"<?= $val('task_type_id') === (string) $t['id'] ? ' selected' : '' ?>><?= h((string) $t['name']) ?><?= Pricing::isCustom($t) ? '' : ' · ' . h(Money::format((int) $t['base_price_kobo'])) ?></option><?php endforeach; ?>
           </select></div>
       </div>
       <div class="field" data-custom-platform hidden><label class="label" for="custom_platform_name">App or website name</label>
@@ -131,12 +121,7 @@ ob_start();
         <p class="input-hint">A few words. Explain the steps in the instructions below.</p></div>
       <div class="field" data-custom-task hidden><label class="label" for="custom_price">Your price per task (₦)</label>
         <input class="input" id="custom_price" name="custom_price" type="number" min="<?= intdiv($custom['min'], 100) ?>" max="<?= intdiv(Pricing::MAX_PRICE_KOBO, 100) ?>" step="1" inputmode="numeric" value="<?= h($val('custom_price')) ?>" placeholder="<?= intdiv($custom['min'], 100) ?>">
-        <p class="input-hint">At least <?= h(Money::format($custom['min'])) ?>. Earners receive <?= (int) $custom['percent'] ?>% of it. Premium does not change your price.</p></div>
-      <fieldset class="field tier-choice"><legend class="label">Audience</legend>
-        <label class="radio-card"><input type="radio" name="tier" value="basic"<?= $val('tier') !== 'targeted' ? ' checked' : '' ?>><span><strong>Standard</strong><span class="text-xs text-faint">Any verified earner can take it.</span></span></label>
-        <label class="radio-card"><input type="radio" name="tier" value="targeted"<?= $val('tier') === 'targeted' ? ' checked' : '' ?>><span><strong>Premium</strong><span class="text-xs text-faint">Shown first in the feed, higher reward for earners. 1.5× price.</span></span></label>
-      </fieldset>
-      <?= yolotask_interest_chips($interestOptions, $chosenInterests, 'Audience interests', 'Pick 1 to ' . Interests::MAX . '. Premium tasks are shown only to earners who share at least one of these.', 'ci') ?>
+        <p class="input-hint">At least <?= h(Money::format($custom['min'])) ?>. Earners receive <?= (int) $custom['percent'] ?>% of it.</p></div>
       <div class="field"><label class="label" for="link_url">Link</label>
         <input class="input" id="link_url" name="link_url" type="url" required maxlength="500" inputmode="url" value="<?= h($val('link_url')) ?>" placeholder="https://instagram.com/yourpage">
         <p class="input-hint">Must be an https:// link on the platform you chose.</p></div>
@@ -175,10 +160,9 @@ ob_start();
   function update() {
     var opt = f.task_type_id.options[f.task_type_id.selectedIndex];
     var q = parseInt(f.quantity.value, 10);
-    var tier = (f.querySelector('input[name=tier]:checked') || {}).value;
     if (!opt || !opt.value || !q || q < 1) { toggle(); out.textContent = '\u2014'; return; }
     var ct = toggle();
-    var unit = ct ? (parseInt(f.custom_price.value, 10) || 0) * 100 : parseInt(tier === 'targeted' ? opt.dataset.premium : opt.dataset.base, 10);
+    var unit = ct ? (parseInt(f.custom_price.value, 10) || 0) * 100 : parseInt(opt.dataset.base, 10);
     if (!unit) { out.textContent = '\u2014'; note.textContent = 'Enter your price per task.'; return; }
     out.textContent = fmt(unit * q);
     note.textContent = fmt(unit) + ' per task \u00D7 ' + q.toLocaleString('en-NG') + (ct ? ' (earner gets ' + fmt(Math.floor(unit * pct / 100)) + ')' : '') + '. Unused money comes back to your wallet.';

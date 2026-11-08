@@ -70,13 +70,11 @@ $csrf = Csrf::token();
 $devices = Devices::list($pdo, $userId);
 $verified = !empty($user['email_verified_at']);
 $csrfField = '<input type="hidden" name="_csrf" value="' . h($csrf) . '">';
-$myInterests = $role === 'earner' ? \YoloTask\Campaigns\Interests::forUser($pdo, $userId) : null;
 ob_start();
 ?>
 <div class="account-grid">
   <nav class="card account-jump" aria-label="Account sections">
     <a href="#profile"><?= yolotask_nav_icon('user') ?><span>Profile</span></a>
-    <?php if ($myInterests !== null): ?><a href="#interests"><?= yolotask_nav_icon('sparkle') ?><span>Interests</span></a><?php endif; ?>
     <a href="#password"><?= yolotask_nav_icon('shield') ?><span>Password</span></a>
     <a href="#devices"><?= yolotask_nav_icon('inbox') ?><span>Devices</span></a>
     <?php if (!$isStaff): ?><a href="notifications.php#settings"><?= yolotask_nav_icon('bell') ?><span>Alerts</span></a><a href="referrals.php"><?= yolotask_nav_icon('sparkle') ?><span>Referrals</span></a><a href="#danger"><?= yolotask_nav_icon('logout') ?><span>Close</span></a><?php endif; ?>
@@ -102,14 +100,6 @@ ob_start();
       <button class="btn btn-primary" type="submit">Save profile</button>
     </form>
   </section>
-
-  <?php if ($myInterests !== null): ?>
-  <section class="card" id="interests" aria-labelledby="interests-title">
-    <div class="card-header"><h2 id="interests-title">Interests</h2><span class="badge <?= $myInterests === [] ? 'badge-warning' : 'badge-info' ?>"><?= count($myInterests) ?> / <?= \YoloTask\Campaigns\Interests::MAX ?></span></div>
-    <?php if ($myInterests === []): ?><p class="text-sm text-faint">Choose 1 to <?= \YoloTask\Campaigns\Interests::MAX ?> interests to see premium tasks.</p><?php else: ?><?= yolotask_interest_tags($myInterests) ?><?php endif; ?>
-    <a class="btn btn-secondary" href="interests.php" style="margin-top:12px"><?= $myInterests === [] ? 'Choose interests' : 'Change interests' ?></a>
-  </section>
-  <?php endif; ?>
 
   <section class="card" id="password" aria-labelledby="password-title">
     <div class="card-header"><h2 id="password-title">Password</h2></div>

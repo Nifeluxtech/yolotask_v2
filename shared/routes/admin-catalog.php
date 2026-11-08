@@ -9,7 +9,7 @@ use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/tasks-helpers.php';
 
-/* Admin: platforms and task types with their prices (base and premium). */
+/* Admin: platforms and task types with their price and earner reward. */
 if (yolotask_role() !== 'admin') yolotask_error_page(404);
 yolotask_private_headers();
 try {
@@ -34,13 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Pricing::saveTaskType($pdo, $adminId, (int) ($_POST['id'] ?? 0), [
                 'name' => yolotask_post_str('name'), 'proof_hint' => yolotask_post_str('proof_hint'),
                 'base_price_kobo' => $naira('base_price'), 'base_reward_kobo' => $naira('base_reward'),
-                'premium_price_kobo' => $naira('premium_price'), 'premium_reward_kobo' => $naira('premium_reward'),
                 'is_active' => !empty($_POST['is_active']),
             ]);
             yolotask_flash('Task type saved. New campaigns use the new prices; existing campaigns keep theirs.');
         } elseif ($action === 'add_type') {
             Pricing::addTaskType($pdo, $adminId, yolotask_post_str('name'), $naira('base_price'), $naira('base_reward'));
-            yolotask_flash('Task type added. Premium prices default to 1.5× the base.');
+            yolotask_flash('Task type added.');
         } elseif ($action === 'save_platform') {
             Pricing::savePlatform($pdo, $adminId, (int) ($_POST['id'] ?? 0), yolotask_post_str('name'), yolotask_post_str('domains'), !empty($_POST['is_active']));
             yolotask_flash('Platform saved.');
@@ -68,7 +67,7 @@ ob_start();
 <div class="wallet-grid">
   <section class="card" aria-labelledby="tt-title">
     <div class="card-header"><h2 id="tt-title">Task types and prices</h2><span class="badge badge-info"><?= count($types) ?></span></div>
-    <p class="text-xs text-faint">Price = what the advertiser pays per approved task. Reward = what the earner gets. The difference is YOLOTASK revenue. Premium applies to targeted campaigns.</p>
+    <p class="text-xs text-faint">Price = what the advertiser pays per approved task. Reward = what the earner gets. The difference is YOLOTASK revenue.</p>
     <ul class="user-list">
       <?php foreach ($types as $t): ?>
         <li class="user-row" data-task-type="<?= h((string) $t['slug']) ?>">
@@ -77,13 +76,11 @@ ob_start();
             <div class="flex-between flex-wrap"><input class="input" name="name" value="<?= h((string) $t['name']) ?>" aria-label="Name" maxlength="60" required style="max-width:240px">
               <label class="text-sm"><input type="checkbox" name="is_active" value="1"<?= (int) $t['is_active'] ? ' checked' : '' ?>> Active</label></div>
             <div class="price-grid">
-              <label class="field"><span class="label">Base price ₦</span><input class="input" name="base_price" inputmode="decimal" value="<?= h($dec($t['base_price_kobo'])) ?>" required></label>
-              <label class="field"><span class="label">Base reward ₦</span><input class="input" name="base_reward" inputmode="decimal" value="<?= h($dec($t['base_reward_kobo'])) ?>" required></label>
-              <label class="field"><span class="label">Premium price ₦</span><input class="input" name="premium_price" inputmode="decimal" value="<?= h($dec($t['premium_price_kobo'])) ?>" required></label>
-              <label class="field"><span class="label">Premium reward ₦</span><input class="input" name="premium_reward" inputmode="decimal" value="<?= h($dec($t['premium_reward_kobo'])) ?>" required></label>
+              <label class="field"><span class="label">Price ₦</span><input class="input" name="base_price" inputmode="decimal" value="<?= h($dec($t['base_price_kobo'])) ?>" required></label>
+              <label class="field"><span class="label">Reward ₦</span><input class="input" name="base_reward" inputmode="decimal" value="<?= h($dec($t['base_reward_kobo'])) ?>" required></label>
             </div>
             <label class="field"><span class="label">Proof hint</span><input class="input" name="proof_hint" maxlength="255" value="<?= h((string) $t['proof_hint']) ?>"></label>
-            <div class="flex-between flex-wrap"><span class="text-xs text-faint">Margin <?= h(yolotask_money((int) $t['base_price_kobo'] - (int) $t['base_reward_kobo'])) ?> base · <?= h(yolotask_money((int) $t['premium_price_kobo'] - (int) $t['premium_reward_kobo'])) ?> premium</span>
+            <div class="flex-between flex-wrap"><span class="text-xs text-faint">Margin <?= h(yolotask_money((int) $t['base_price_kobo'] - (int) $t['base_reward_kobo'])) ?></span>
               <button class="btn btn-secondary btn-sm" type="submit">Save</button></div>
           </form>
         </li>
@@ -92,8 +89,8 @@ ob_start();
     <form method="post" action="catalog.php" class="inline-form">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="add_type">
       <input class="input" name="name" required maxlength="60" placeholder="New task type" aria-label="New task type name">
-      <input class="input" name="base_price" inputmode="decimal" required placeholder="Price ₦" aria-label="Base price">
-      <input class="input" name="base_reward" inputmode="decimal" required placeholder="Reward ₦" aria-label="Base reward">
+      <input class="input" name="base_price" inputmode="decimal" required placeholder="Price ₦" aria-label="Price">
+      <input class="input" name="base_reward" inputmode="decimal" required placeholder="Reward ₦" aria-label="Reward">
       <button class="btn btn-primary btn-sm" type="submit">Add task type</button>
     </form>
   </section>

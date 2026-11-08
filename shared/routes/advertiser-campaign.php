@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 use YoloTask\Campaigns\CampaignMembers;
 use YoloTask\Campaigns\Campaigns;
-use YoloTask\Campaigns\Interests;
 use YoloTask\Campaigns\Instructions;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
@@ -61,10 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $refund = Campaigns::cancel($pdo, $user, $id);
                 yolotask_flash('Campaign cancelled. ' . yolotask_money($refund) . ' returned to your wallet' . ((int) Campaigns::find($pdo, $id)['pending_count'] > 0 ? '; proofs still waiting for review stay reserved until you decide them.' : '.'));
                 break;
-            case 'interests':
-                Campaigns::updateInterests($pdo, $user, $id, $_POST['interests'] ?? null);
-                yolotask_flash('Audience interests saved.');
-                break;
             case 'instructions':
                 Campaigns::updateInstructions($pdo, $user, $id, yolotask_post_str('instructions'), yolotask_post_str('proof_requirements'));
                 yolotask_flash('Instructions updated. Earners who start from now see the new version.');
@@ -88,8 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $members = CampaignMembers::summary($pdo, $id);
-$campaignInterests = Interests::forCampaign($pdo, $id);
-$interestsEditable = in_array((string) $c['status'], ['draft', 'pending_approval'], true);
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $subs = in_array((string) $c['status'], ['draft'], true) ? ['rows' => [], 'total' => 0, 'page' => 1, 'pages' => 1] : Submissions::listForCampaign($pdo, $id, $tab, $page);
 $wallet = Wallet::forUser($pdo, $uid);
@@ -105,7 +98,7 @@ ob_start();
 ?>
 <div class="wallet-grid">
   <section class="card card-glow dash-hero" aria-labelledby="c-title">
-    <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?> <?= yolotask_tier_badge((string) $c['tier']) ?></p>
+    <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $c['platform_name'] . ' · ' . $c['task_type_name'])) ?></p>
     <h2 id="c-title" class="text-break"><?= h((string) $c['title']) ?></h2>
     <div class="wallet-sub"><?= yolotask_campaign_badge((string) $c['status']) ?><span><strong><?= number_format((int) $c['approved_count']) ?></strong> of <?= number_format((int) $c['quantity']) ?> done</span></div>
     <?= yolotask_progress((int) $c['approved_count'], (int) $c['pending_count'], (int) $c['quantity']) ?>
@@ -180,19 +173,6 @@ ob_start();
     <?php endif; ?>
   </section>
   <?php endif; ?>
-
-  <section class="card" id="interests" aria-labelledby="int-title">
-    <div class="card-header"><h2 id="int-title">Audience interests</h2><span class="badge badge-info"><?= count($campaignInterests) ?> / <?= Interests::MAX ?></span></div>
-    <?php if ($interestsEditable): ?>
-      <form method="post" action="<?= h($back) ?>#interests" class="stack"><?= $hidden ?>
-        <?= yolotask_interest_chips(Interests::options($pdo), array_keys($campaignInterests), 'Who should see it', 'Pick 1 to ' . Interests::MAX . '. You can change these until the campaign is approved.', 'ai') ?>
-        <button class="btn btn-secondary" type="submit" name="action" value="interests">Save interests</button>
-      </form>
-    <?php else: ?>
-      <?= yolotask_interest_tags($campaignInterests, 'Open to every interest (created before interests existed).') ?>
-      <?php if ($c['tier'] === 'targeted'): ?><p class="text-xs text-faint">Premium: shown only to earners who share one of these interests.</p><?php endif; ?>
-    <?php endif; ?>
-  </section>
 
   <section class="card" aria-labelledby="i-title">
     <div class="card-header"><h2 id="i-title">Instructions</h2><span class="badge badge-info">Version <?= (int) $c['instructions_version'] ?></span></div>

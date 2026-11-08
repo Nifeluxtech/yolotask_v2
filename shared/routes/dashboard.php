@@ -121,17 +121,10 @@ $eventLabels = [
     'admin.referral_rejected' => 'Rejected a flagged referral',
     'admin.referral_payout_reversed' => 'Reversed a referral payout',
     'admin.level_added' => 'Added an earner level',
-    'admin.interest_added' => 'Added an interest',
-    'admin.interest_updated' => 'Renamed an interest',
-    'admin.interest_disabled' => 'Disabled an interest',
-    'admin.interest_enabled' => 'Enabled an interest',
-    'admin.interest_reordered' => 'Reordered interests',
-    'admin.campaign_interests_updated' => 'Changed a campaign\'s interests',
     'admin.referral_ip_allowance_changed' => 'Changed the referral network allowance',
-    'account.interests_updated' => 'Updated interests',
-    'campaign.interests_updated' => 'Changed campaign interests',
     'admin.level_updated' => 'Updated an earner level',
     'admin.level_deleted' => 'Deleted an earner level',
+    'campaign.repriced' => 'Campaign moved to standard pricing',
     'admin.bonus_granted' => 'Gave a bonus',
     'admin.leader_rewarded' => 'Paid a leadership bonus',
     'admin.announcement_created' => 'Published an announcement',
@@ -255,10 +248,8 @@ try {
 $levelInfo = null;
 $checkin = null;
 $refFlagged = 0;
-$needsInterests = false;
 try {
     if ($role === 'earner') $levelInfo = \YoloTask\Growth\Levels::forEarner($pdo, $userId);
-    if ($role === 'earner') $needsInterests = \YoloTask\Campaigns\Interests::forUser($pdo, $userId) === [];
     if ($role === 'earner') $checkin = \YoloTask\Growth\Checkin::status($pdo, $user);
     if ($role === 'admin') $refFlagged = (int) \YoloTask\Growth\Referrals::adminStats($pdo)['flagged'];
 } catch (Throwable $e) {
@@ -316,19 +307,11 @@ ob_start();
   </div>
 </section>
 
-<?php if ($needsInterests): ?>
-<section class="card notice-card interest-prompt" role="status" data-interest-prompt>
-  <span class="verify-icon"><?= yolotask_nav_icon('sparkle') ?></span>
-  <div><strong>Pick your interests</strong><p class="text-sm text-faint">Choose 1 to <?= \YoloTask\Campaigns\Interests::MAX ?> interests to unlock premium tasks matched to you. It takes ten seconds.</p></div>
-  <a class="btn btn-primary btn-sm" href="interests.php">Choose interests</a>
-</section>
-<?php endif; ?>
-
 <?php if ($levelInfo !== null && $levelInfo['enabled'] && $levelInfo['level'] !== null): $lv = $levelInfo; ?>
 <section class="card level-card" aria-labelledby="level-title">
   <div class="level-head">
     <a class="level-badge level-link level-<?= h(strtolower(preg_replace('/[^a-z]/i', '', (string) $lv['level']['name']))) ?>" href="levels.php" title="See all levels and benefits"><?= yolotask_nav_icon('sparkle') ?><span id="level-title"><?= h((string) $lv['level']['name']) ?></span></a>
-    <span class="text-xs text-faint"><?= number_format($lv['approved']) ?> approved · <?= h(rtrim(rtrim(number_format($lv['rate'], 1), '0'), '.')) ?>% approval rate · hold up to <?= (int) $lv['max_active'] ?> tasks<?= $lv['premium'] ? ' · premium tasks unlocked' : '' ?></span>
+    <span class="text-xs text-faint"><?= number_format($lv['approved']) ?> approved · <?= h(rtrim(rtrim(number_format($lv['rate'], 1), '0'), '.')) ?>% approval rate · hold up to <?= (int) $lv['max_active'] ?> tasks</span>
   </div>
   <?php if ($lv['next'] !== null): $need = max(0, (int) $lv['next']['min_approved'] - $lv['approved']); ?>
     <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= (int) $lv['progress'] ?>" aria-label="Progress to <?= h((string) $lv['next']['name']) ?>"><span class="progress-bar" style="width:<?= (int) $lv['progress'] ?>%"></span></div>

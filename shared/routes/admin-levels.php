@@ -12,7 +12,7 @@ use YoloTask\Security\Csrf;
 require_once __DIR__ . '/growth-helpers.php';
 require_once __DIR__ . '/money-helpers.php';
 
-/* Admin: earner levels (approved tasks + approval rate -> tasks held at once, premium feed,
+/* Admin: earner levels (approved tasks + approval rate -> tasks held at once,
    withdrawal fee override, daily check-in reward) and the daily check-in switch. */
 [$pdo, $admin] = yolotask_admin_growth_boot('admin.levels_load_failed');
 $adminId = (int) $admin['id'];
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $checkinKobo = $parsed;
             }
             Levels::save($pdo, $adminId, $id > 0 ? $id : null, yolotask_post_str('name'), (int) yolotask_post_str('min_approved'), (int) yolotask_post_str('min_rate'),
-                (int) yolotask_post_str('max_active'), yolotask_post_str('premium') === '1', yolotask_post_str('active') === '1', $feeBps, $checkinKobo);
+                (int) yolotask_post_str('max_active'), yolotask_post_str('active') === '1', $feeBps, $checkinKobo);
             yolotask_flash($id > 0 ? 'Level updated.' : 'Level added.');
         } elseif ($action === 'delete') {
             Levels::delete($pdo, $adminId, (int) yolotask_post_str('id'));
@@ -88,7 +88,6 @@ $row = static function (?array $l) use ($csrf, $baseFee): string {
           <p class="input-hint">0 = no check-in for this level.</p></div>
       </div>
       <div class="inline-form">
-        <label class="toggle-inline"><input type="checkbox" name="premium" value="1"<?= ($l['premium_access'] ?? 1) ? ' checked' : '' ?>> Premium tasks in feed</label>
         <label class="toggle-inline"><input type="checkbox" name="active" value="1"<?= ($l['is_active'] ?? 1) ? ' checked' : '' ?>> Active</label>
         <button class="btn btn-<?= $l === null ? 'primary' : 'secondary' ?> btn-sm" type="submit"><?= $l === null ? 'Add level' : 'Save level' ?></button>
       </div>
@@ -100,7 +99,7 @@ ob_start();
 <?= yolotask_admin_growth_tabs($pdo, 'levels') ?>
 <section class="card" aria-labelledby="lv-title">
   <div class="card-header"><h2 id="lv-title">Earner levels</h2><span class="badge <?= $enabled ? 'badge-success' : 'badge-warning' ?>"><?= $enabled ? 'On' : 'Off' ?></span></div>
-  <p class="text-sm text-faint">An earner holds the highest active level whose approved-task count and approval rate (approved ÷ decided proofs) they meet. The level sets how many tasks they can hold at once and whether premium tasks show in their feed. With levels off, everyone can hold <?= (int) $fallback ?> (Task settings) and sees premium tasks.</p>
+  <p class="text-sm text-faint">An earner holds the highest active level whose approved-task count and approval rate (approved ÷ decided proofs) they meet. The level sets how many tasks they can hold at once, its withdrawal fee (blank = the base fee) and its daily check-in reward. With levels off, everyone can hold <?= (int) $fallback ?> (Task settings), pays the base withdrawal fee (<?= h(Fees::percent($baseFee)) ?>) and has no daily check-in.</p>
   <form method="post" action="levels.php" class="inline-form">
     <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="toggle">
     <label class="toggle-inline"><input type="checkbox" name="enabled" value="1"<?= $enabled ? ' checked' : '' ?>> Levels on</label>

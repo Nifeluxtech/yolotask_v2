@@ -24,8 +24,7 @@ function yolotask_levels_list(array $levels, ?int $currentId = null, ?array $per
             . ($isCurrent ? '<span class="badge badge-success">Your level</span>' : '') . '</div>'
             . '<dl class="level-facts">'
             . '<div><dt>Requirements</dt><dd>' . h($req) . '</dd></div>'
-            . '<div><dt>Tasks held at once</dt><dd>Up to ' . (int) $l['max_active_reservations'] . '</dd></div>'
-            . '<div><dt>Premium tasks</dt><dd>' . ((int) $l['premium_access'] === 1 ? 'Unlocked' : 'Not included') . '</dd></div>';
+            . '<div><dt>Tasks held at once</dt><dd>Up to ' . (int) $l['max_active_reservations'] . '</dd></div>';
         if ($perks !== null) {
             $fee = min((int) $perks['base_fee'], $l['withdrawal_fee_bps'] ?? (int) $perks['base_fee']);
             $html .= '<div><dt>Withdrawal fee</dt><dd data-level-fee>' . ($fee > 0 ? h(\YoloTask\Money\Fees::percent($fee)) : 'Free') . '</dd></div>';
