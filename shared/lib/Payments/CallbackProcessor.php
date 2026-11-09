@@ -8,9 +8,12 @@ use YoloTask\Messaging\Notifications;
 use YoloTask\Money\Ledger;
 use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
+use YoloTask\Account\Activation;
 
 /**
  * Applies AfrStar collection and payout callbacks.
+ * Collection references: YTP… wallet top-ups (credited to the advertiser's
+ * wallet) and YTA… account activation fees (platform revenue, migration 0019).
  *
  * Every callback is logged raw first. A result is acknowledged with HTTP 200
  * and the exact body SUCCESS only after it is persisted; anything we cannot
@@ -38,6 +41,8 @@ final class CallbackProcessor
         if ($pre !== null) return $pre;
         $config = AfrstarClient::config();
         if ($orderSn === '' || $osn === '' || $status === '') return self::finish($pdo, $logId, 400, 'malformed', null);
+        // Account activation fees (YTA…, migration 0019) are platform revenue, never a wallet credit.
+        if (Activation::isActivationRef($orderSn)) return self::activation($pdo, $logId, $payload, $orderSn, $osn, $status, $config);
 
         $stmt = $pdo->prepare('SELECT id, user_id, amount_kobo, status, platform_osn FROM payment_orders WHERE order_sn = :sn');
         $stmt->execute(['sn' => $orderSn]);
@@ -98,6 +103,72 @@ final class CallbackProcessor
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             Logger::error('payments.collection_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return self::finish($pdo, $logId, 500, 'error', true);
+        }
+        return self::finish($pdo, $logId, 200, $outcome, true, $after);
+    }
+
+    /**
+     * Collection callback for an account activation order (YTA…). Same
+     * protocol as a top-up: signature checked against the order amount,
+     * replays acknowledged without effect, an amount that differs from the
+     * order goes to the payment review queue. Paid in full: the fee is posted
+     * as revenue (Dr system:afrstar_clearing / Cr system:activation_revenue,
+     * key activation:<order_sn>) and the earner is activated.
+     */
+    private static function activation(PDO $pdo, int $logId, array $payload, string $orderSn, string $osn, string $status, array $config): array
+    {
+        $p = Activation::findBySn($pdo, $orderSn);
+        if ($p === null) {
+            if (CallbackVerifier::merchantMatches($payload, $config)) {
+                self::openReview($pdo, 'unmatched:collection:' . $orderSn . ':' . $osn, 'unmatched_callback', null, null, $logId, $orderSn, $osn, null,
+                    CallbackVerifier::amount($payload['amount_paid'] ?? ($payload['amount'] ?? null)), 'Activation callback for an order we do not have (signature cannot be checked).');
+            }
+            return self::finish($pdo, $logId, 404, 'unknown_order', null);
+        }
+        $orderAmount = (int) $p['amount_kobo'];
+        if (!CallbackVerifier::verifyCollection($payload, $config, $orderAmount)) return self::finish($pdo, $logId, 400, 'bad_signature', false);
+        if ($p['platform_osn'] !== null && !hash_equals((string) $p['platform_osn'], $osn)) return self::finish($pdo, $logId, 400, 'osn_mismatch', true);
+        if ($status !== '1') {
+            $pdo->prepare('UPDATE activation_payments SET provider_message = :m WHERE id = :id')
+                ->execute(['m' => mb_substr('Status ' . $status . ': ' . (string) ($payload['message'] ?? ''), 0, 255), 'id' => (int) $p['id']]);
+            return self::finish($pdo, $logId, 200, 'ignored_status', true);
+        }
+        $paid = CallbackVerifier::amount($payload['amount_paid'] ?? null) ?? CallbackVerifier::amount($payload['amount'] ?? null);
+        $ref = mb_substr((string) (($payload['utr'] ?? '') ?: ($payload['session_id'] ?? '')), 0, 120) ?: null;
+        $after = [];
+        $pdo->beginTransaction();
+        try {
+            $p = Activation::lockPayment($pdo, (int) $p['id']);
+            if (in_array((string) $p['status'], ['paid', 'review', 'rejected'], true)) {
+                $pdo->commit();
+                return self::finish($pdo, $logId, 200, 'duplicate', true);
+            }
+            if ($paid !== null && $paid === $orderAmount) {
+                $res = Activation::settlePaid($pdo, $p, $orderAmount, 'activation:' . $p['order_sn'], 'payment', null,
+                    ['amount_paid' => $paid, 'osn' => $osn, 'reference' => $ref, 'message' => mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255)]);
+                if ($res['activated']) {
+                    $uid = (int) $p['user_id'];
+                    $pid = (int) $p['id'];
+                    $sn = (string) $p['order_sn'];
+                    $after[] = static function () use ($pdo, $uid, $pid, $sn, $orderAmount): void { Activation::notifyActivated($pdo, $uid, $pid, $sn, $orderAmount); };
+                    $outcome = 'activated';
+                } else {
+                    self::openReview($pdo, 'activation-duplicate:' . $p['id'], 'activation_duplicate', null, null, $logId, (string) $p['order_sn'], $osn, $orderAmount, $paid,
+                        'Earner was already activated; this second activation payment needs a refund outside the app.', (int) $p['id']);
+                    $outcome = 'paid_duplicate';
+                }
+            } else {
+                $pdo->prepare("UPDATE activation_payments SET status = 'review', amount_paid_kobo = :p, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m WHERE id = :id")
+                    ->execute(['p' => $paid, 'o' => $osn, 'r' => $ref, 'm' => 'Paid amount differs from the activation fee; held for review', 'id' => (int) $p['id']]);
+                self::openReview($pdo, 'mismatch-activation:' . $p['id'], 'amount_mismatch', null, null, $logId, (string) $p['order_sn'], $osn, $orderAmount, $paid,
+                    'Earner paid ' . ($paid === null ? 'an unreadable amount' : Money::format($paid)) . ' for the ' . Money::format($orderAmount) . ' account activation.', (int) $p['id']);
+                $outcome = 'review';
+            }
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('payments.activation_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
             return self::finish($pdo, $logId, 500, 'error', true);
         }
         return self::finish($pdo, $logId, 200, $outcome, true, $after);
@@ -250,10 +321,16 @@ final class CallbackProcessor
     }
 
     /** Insert a review item once (dedupe_key is unique). */
-    public static function openReview(PDO $pdo, string $key, string $kind, ?int $orderId, ?int $withdrawalId, ?int $callbackId, ?string $orderSn, ?string $osn, ?int $expected, ?int $paid, string $detail): void
+    public static function openReview(PDO $pdo, string $key, string $kind, ?int $orderId, ?int $withdrawalId, ?int $callbackId, ?string $orderSn, ?string $osn, ?int $expected, ?int $paid, string $detail, ?int $activationId = null): void
     {
-        $pdo->prepare('INSERT IGNORE INTO payment_reviews (dedupe_key, kind, payment_order_id, withdrawal_id, callback_id, order_sn, platform_osn, expected_kobo, paid_kobo, detail) VALUES (:k, :kind, :o, :w, :c, :sn, :osn, :e, :p, :d)')
-            ->execute(['k' => substr($key, 0, 160), 'kind' => $kind, 'o' => $orderId, 'w' => $withdrawalId, 'c' => $callbackId, 'sn' => $orderSn ?: null, 'osn' => $osn ?: null, 'e' => $expected, 'p' => $paid, 'd' => mb_substr($detail, 0, 255)]);
+        if ($activationId === null) {
+            $pdo->prepare('INSERT IGNORE INTO payment_reviews (dedupe_key, kind, payment_order_id, withdrawal_id, callback_id, order_sn, platform_osn, expected_kobo, paid_kobo, detail) VALUES (:k, :kind, :o, :w, :c, :sn, :osn, :e, :p, :d)')
+                ->execute(['k' => substr($key, 0, 160), 'kind' => $kind, 'o' => $orderId, 'w' => $withdrawalId, 'c' => $callbackId, 'sn' => $orderSn ?: null, 'osn' => $osn ?: null, 'e' => $expected, 'p' => $paid, 'd' => mb_substr($detail, 0, 255)]);
+            return;
+        }
+        // Account activation payments (migration 0019).
+        $pdo->prepare('INSERT IGNORE INTO payment_reviews (dedupe_key, kind, activation_payment_id, callback_id, order_sn, platform_osn, expected_kobo, paid_kobo, detail) VALUES (:k, :kind, :a, :c, :sn, :osn, :e, :p, :d)')
+            ->execute(['k' => substr($key, 0, 160), 'kind' => $kind, 'a' => $activationId, 'c' => $callbackId, 'sn' => $orderSn ?: null, 'osn' => $osn ?: null, 'e' => $expected, 'p' => $paid, 'd' => mb_substr($detail, 0, 255)]);
     }
 
     private static function precheck(PDO $pdo, int $logId, string $ip): ?array

@@ -13,13 +13,20 @@ use YoloTask\Security\Audit;
  * Admin queue for payments that need a person: an amount that differs from
  * the order (credit the actual paid amount, or reject), callbacks for orders
  * we do not know, and contradictory payout results (dismiss after checking).
+ * Account activation payments (migration 0019) use the same queue: a
+ * mismatch is activated (revenue = what was paid) or rejected, and a second
+ * payment by an activated earner (activation_duplicate) is dismissed once it
+ * has been refunded outside the app.
  */
 final class PaymentReview
 {
     public static function list(PDO $pdo, string $status = 'open', int $limit = 50): array
     {
         $status = in_array($status, ['open', 'credited', 'rejected', 'dismissed'], true) ? $status : 'open';
-        $stmt = $pdo->prepare('SELECT r.*, o.user_id, u.email, u.display_name, o.status AS order_status FROM payment_reviews r LEFT JOIN payment_orders o ON o.id = r.payment_order_id LEFT JOIN users u ON u.id = o.user_id WHERE r.status = :s ORDER BY r.id DESC LIMIT ' . (int) $limit);
+        // Top-up orders and (migration 0019) account activation payments share the queue.
+        $stmt = $pdo->prepare('SELECT r.*, COALESCE(o.user_id, ap.user_id) user_id, u.email, u.display_name, COALESCE(o.status, ap.status) AS order_status, (r.activation_payment_id IS NOT NULL) is_activation
+            FROM payment_reviews r LEFT JOIN payment_orders o ON o.id = r.payment_order_id LEFT JOIN activation_payments ap ON ap.id = r.activation_payment_id
+            LEFT JOIN users u ON u.id = COALESCE(o.user_id, ap.user_id) WHERE r.status = :s ORDER BY r.id DESC LIMIT ' . (int) $limit);
         $stmt->execute(['s' => $status]);
         return $stmt->fetchAll() ?: [];
     }
@@ -34,10 +41,12 @@ final class PaymentReview
     {
         $note = trim($note);
         if (mb_strlen($note) < 3 || mb_strlen($note) > 255) throw new RuntimeException('Add a note (3 to 255 characters) explaining the decision.');
-        $stmt = $pdo->prepare('SELECT r.kind, r.payment_order_id, o.user_id FROM payment_reviews r LEFT JOIN payment_orders o ON o.id = r.payment_order_id WHERE r.id = :id');
+        $stmt = $pdo->prepare('SELECT r.kind, r.payment_order_id, r.activation_payment_id, o.user_id FROM payment_reviews r LEFT JOIN payment_orders o ON o.id = r.payment_order_id WHERE r.id = :id');
         $stmt->execute(['id' => $reviewId]);
         $peek = $stmt->fetch();
         if (!is_array($peek)) throw new RuntimeException('That review item does not exist.');
+        // An account activation payment: activating it posts what was paid as platform revenue, never a wallet credit.
+        if ($peek['activation_payment_id'] !== null) return \YoloTask\Account\Activation::creditReview($pdo, $adminId, $reviewId, $note);
         if ((string) $peek['kind'] !== 'amount_mismatch' || $peek['payment_order_id'] === null) throw new RuntimeException('Only amount mismatches on a known order can be credited.');
         $userId = (int) $peek['user_id'];
 
@@ -96,6 +105,10 @@ final class PaymentReview
             if ($review['payment_order_id'] !== null) {
                 $pdo->prepare("UPDATE payment_orders SET status = 'rejected', provider_message = :m WHERE id = :id AND status = 'review'")
                     ->execute(['m' => mb_substr('Rejected after review: ' . $note, 0, 255), 'id' => (int) $review['payment_order_id']]);
+            }
+            if (($review['activation_payment_id'] ?? null) !== null) {
+                $pdo->prepare("UPDATE activation_payments SET status = 'rejected', provider_message = :m WHERE id = :id AND status = 'review'")
+                    ->execute(['m' => mb_substr('Rejected after review: ' . $note, 0, 255), 'id' => (int) $review['activation_payment_id']]);
             }
             $pdo->prepare('UPDATE payment_reviews SET status = :s, resolved_by_user_id = :a, resolution_note = :n, resolved_at = UTC_TIMESTAMP() WHERE id = :id')
                 ->execute(['s' => $final, 'a' => $adminId, 'n' => $note, 'id' => $reviewId]);

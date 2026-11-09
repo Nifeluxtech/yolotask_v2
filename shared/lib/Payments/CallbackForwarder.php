@@ -24,8 +24,8 @@ use YoloTask\Core\Logger;
 final class CallbackForwarder
 {
     public const MAX_BODY = 65536;
-    /** YOLOTASK V2 references (top-up YTP…, withdrawal YTW…) are never forwarded. */
-    private const OWN_REF = '/^YT[PW]/';
+    /** YOLOTASK V2 references (top-up YTP…, withdrawal YTW…, account activation YTA…) are never forwarded. */
+    private const OWN_REF = '/^YT[PWA]/';
     private const MAX_EXCERPT = 120;
 
     /** @var array|null cached validated config */
