@@ -28,6 +28,10 @@ final class Ledger
     public const WITHDRAWAL_FEES = 'system:withdrawal_fees';
     /** Migration 0014: daily check-in rewards (debit-normal expense; equals daily_checkins). */
     public const CHECKIN_REWARDS = 'system:checkin_rewards';
+    /** Migration 0018: account activation fees (credit-normal revenue; equals paid activation payments). */
+    public const ACTIVATION_REVENUE = 'system:activation_revenue';
+    /** Migration 0018: YOLOTASK task rewards paid by the platform (debit-normal expense; equals approved YOLOTASK task rewards). */
+    public const PLATFORM_TASK_PAYOUTS = 'system:platform_task_payouts';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -146,6 +150,7 @@ final class Ledger
         foreach (\YoloTask\Growth\DepositCashback::reconcile($pdo) as $p) $problems[] = $p; // deposit cashback (0013)
         foreach (Fees::reconcileWithdrawals($pdo) as $p) $problems[] = $p; // withdrawal fees (0014)
         foreach (\YoloTask\Growth\Checkin::reconcile($pdo) as $p) $problems[] = $p; // daily check-in (0014)
+        foreach (\YoloTask\Account\Activation::reconcile($pdo) as $p) $problems[] = $p; // account activation + YOLOTASK task payouts (0018)
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;
@@ -164,13 +169,16 @@ final class Ledger
     {
         if (!(bool) $pdo->query("SHOW TABLES LIKE 'submissions'")->fetchColumn()) return [];
         $problems = [];
+        // YOLOTASK tasks (migration 0019) have no escrow: the platform pays their rewards (checked in Account\Activation::reconcile).
+        $hasPlatform = (bool) $pdo->query("SHOW COLUMNS FROM campaigns LIKE 'is_platform'")->fetchColumn();
+        $adv = $hasPlatform ? 'c.is_platform = 0' : '1 = 1';
         $sql = "SELECT c.id, c.funded_kobo - c.spent_kobo - c.refunded_kobo unspent, COALESCE(a.balance_kobo, 0) escrow
                 FROM campaigns c LEFT JOIN ledger_accounts a ON a.id = c.escrow_account_id
-                WHERE COALESCE(a.balance_kobo, 0) <> c.funded_kobo - c.spent_kobo - c.refunded_kobo OR c.funded_kobo - c.spent_kobo - c.refunded_kobo < 0 LIMIT 50";
+                WHERE {$adv} AND (COALESCE(a.balance_kobo, 0) <> c.funded_kobo - c.spent_kobo - c.refunded_kobo OR c.funded_kobo - c.spent_kobo - c.refunded_kobo < 0) LIMIT 50";
         foreach ($pdo->query($sql) as $r) $problems[] = "Campaign #{$r['id']} escrow {$r['escrow']} != unspent budget {$r['unspent']}";
 
         $escrow = (int) $pdo->query("SELECT COALESCE(SUM(balance_kobo), 0) FROM ledger_accounts WHERE kind = 'campaign_escrow'")->fetchColumn();
-        $unspent = (int) $pdo->query('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) FROM campaigns')->fetchColumn();
+        $unspent = (int) $pdo->query('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) FROM campaigns c WHERE ' . $adv)->fetchColumn();
         if ($escrow !== $unspent) $problems[] = "Total campaign escrow {$escrow} != total unspent campaign budgets {$unspent}";
 
         $sql = "SELECT c.id, c.spent_kobo, c.approved_count, c.pending_count, COALESCE(SUM(CASE WHEN s.status = 'approved' THEN s.unit_price_kobo END), 0) approved_value,
@@ -182,7 +190,7 @@ final class Ledger
         // Pending work is needed at each submission's own price (a repriced campaign can hold more than one).
         $sql = "SELECT c.id, c.funded_kobo - c.spent_kobo - c.refunded_kobo unspent,
                        (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') needed FROM campaigns c
-                WHERE c.status IN ('completed', 'cancelled', 'ended', 'rejected')
+                WHERE {$adv} AND c.status IN ('completed', 'cancelled', 'ended', 'rejected')
                   AND c.funded_kobo - c.spent_kobo - c.refunded_kobo <> (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') LIMIT 50";
         foreach ($pdo->query($sql) as $r) $problems[] = "Closed campaign #{$r['id']} still holds {$r['unspent']} in escrow (pending work needs {$r['needed']})";
 
