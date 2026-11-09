@@ -5,7 +5,8 @@ declare(strict_types=1);
  * Every five minutes: payments housekeeping.
  *  - re-runs AfrStar callbacks that were logged but never finished processing
  *    (same signature checks; idempotent),
- *  - expires unpaid top-up orders past money.payin_expiry_hours (no money moves),
+ *  - expires unpaid top-up orders and account activation payments past
+ *    money.payin_expiry_hours (no money moves),
  *  - flags payouts with no callback after money.payout_stuck_hours into the
  *    payment review queue,
  *  - (Phase 5) deletes expired reviewer claims so appeals and stale proofs
@@ -29,6 +30,7 @@ try {
     $r = \YoloTask\Payments\CallbackProcessor::retryUnfinished($pdo);
     fwrite(STDOUT, "{$t} payments: unfinished callbacks retried: {$r['retried']}, failed again: {$r['failed']}\n");
     fwrite(STDOUT, "{$t} payments: stale top-up orders expired: " . \YoloTask\Payments\PaymentOrders::expireStale($pdo) . "\n");
+    fwrite(STDOUT, "{$t} payments: stale activation payments expired: " . \YoloTask\Account\Activation::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stuck payouts flagged for review: " . \YoloTask\Payments\CallbackProcessor::flagStuckPayouts($pdo) . "\n");
     fwrite(STDOUT, "{$t} reviews: expired claims released: " . \YoloTask\Tasks\ReviewClaims::expire($pdo) . "\n");
     fwrite(STDOUT, "{$t} announcements: inbox items delivered: " . \YoloTask\Messaging\Announcements::deliverDue($pdo) . "\n");
