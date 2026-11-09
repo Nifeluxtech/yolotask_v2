@@ -19,6 +19,13 @@ callbacks answer 503.
   (`YTP…` order number, amount in kobo), calls `/gateway/payin/` and redirects
   to `pay_url`. The return page only shows status. The collection callback
   credits the wallet; mismatched amounts go to review.
+- **Account activation (earners, migration 0019; only while `activation.required` is on).** `activate.php` creates an
+  `activation_payments` row (`YTA…` order number), calls `/gateway/payin/` and
+  redirects to `pay_url`. The same collection callback confirms it: the fee is
+  platform revenue (Dr `system:afrstar_clearing` / Cr
+  `system:activation_revenue`), never a wallet credit, and activates the
+  account. Mismatches go to the same review queue; admins can verify a payment
+  manually. See `docs/platform-tasks.md`.
 - **Withdrawal (earners).** One saved bank account (bank from the AfrStar
   code list, 10-digit NUBAN, typed account name; changing it needs the
   password and emails an alert). A request moves the amount from available to

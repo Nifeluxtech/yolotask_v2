@@ -34,7 +34,7 @@ as the hub and relay SPLUG's callbacks to it.
   request; no proxy, no redirects followed.
 - Flow in both hooks, before any YOLOTASK lookup: POST only (405 otherwise),
   body over 64 KB → 413 (applies to every callback), read `order_sn` (JSON or
-  form-encoded). YOLOTASK refs (`YTP…`, `YTW…`) are **never** forwarded. A
+  form-encoded). YOLOTASK refs (`YTP…`, `YTW…`, and since migration 0019 account activations `YTA…`) are **never** forwarded. A
   matching ref gets the exact raw body POSTed with the original
   `Content-Type` (default `application/json`) to the route URL. Downstream
   2xx/4xx status is relayed with a short one-line body (`success` passes
