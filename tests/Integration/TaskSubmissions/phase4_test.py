@@ -707,7 +707,8 @@ check('signed-out advertiser redirected to sign in', s == 303 and l == 'login.ph
 ok, out = reconcile_ok()
 check('final daily reconciliation OK (wallets, escrow, revenue, reward hold)', ok, out)
 esc = int(one("SELECT COALESCE(SUM(balance_kobo),0) FROM ledger_accounts WHERE kind = 'campaign_escrow'"))
-uns = int(one('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo),0) FROM campaigns'))
+# YOLOTASK tasks (migration 0019) have no escrow; the platform pays their rewards.
+uns = int(one('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo),0) FROM campaigns' + (' WHERE is_platform = 0' if one("SHOW COLUMNS FROM campaigns LIKE 'is_platform'") else '')))
 check('total escrow equals total unspent budgets', esc == uns, (esc, uns))
 db(f"UPDATE ledger_accounts SET balance_kobo = balance_kobo + 1 WHERE campaign_id = {c1}")
 r = cron('daily.php')
