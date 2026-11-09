@@ -26,8 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int) ($_POST['review_id'] ?? 0);
     try {
         if ($action === 'credit') {
+            $isActivation = (int) $pdo->query('SELECT COUNT(*) FROM payment_reviews WHERE activation_payment_id IS NOT NULL AND id = ' . (int) $id)->fetchColumn() > 0;
             $amount = PaymentReview::credit($pdo, $adminId, $id, (string) ($_POST['note'] ?? ''));
-            yolotask_flash('Credited ' . yolotask_money($amount) . ' to the user\'s wallet.');
+            yolotask_flash($isActivation ? 'Account activated; ' . yolotask_money($amount) . ' recorded as activation revenue.' : 'Credited ' . yolotask_money($amount) . ' to the user\'s wallet.');
         } elseif ($action === 'reject') {
             PaymentReview::reject($pdo, $adminId, $id, (string) ($_POST['note'] ?? ''));
             yolotask_flash('Review item closed without crediting.');
@@ -50,7 +51,7 @@ $orders = PaymentOrders::list($pdo, $status, $q, $page);
 $callbacks = $pdo->query('SELECT id, kind, order_sn, platform_osn, provider_status, signature_valid, outcome, http_status, remote_ip, raw_body, received_at FROM payment_callbacks ORDER BY id DESC LIMIT 20')->fetchAll() ?: [];
 $forwards = \YoloTask\Payments\CallbackForwarder::recent($pdo, 20);
 $csrf = Csrf::token();
-$kindLabel = ['amount_mismatch' => 'Amount mismatch', 'unmatched_callback' => 'Unknown order', 'payout_conflict' => 'Payout conflict'];
+$kindLabel = ['amount_mismatch' => 'Amount mismatch', 'unmatched_callback' => 'Unknown order', 'payout_conflict' => 'Payout conflict', 'activation_duplicate' => 'Second activation payment'];
 $opt = static fn (string $value, string $label, string $current): string => '<option value="' . h($value) . '"' . ($value === $current ? ' selected' : '') . '>' . h($label) . '</option>';
 ob_start();
 ?>
@@ -65,7 +66,7 @@ ob_start();
       <?php foreach ($reviews as $r): ?>
         <li class="user-row" data-review="<?= (int) $r['id'] ?>">
           <div class="user-meta">
-            <strong><?= h($kindLabel[(string) $r['kind']] ?? (string) $r['kind']) ?> · <?= h((string) ($r['order_sn'] ?? '—')) ?></strong>
+            <strong><?= h($kindLabel[(string) $r['kind']] ?? (string) $r['kind']) ?> · <?= h((string) ($r['order_sn'] ?? '—')) ?><?php if (!empty($r['is_activation'])): ?> <span class="badge badge-source">Account activation</span><?php endif; ?></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $r['detail']) ?></span>
             <span class="user-tags">
               <?php if ($r['expected_kobo'] !== null): ?><span class="badge badge-info">Order <?= h(yolotask_money($r['expected_kobo'])) ?></span><?php endif; ?>
@@ -77,7 +78,9 @@ ob_start();
               <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="review_id" value="<?= (int) $r['id'] ?>">
               <input class="input" name="note" maxlength="255" minlength="3" required placeholder="Decision note (required)" aria-label="Decision note">
               <div class="review-actions">
-                <?php if ((string) $r['kind'] === 'amount_mismatch' && (int) ($r['paid_kobo'] ?? 0) > 0): ?>
+                <?php if ((string) $r['kind'] === 'amount_mismatch' && (int) ($r['paid_kobo'] ?? 0) > 0 && !empty($r['is_activation'])): ?>
+                  <button class="btn btn-primary btn-sm" type="submit" name="action" value="credit" data-confirm="Activate this earner's account and record <?= h(yolotask_money($r['paid_kobo'])) ?> as activation revenue?">Activate (<?= h(yolotask_money($r['paid_kobo'])) ?> paid)</button>
+                <?php elseif ((string) $r['kind'] === 'amount_mismatch' && (int) ($r['paid_kobo'] ?? 0) > 0): ?>
                   <button class="btn btn-primary btn-sm" type="submit" name="action" value="credit" data-confirm="Credit <?= h(yolotask_money($r['paid_kobo'])) ?> to this wallet?">Credit <?= h(yolotask_money($r['paid_kobo'])) ?></button>
                 <?php endif; ?>
                 <button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="reject"><?= (string) $r['kind'] === 'amount_mismatch' ? 'Reject' : 'Dismiss' ?></button>

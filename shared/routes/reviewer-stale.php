@@ -65,8 +65,8 @@ ob_start();
 ?>
 <?= yolotask_reviewer_tabs($pdo, 'stale') ?>
 <section class="card" aria-labelledby="st-title">
-  <div class="card-header"><h2 id="st-title">Stale proofs</h2><span class="badge badge-info"><?= number_format($list['total']) ?></span></div>
-  <p class="text-sm text-faint">Proofs waiting more than <?= StaleQueue::hours($pdo) ?> hours for the advertiser. Decide them before they auto-approve. Claim one to lock it for <?= ReviewClaims::minutes($pdo) ?> minutes.</p>
+  <div class="card-header"><h2 id="st-title">Stale &amp; YOLOTASK proofs</h2><span class="badge badge-info"><?= number_format($list['total']) ?></span></div>
+  <p class="text-sm text-faint">Proofs waiting more than <?= StaleQueue::hours($pdo) ?> hours for the advertiser, and every proof on a task YOLOTASK provides itself (labelled YOLOTASK: there is no advertiser, so you decide them straight away). Decide them before they auto-approve. Claim one to lock it for <?= ReviewClaims::minutes($pdo) ?> minutes.</p>
   <?php if ($list['rows'] === []): ?>
     <div class="empty-state"><p class="text-faint">Nothing stale right now.</p></div>
   <?php else: ?>
@@ -75,7 +75,7 @@ ob_start();
         <li class="user-row submission-row" data-stale="<?= (int) $s['id'] ?>" data-live-row="s<?= (int) $s['id'] ?>">
           <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? '')) ?>
           <div class="user-meta">
-            <strong>#<?= (int) $s['id'] ?> · <?= h((string) $s['campaign_title']) ?></strong>
+            <strong>#<?= (int) $s['id'] ?> · <?= h((string) $s['campaign_title']) ?> <?= yolotask_source_badge($s) ?></strong>
             <span class="text-xs text-faint"><?= h((string) $s['platform_name']) ?> <?= h((string) $s['task_type_name']) ?> · submitted <?= h(yolotask_wat((string) $s['submitted_at'])) ?> · auto-approves in <?= h(yolotask_until((string) $s['auto_approve_at'])) ?> · reward <?= h(yolotask_money($s['unit_reward_kobo'])) ?></span>
             <?php if ($s['comment']): ?><span class="text-sm text-break">“<?= h((string) $s['comment']) ?>”</span><?php endif; ?>
             <?php if ($mine): ?>

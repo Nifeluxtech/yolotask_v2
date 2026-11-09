@@ -4,6 +4,8 @@ declare(strict_types=1);
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 
+require_once __DIR__ . '/tasks-helpers.php';
+
 $role = yolotask_role();
 if (!in_array($role, ['earner', 'advertiser', 'reviewer', 'admin'], true)) yolotask_error_page(404);
 yolotask_private_headers();
@@ -202,7 +204,7 @@ $campaignQueue = 0;
 try {
     if ($role === 'earner') {
         $ts = \YoloTask\Tasks\Tasks::earnerStats($pdo, $userId);
-        $avail = \YoloTask\Tasks\Tasks::feed($pdo, $userId, 1)['total'];
+        $avail = \YoloTask\Account\Activation::canWork($pdo, $userId) ? \YoloTask\Tasks\Tasks::availableCount($pdo, $userId) : 0;
         $market = [
             ['label' => 'Tasks available', 'value' => number_format($avail), 'tone' => '', 'note' => 'Live in your feed'],
             ['label' => 'Waiting review', 'value' => number_format($ts['pending'] ?? 0), 'tone' => 'stat-warning', 'note' => 'Proofs submitted'],
@@ -223,7 +225,7 @@ try {
         $rc = \YoloTask\Tasks\ReviewerActions::counts($pdo, $userId);
         $market = [
             ['label' => 'Open appeals', 'value' => number_format($openAppeals), 'tone' => $openAppeals > 0 ? 'stat-warning' : '', 'note' => 'Oldest first in your queue'],
-            ['label' => 'Stale proofs', 'value' => number_format($staleCount), 'tone' => $staleCount > 0 ? 'stat-warning' : '', 'note' => 'Waiting on advertisers'],
+            ['label' => 'Stale proofs', 'value' => number_format($staleCount), 'tone' => $staleCount > 0 ? 'stat-warning' : '', 'note' => 'Late advertisers and YOLOTASK tasks'],
             ['label' => 'Decided today', 'value' => number_format($rc['today']), 'tone' => 'stat-success', 'note' => 'By you'],
             ['label' => 'Last 30 days', 'value' => number_format($rc['last30']), 'tone' => '', 'note' => 'Your decisions'],
         ];
@@ -247,10 +249,13 @@ try {
 // Phase 6: earner level badge/progress and the admin's referral review count.
 $levelInfo = null;
 $checkin = null;
+$activationOffer = null;
 $refFlagged = 0;
 try {
     if ($role === 'earner') $levelInfo = \YoloTask\Growth\Levels::forEarner($pdo, $userId);
     if ($role === 'earner') $checkin = \YoloTask\Growth\Checkin::status($pdo, $user);
+    // Account activation (migration 0019): the activation card while it is required and not done.
+    if ($role === 'earner') $activationOffer = \YoloTask\Account\Activation::offer($pdo, $userId);
     if ($role === 'admin') $refFlagged = (int) \YoloTask\Growth\Referrals::adminStats($pdo)['flagged'];
 } catch (Throwable $e) {
     Logger::error('dashboard.growth_failed', ['exception' => get_class($e)]);
@@ -341,6 +346,10 @@ ob_start();
     <span class="badge badge-success">Done today</span>
   <?php endif; ?>
 </section>
+<?php endif; ?>
+
+<?php if ($activationOffer !== null): ?>
+<?= yolotask_activation_card($activationOffer) ?>
 <?php endif; ?>
 
 <?php if ($role === 'earner'): ?>

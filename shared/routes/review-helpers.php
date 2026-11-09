@@ -15,7 +15,7 @@ function yolotask_reviewer_tabs(PDO $pdo, string $active): string
     }
     $tabs = [
         'appeals' => ['Appeals', 'appeals.php', $appeals],
-        'stale' => ['Stale proofs', 'stale.php', $stale],
+        'stale' => ['Stale & YOLOTASK proofs', 'stale.php', $stale],
         'history' => ['My decisions', 'history.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Review queues">';
@@ -49,6 +49,7 @@ function yolotask_appeal_badge(array $a): string
 function yolotask_appeal_funding(array $a): string
 {
     if ((string) $a['status'] !== 'overturned') return '';
+    if (!empty($a['is_platform'])) return 'YOLOTASK task: paid by YOLOTASK';
     if ((int) $a['over_budget'] !== 1) return 'Paid from campaign escrow';
     $parts = [];
     if ((int) $a['escrow_kobo'] > 0) $parts[] = yolotask_money($a['escrow_kobo']) . ' from escrow';

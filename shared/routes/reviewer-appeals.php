@@ -75,7 +75,7 @@ if ($detail) {
 <div class="wallet-grid" data-appeal="<?= (int) $a['id'] ?>">
   <section class="card card-glow dash-hero" aria-labelledby="ap-title">
     <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $a['platform_name'] . ' · ' . $a['task_type_name'])) ?> · APPEAL #<?= (int) $a['id'] ?></p>
-    <h2 id="ap-title" class="text-break"><?= h((string) $a['campaign_title']) ?></h2>
+    <h2 id="ap-title" class="text-break"><?= h((string) $a['campaign_title']) ?> <?= yolotask_source_badge($a) ?></h2>
     <div class="wallet-sub"><span class="badge <?= h($class) ?>"><?= h($label) ?></span><span>Filed <strong><?= h(yolotask_wat((string) $a['created_at'])) ?></strong> · earner <?= h((string) $a['earner_name']) ?> · reward <?= h(yolotask_money($a['unit_reward_kobo'])) ?></span></div>
     <p class="text-sm text-break"><?php if (yolotask_safe_task_url((string) $a['link_url']) !== null): ?><a href="<?= h((string) $a['link_url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= h((string) $a['link_url']) ?></a><?php else: ?><span class="text-faint"><?= h((string) $a['link_url']) ?: 'No task link' ?></span><?php endif; ?></p>
   </section>
@@ -148,7 +148,7 @@ ob_start();
         <li class="user-row submission-row" data-appeal="<?= (int) $a['id'] ?>">
           <?= yolotask_proof_cell($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null, (string) ($a['link_url'] ?? '')) ?>
           <div class="user-meta">
-            <strong><a href="appeal.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a></strong>
+            <strong><a href="appeal.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a> <?= yolotask_source_badge($a) ?></strong>
             <span class="text-xs text-faint"><?= h((string) $a['platform_name']) ?> <?= h((string) $a['task_type_name']) ?> · filed <?= h(yolotask_wat((string) $a['created_at'])) ?> · rejected by <?= h(yolotask_rejection_source((string) $a['rejection_source'])) ?></span>
             <span class="text-sm text-break">Reason: <?= h((string) $a['rejection_reason']) ?></span>
             <span class="user-tags">

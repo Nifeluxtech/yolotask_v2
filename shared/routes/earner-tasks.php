@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-use YoloTask\Campaigns\Campaigns;
 use YoloTask\Campaigns\Pricing;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
+use YoloTask\Account\Activation;
 use YoloTask\Tasks\Tasks;
 
 require_once __DIR__ . '/tasks-helpers.php';
@@ -21,6 +21,7 @@ try {
     $working = Tasks::inProgress($pdo, $uid);
     $platforms = Pricing::platforms($pdo);
     $stats = Tasks::earnerStats($pdo, $uid);
+    $activationOffer = Activation::offer($pdo, $uid); // account activation required and not done yet: the activation card (migration 0019)
 } catch (Throwable $e) {
     Logger::error('tasks.feed_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     yolotask_error_page(500);
@@ -42,6 +43,10 @@ ob_start();
     <article class="stat-card stat-warning"><span class="stat-label">Waiting</span><span class="stat-value"><?= (int) ($stats['pending'] ?? 0) ?></span><span class="text-xs text-faint">Proofs in review</span></article>
   </section>
 
+  <?php if ($activationOffer !== null): ?>
+    <?= yolotask_activation_card($activationOffer) ?>
+  <?php endif; ?>
+
   <?php if ($working !== []): ?>
     <section class="card card-glow" aria-labelledby="working-title">
       <div class="card-header"><h2 id="working-title">In progress</h2><span class="badge badge-warning"><?= count($working) ?></span></div>
@@ -58,8 +63,9 @@ ob_start();
     </section>
   <?php endif; ?>
 
+  <?php if ($activationOffer === null): ?>
   <section class="card" aria-labelledby="feed-title">
-    <div class="card-header"><h2 id="feed-title">Available tasks</h2><span class="badge badge-info"><?= number_format($feed['total']) ?></span></div>
+    <div class="card-header"><h2 id="feed-title">Available tasks</h2><span class="badge badge-info" data-feed-count="<?= (int) $feed['count'] ?>"><?= number_format($feed['count']) ?></span></div>
     <nav class="money-tabs" aria-label="Platform filter" style="padding:0">
       <a href="tasks.php"<?= $platform === 0 ? ' class="active"' : '' ?>>All</a>
       <?php foreach ($platforms as $p): ?><a href="tasks.php?platform=<?= (int) $p['id'] ?>"<?= $platform === (int) $p['id'] ? ' class="active"' : '' ?>><?= h((string) $p['name']) ?></a><?php endforeach; ?>
@@ -68,18 +74,30 @@ ob_start();
       <div class="empty-state"><p class="text-faint">No tasks available right now. New campaigns go live every day, so check back soon.</p></div>
     <?php else: ?>
       <ul class="tx-list" data-feed>
-        <?php foreach ($feed['rows'] as $c): $left = Campaigns::slotsLeft($c); ?>
-          <li class="tx-row task-row">
-            <span class="tx-icon platform-icon" data-platform="<?= h((string) $c['platform_slug']) ?>"><?= h(mb_substr((string) $c['platform_name'], 0, 1)) ?></span>
-            <div class="tx-meta"><strong><a href="task.php?id=<?= (int) $c['id'] ?>"><?= h((string) $c['title']) ?></a></strong>
-              <span class="text-xs text-faint"><?= h((string) $c['platform_name']) ?> · <?= h((string) $c['task_type_name']) ?> · <?= number_format($left) ?> slot<?= $left === 1 ? '' : 's' ?> left</span></div>
-            <div class="tx-amount"><span class="tx-in">+<?= h(yolotask_money($c['unit_reward_kobo'])) ?></span><a class="btn btn-secondary btn-sm" href="task.php?id=<?= (int) $c['id'] ?>">View</a></div>
-          </li>
+        <?php foreach ($feed['units'] as $unit): ?>
+          <?php if ($unit['bundle'] !== null && count($unit['tasks']) > 1): $b = $unit['bundle']; $n = count($unit['tasks']); ?>
+            <li class="task-bundle" data-bundle="<?= (int) $b['id'] ?>">
+              <details>
+                <summary class="tx-row task-row">
+                  <span class="tx-icon platform-icon" data-platform="<?= h($b['platform_slug']) ?>"><?= h(mb_substr($b['platform_name'], 0, 1)) ?></span>
+                  <span class="tx-meta"><strong><?= h($b['account_name']) ?> · <?= h($b['platform_name']) ?> · <?= $n ?> tasks</strong>
+                    <span class="text-xs text-faint"><?= h(implode(' · ', array_values(array_unique(array_map(static fn (array $t): string => (string) $t['task_type_name'], $unit['tasks']))))) ?></span></span>
+                  <span class="tx-amount"><span class="tx-in">+<?= h(yolotask_money($b['reward_total'])) ?></span><span class="btn btn-secondary btn-sm bundle-toggle" aria-hidden="true">Tasks</span></span>
+                </summary>
+                <ul class="tx-list bundle-tasks">
+                  <?php foreach ($unit['tasks'] as $c): ?><?= yolotask_feed_task_row($c) ?><?php endforeach; ?>
+                </ul>
+              </details>
+            </li>
+          <?php else: ?>
+            <?php foreach ($unit['tasks'] as $c): ?><?= yolotask_feed_task_row($c) ?><?php endforeach; ?>
+          <?php endif; ?>
         <?php endforeach; ?>
       </ul>
       <?= yolotask_pager($feed, static fn (int $p): string => 'tasks.php?' . http_build_query(array_filter(['platform' => $platform ?: null, 'page' => $p]))) ?>
     <?php endif; ?>
   </section>
+  <?php endif; ?>
 </div>
 <?php
 yolotask_render_app($user, 'Tasks', (string) ob_get_clean(), 'tasks');

@@ -88,7 +88,7 @@ if ($id > 0) {
 <div class="wallet-grid" data-appeal="<?= (int) $a['id'] ?>">
   <section class="card card-glow dash-hero" aria-labelledby="ap-title">
     <p class="text-xs fw-bold text-primary"><?= h(strtoupper((string) $a['platform_name'] . ' · ' . $a['task_type_name'])) ?> · APPEAL #<?= (int) $a['id'] ?> · SUBMISSION #<?= (int) $a['submission_id'] ?></p>
-    <h2 id="ap-title" class="text-break"><a href="campaign.php?id=<?= (int) $a['campaign_id'] ?>"><?= h((string) $a['campaign_title']) ?></a></h2>
+    <h2 id="ap-title" class="text-break"><a href="<?= !empty($a['is_platform']) ? 'platform-tasks.php?bundle=' . (int) ($a['bundle_id'] ?? 0) : 'campaign.php?id=' . (int) $a['campaign_id'] ?>"><?= h((string) $a['campaign_title']) ?></a> <?= yolotask_source_badge($a) ?></h2>
     <div class="wallet-sub"><?= yolotask_appeal_badge($a) ?><span>Earner <strong><?= h((string) $a['earner_name']) ?></strong> <span class="text-break"><?= h((string) $a['earner_email']) ?></span> · advertiser <span class="text-break"><?= h((string) $a['advertiser_email']) ?></span></span></div>
     <p class="text-sm">Price <?= h(yolotask_money($a['unit_price_kobo'])) ?> · earner reward <?= h(yolotask_money($a['unit_reward_kobo'])) ?> · campaign <?= yolotask_campaign_badge((string) $a['campaign_status']) ?></p>
     <?php if ($a['status'] === 'overturned'): ?><p class="text-sm" data-funding><?= h(yolotask_appeal_funding($a)) ?></p><?php endif; ?>
@@ -230,7 +230,7 @@ ob_start();
         <li class="user-row submission-row" data-appeal="<?= (int) $a['id'] ?>">
           <?= yolotask_proof_cell($a['latest_proof_id'] !== null ? (int) $a['latest_proof_id'] : null, (string) ($a['link_url'] ?? '')) ?>
           <div class="user-meta">
-            <strong><a href="appeals.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a></strong>
+            <strong><a href="appeals.php?id=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['campaign_title']) ?></a> <?= yolotask_source_badge($a) ?></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $a['earner_email']) ?> → <?= h((string) $a['advertiser_email']) ?> · filed <?= h(yolotask_wat((string) $a['created_at'])) ?> · rejected by <?= h(yolotask_rejection_source((string) $a['rejection_source'])) ?></span>
             <span class="user-tags"><?= yolotask_appeal_badge($a) ?><?php if ($a['status'] === 'open' && $a['claim_user_id'] !== null): ?><span class="badge badge-info">Claimed by <?= h((string) $a['claim_reviewer_name']) ?></span><?php endif; ?><?php if ((int) $a['over_budget'] === 1): ?><span class="badge badge-warning">Over budget</span><?php endif; ?></span>
             <?php if ($a['status'] === 'overturned'): ?><span class="text-xs text-faint"><?= h(yolotask_appeal_funding($a)) ?></span><?php endif; ?>

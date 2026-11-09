@@ -36,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'base_price_kobo' => $naira('base_price'), 'base_reward_kobo' => $naira('base_reward'),
                 'is_active' => !empty($_POST['is_active']),
             ]);
+            \YoloTask\PlatformTasks\PlatformTasks::syncRewards($pdo); // YOLOTASK task rewards follow the task type's reward (migration 0019)
             yolotask_flash('Task type saved. New campaigns use the new prices; existing campaigns keep theirs.');
         } elseif ($action === 'add_type') {
             Pricing::addTaskType($pdo, $adminId, yolotask_post_str('name'), $naira('base_price'), $naira('base_reward'));

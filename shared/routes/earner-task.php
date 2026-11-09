@@ -5,6 +5,7 @@ use YoloTask\Campaigns\Campaigns;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
+use YoloTask\Account\Activation;
 use YoloTask\Security\Csrf;
 use YoloTask\Tasks\Submissions;
 use YoloTask\Tasks\Tasks;
@@ -61,7 +62,23 @@ if ($c === null || ($submission === null && !in_array((string) $c['status'], ['l
 $res = Tasks::reservation($pdo, $id, $uid);
 $working = $res !== null && (string) $res['status'] === 'active' && (int) $res['still_valid'] === 1 && in_array((string) $c['status'], ['live', 'paused'], true);
 $left = Campaigns::slotsLeft($c);
-$canStart = !$working && $submission === null && (string) $c['status'] === 'live' && $left > 0 && !empty($user['email_verified_at']);
+// YOLOTASK tasks (migration 0019): no slot limit; a disabled bundle pauses all its tasks.
+$isPlatform = (int) $c['is_platform'] === 1;
+$paused = (string) $c['status'] !== 'live';
+if ($isPlatform && !$paused && $c['bundle_id'] !== null) {
+    $bs = $pdo->prepare('SELECT status FROM platform_task_bundles WHERE id = :b');
+    $bs->execute(['b' => (int) $c['bundle_id']]);
+    $paused = (string) $bs->fetchColumn() !== 'live';
+}
+// Account activation (migration 0019): while required, a non-activated earner sees no task, except work already started (a held slot or a proof).
+if ($submission === null && !$working && !Activation::canWork($pdo, $uid)) {
+    ob_start();
+    echo yolotask_activation_card(['fee' => Activation::fee($pdo)]);
+    echo '<p class="text-center text-sm"><a href="tasks.php">Back to tasks</a></p>';
+    yolotask_render_app($user, 'Task', (string) ob_get_clean(), 'tasks');
+    return;
+}
+$canStart = !$working && $submission === null && !$paused && $left > 0 && !empty($user['email_verified_at']);
 // The reward this earner gets: what their proof was made at, else what their slot was reserved at, else the campaign's.
 $reward = $submission !== null ? (int) $submission['unit_reward_kobo'] : ($working && $res['unit_reward_kobo'] !== null ? (int) $res['unit_reward_kobo'] : (int) $c['unit_reward_kobo']);
 $maxMb = round(Settings::int($pdo, 'tasks.proof_max_bytes') / 1048576, 1);
@@ -74,7 +91,7 @@ ob_start();
     <h2 id="task-title" class="text-break"><?= h((string) $c['title']) ?></h2>
     <div class="wallet-balance"><span class="amount">+<?= h(yolotask_money($reward)) ?></span></div>
     <div class="wallet-sub">
-      <span>Slots left <strong><?= number_format($left) ?></strong></span>
+      <?php if ($isPlatform): ?><span>One per account</span><?php else: ?><span>Slots left <strong><?= number_format($left) ?></strong></span><?php endif; ?>
       <?php if ($c['ends_at']): ?><span>Ends <strong><?= h(yolotask_wat((string) $c['ends_at'], 'j M Y')) ?></strong></span><?php endif; ?>
     </div>
   </section>
@@ -109,10 +126,10 @@ ob_start();
         <div class="field">
           <label class="label" for="proof">Proof screenshot</label>
           <input class="input" id="proof" name="proof" type="file" accept="image/jpeg,image/png,image/webp" required>
-          <p class="input-hint">JPEG, PNG or WebP, up to <?= h((string) $maxMb) ?> MB. Only you, the advertiser and YOLOTASK staff can see it.</p>
+          <p class="input-hint">JPEG, PNG or WebP, up to <?= h((string) $maxMb) ?> MB. <?= $isPlatform ? 'Only you and YOLOTASK staff can see it.' : 'Only you, the advertiser and YOLOTASK staff can see it.' ?></p>
         </div>
         <div class="field">
-          <label class="label" for="comment">Note for the advertiser (optional)</label>
+          <label class="label" for="comment">Note for the <?= $isPlatform ? 'reviewer' : 'advertiser' ?> (optional)</label>
           <textarea class="input" id="comment" name="comment" rows="2" maxlength="500" placeholder="For example, the username you used"></textarea>
         </div>
         <button class="btn btn-primary btn-block" type="submit">Submit proof</button>
@@ -125,8 +142,8 @@ ob_start();
   <?php elseif ($submission === null): ?>
     <section class="card" aria-labelledby="start-title">
       <div class="card-header"><h2 id="start-title">Start this task</h2></div>
-      <?php if ((string) $c['status'] !== 'live'): ?>
-        <p class="text-faint">This campaign is paused. Check back later.</p>
+      <?php if ($paused): ?>
+        <p class="text-faint"><?= $isPlatform ? 'This task is paused. Check back later.' : 'This campaign is paused. Check back later.' ?></p>
       <?php elseif ($left <= 0): ?>
         <p class="text-faint">All slots are taken right now. Slots free up when other earners release or run out of time.</p>
       <?php elseif (empty($user['email_verified_at'])): ?>

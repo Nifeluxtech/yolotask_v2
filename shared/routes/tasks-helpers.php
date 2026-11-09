@@ -20,6 +20,45 @@ function yolotask_submission_badge(array $s): string
     return '<span class="badge ' . $class . '">' . h($label) . '</span>';
 }
 
+/**
+ * Subtle "YOLOTASK" source label on proofs and appeals of YOLOTASK tasks
+ * (migration 0019). Staff only: earners never see where a task comes from.
+ */
+function yolotask_source_badge(array $row): string
+{
+    if (empty($row['is_platform']) || !in_array(yolotask_role(), ['reviewer', 'admin'], true)) return '';
+    return '<span class="badge badge-source" data-source="yolotask" title="Task provided by YOLOTASK">YOLOTASK</span>';
+}
+
+/** One task in the earner feed (advertisers' tasks show the slots left; YOLOTASK tasks have no slot limit). */
+function yolotask_feed_task_row(array $c): string
+{
+    $meta = h((string) $c['platform_name']) . ' · ' . h((string) $c['task_type_name']);
+    if ((int) ($c['is_platform'] ?? 0) !== 1) {
+        $left = \YoloTask\Campaigns\Campaigns::slotsLeft($c);
+        $meta .= ' · ' . number_format($left) . ' slot' . ($left === 1 ? '' : 's') . ' left';
+    }
+    return '<li class="tx-row task-row" data-task="' . (int) $c['id'] . '">'
+        . '<span class="tx-icon platform-icon" data-platform="' . h((string) $c['platform_slug']) . '">' . h(mb_substr((string) $c['platform_name'], 0, 1)) . '</span>'
+        . '<div class="tx-meta"><strong><a href="task.php?id=' . (int) $c['id'] . '">' . h((string) $c['title']) . '</a></strong><span class="text-xs text-faint">' . $meta . '</span></div>'
+        . '<div class="tx-amount"><span class="tx-in">+' . h(yolotask_money($c['unit_reward_kobo'])) . '</span><a class="btn btn-secondary btn-sm" href="task.php?id=' . (int) $c['id'] . '">View</a></div></li>';
+}
+
+/**
+ * "Activate your account" card (feed, dashboard, task page) for earners who
+ * must activate before they can access tasks. $offer comes from
+ * Account\Activation::offer(); only shown while activation is required.
+ */
+function yolotask_activation_card(array $offer): string
+{
+    $fee = yolotask_money($offer['fee']);
+    return '<section class="card activation-card" aria-labelledby="activation-card-title" data-activation-card>'
+        . '<span class="stat-icon">' . yolotask_nav_icon('sparkle') . '</span>'
+        . '<div class="activation-text"><h3 id="activation-card-title">Activate your account with ' . h($fee) . ' to access tasks.</h3>'
+        . '<p class="text-sm text-faint">Pay once by bank transfer. Every task in your feed opens as soon as the payment is confirmed.</p></div>'
+        . '<a class="btn btn-primary btn-sm" href="activate.php">Activate now</a></section>';
+}
+
 /** Progress bar: approved of quantity (plus pending as a lighter segment). */
 function yolotask_progress(int $approved, int $pending, int $quantity): string
 {
@@ -48,8 +87,10 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
     $queue = 0;
     $stale = 0;
     $appeals = 0;
+    $platform = 0;
     try {
         $queue = (int) $pdo->query("SELECT COUNT(*) FROM campaigns WHERE status = 'pending_approval'")->fetchColumn();
+        $platform = (int) $pdo->query("SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id WHERE c.is_platform = 1 AND s.status = 'pending'")->fetchColumn();
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
         $appeals = \YoloTask\Tasks\Appeals::openCount($pdo);
     } catch (Throwable) {
@@ -58,6 +99,8 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
         'campaigns' => ['Campaigns', 'campaigns.php', $queue],
         'submissions' => ['Submissions', 'submissions.php', $stale],
         'appeals' => ['Appeals', 'appeals.php', $appeals],
+        'platform' => ['YOLOTASK tasks', 'platform-tasks.php', $platform],
+        'activation' => ['Account activation', 'activation.php', 0],
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
         'levels' => ['Earner levels', 'levels.php', 0],

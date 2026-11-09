@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $list = Submissions::listForAdmin($pdo, $status, $q, $page);
 $staleHours = StaleQueue::hours($pdo);
 $csrf = Csrf::token();
-$filters = ['pending' => 'Pending', 'stale' => 'Stale (' . $staleHours . ' h+)', 'approved' => 'Approved', 'rejected' => 'Rejected', 'all' => 'All'];
+$filters = ['pending' => 'Pending', 'stale' => 'Stale (' . $staleHours . ' h+)', 'yolotask' => 'YOLOTASK (pending)', 'approved' => 'Approved', 'rejected' => 'Rejected', 'all' => 'All'];
 ob_start();
 ?>
 <?= yolotask_admin_market_tabs($pdo, 'submissions') ?>
@@ -74,7 +74,7 @@ ob_start();
         <li class="user-row submission-row" data-submission="<?= (int) $s['id'] ?>">
           <?= yolotask_proof_cell($s['latest_proof_id'] !== null ? (int) $s['latest_proof_id'] : null, (string) ($s['link_url'] ?? '')) ?>
           <div class="user-meta">
-            <strong>#<?= (int) $s['id'] ?> · <a href="campaign.php?id=<?= (int) $s['campaign_id'] ?>"><?= h((string) $s['campaign_title']) ?></a></strong>
+            <strong>#<?= (int) $s['id'] ?> · <a href="<?= !empty($s['is_platform']) ? 'platform-tasks.php?bundle=' . (int) ($s['bundle_id'] ?? 0) : 'campaign.php?id=' . (int) $s['campaign_id'] ?>"><?= h((string) $s['campaign_title']) ?></a> <?= yolotask_source_badge($s) ?></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $s['earner_name']) ?> · <?= h((string) $s['earner_email']) ?> · <?= h((string) $s['platform_name']) ?> <?= h((string) $s['task_type_name']) ?></span>
             <span class="user-tags"><?= yolotask_submission_badge($s) ?><span class="text-xs text-faint">Submitted <?= h(yolotask_wat((string) $s['submitted_at'])) ?><?= $s['status'] === 'pending' ? ' · auto-approves ' . h(yolotask_wat((string) $s['auto_approve_at'])) : '' ?> · <?= h(yolotask_money($s['unit_price_kobo'])) ?> / earner <?= h(yolotask_money($s['unit_reward_kobo'])) ?></span></span>
             <?php if ($s['comment']): ?><span class="text-sm text-break">“<?= h((string) $s['comment']) ?>”</span><?php endif; ?>
