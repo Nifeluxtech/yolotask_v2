@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) and the withdrawal fee / daily check-in (migration 0014). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) the withdrawal fee / daily check-in (migration 0014) and YOLOTASK tasks / account activation (migration 0019). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -58,6 +58,11 @@ final class Settings
         // Earner withdrawal fee and daily check-in (rows seeded by migration 0014).
         'money.withdraw_fee_bps' => '1000',    // base earner withdrawal fee, 10% (0-5000 bps); levels may set a lower rate
         'checkin.enabled' => '0',              // daily check-in switch; amounts are set per level (0 = off for that level)
+        // Account activation and YOLOTASK tasks (rows seeded by migration 0019).
+        'activation.required' => '0',          // 1 = earners must pay the one-time activation fee before they can see or start any task; 0 = off (default)
+        'activation.fee_kobo' => '50000',      // one-time account activation fee, ₦500 (₦100 to ₦100,000)
+        'platform_tasks.reward_percent' => '50', // YOLOTASK task reward = this % of the task type's normal reward, rounded down to the kobo (1-100)
+        'platform_tasks.owner_user_id' => '0', // the closed system account "YOLOTASK" that owns YOLOTASK tasks (set by migration 0019; not editable)
     ];
 
     private static ?array $cache = null;
