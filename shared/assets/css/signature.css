@@ -560,3 +560,18 @@ a.level-badge:focus-visible { outline: 2px solid #00D4FF; outline-offset: 2px; }
 .checkin-streak { font-weight: 700; color: var(--primary); }
 .wd-preview .receipt-list { margin-top: 0; }
 .level-fee-hint { margin-top: 4px; }
+
+/* YOLOTASK tasks and account activation (migration 0019) */
+.badge-source { background: rgba(148, 163, 184, .12); color: var(--text-faint, #94A3B8); border: 1px solid rgba(148, 163, 184, .25); font-weight: 600; letter-spacing: .02em; }
+.activation-card { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; border: 1px solid rgba(0, 212, 255, .35); background: linear-gradient(90deg, rgba(0, 212, 255, .08), rgba(124, 58, 237, .10)), var(--surface); }
+.activation-card .stat-icon { flex: none; margin: 0; }
+.activation-card .activation-text { flex: 1 1 220px; min-width: 0; }
+.activation-card h3 { margin: 0 0 2px; }
+.activation-points { margin: 0 0 1rem; padding-left: 1.2rem; display: grid; gap: 6px; }
+.task-bundle { list-style: none; }
+.task-bundle > details > summary { list-style: none; cursor: pointer; }
+.task-bundle > details > summary::-webkit-details-marker { display: none; }
+.task-bundle > details[open] > summary .bundle-toggle { opacity: .7; }
+.task-bundle .bundle-tasks { margin: 0 0 .5rem 1.25rem; padding-left: .75rem; border-left: 2px solid rgba(0, 212, 255, .25); }
+.platform-import textarea, .mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.platform-task-list .tx-meta details { margin-top: 4px; }
