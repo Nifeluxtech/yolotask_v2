@@ -138,3 +138,20 @@ works after the run.
 The local servers use `tests/Integration/PaymentCallbacks/router.php`, so a
 path with no file behind it answers 404 like the cPanel Apache vhosts
 (plain `php -S` would fall back to index.php with 200).
+
+## YOLOTASK tasks, bundles and account activation (migration 0019)
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/PaymentCallbacks/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg python3 tests/Integration/Growth/platform_tasks_test.py
+
+Needs migration 0019, the fake AfrStar gateway on 8499 and Pillow. Covers
+activation OFF by default (every earner sees every task), bundles (create, add
+several links at once, enable / disable, remove / restore, edit), admin CSV
+import with dry run and `scripts/import-platform-tasks.php` (dry run,
+idempotent re-runs, the seed file in `database/seeds/` as a dry run), the feed
+(advertisers first, bundles grouped, no label for earners), half reward paid
+from `system:platform_task_payouts`, the reviewer queue label, appeals,
+auto-approve, referral milestones / leaderboard / levels, repricing,
+activation ON (every task gated, held slots still submittable), the YTA
+payment flow (callback, review, duplicate, manual verify) and reconciliation.
+It ends every YOLOTASK task it created and switches activation back OFF.
