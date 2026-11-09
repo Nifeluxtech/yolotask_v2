@@ -137,7 +137,7 @@ final class Appeals
     }
 
     private const SELECT = "SELECT a.*, s.status submission_status, s.attempts, s.comment earner_note, s.unit_price_kobo, s.unit_reward_kobo, s.decision_source submission_decision_source, s.reward_status,
-        c.title campaign_title, c.status campaign_status, c.link_url, c.instructions current_instructions, c.instructions_version current_version, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
+        c.title campaign_title, c.status campaign_status, c.is_platform, c.bundle_id, c.link_url, c.instructions current_instructions, c.instructions_version current_version, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
         eu.display_name earner_name, eu.email earner_email, au.display_name advertiser_name, au.email advertiser_email,
         rv.display_name resolver_name, ov.display_name overrider_name, rj.display_name rejecter_name,
         (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = a.submission_id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id,
@@ -342,7 +342,8 @@ final class Appeals
         // Escrow already promised: pending proofs and live reservations, each at its own price.
         $reserved = in_array((string) $c['status'], ['live', 'paused'], true) ? Campaigns::reservedValue($pdo, $c) : 0;
         $free = $unspent - Campaigns::pendingValue($pdo, $cid) - $reserved;
-        $fromEscrow = max(0, min($price, $free));
+        // YOLOTASK tasks (migration 0019) have no escrow or advertiser: the platform pays in postApproval.
+        $fromEscrow = !empty($c['is_platform']) ? $price : max(0, min($price, $free));
         $shortfall = $price - $fromEscrow;
         $fromWallet = 0;
         $fromPlatform = 0;
@@ -371,7 +372,7 @@ final class Appeals
             ->execute(['p' => $price, 'x' => $shortfall > 0 ? 1 : 0, 'id' => $cid]);
         $c = Approvals::completeIfFull($pdo, $cid);
         Campaigns::settle($pdo, $c, 'appeal settled', $actorId);
-        return ['escrow' => $fromEscrow, 'wallet' => $fromWallet, 'platform' => $fromPlatform, 'over' => $shortfall > 0, 'fund_tx' => $fundTx, 'approve_tx' => $pay['tx_id']];
+        return ['escrow' => !empty($c['is_platform']) ? 0 : $fromEscrow, 'wallet' => $fromWallet, 'platform' => $fromPlatform, 'over' => $shortfall > 0, 'fund_tx' => $fundTx, 'approve_tx' => $pay['tx_id']];
     }
 
     /** Undo an overturn (admin override to uphold). Returns the reversal transaction id. */
@@ -391,6 +392,9 @@ final class Appeals
         $legs = [[$held ? Ledger::systemAccountId($pdo, Ledger::REWARD_HOLD) : $earner['available_account_id'], 'debit', $reward]];
         if ($margin > 0) $legs[] = [Ledger::systemAccountId($pdo, Ledger::REVENUE), 'debit', $margin];
         $legs[] = [(int) $c['escrow_account_id'], 'credit', $price];
+        if (!empty($c['is_platform'])) { // YOLOTASK task (migration 0019): the reward goes back to the platform's payout account
+            $legs = [$legs[0], [Ledger::systemAccountId($pdo, Ledger::PLATFORM_TASK_PAYOUTS), 'credit', $reward]];
+        }
         $tx = Ledger::post($pdo, 'appeal-reverse:' . $appealId, 'task_reward_reversal', 'Appeal #' . $appealId . ' overturn reversed by admin', $legs, 'appeal', $appealId, $adminId);
         $pdo->prepare("UPDATE submissions SET status = 'rejected', decision_source = 'appeal', decided_by_user_id = :a, decided_at = UTC_TIMESTAMP(), reject_reason = :r,
             reward_status = 'none', reward_release_at = NULL, reward_released_at = NULL, approve_transaction_id = NULL, release_transaction_id = NULL WHERE id = :id")
@@ -441,7 +445,7 @@ final class Appeals
                     'Reviewer note: ' . $note,
                     (string) $a['reward_status'] === 'held' ? 'Your ' . Money::format((int) $a['unit_reward_kobo']) . ' reward is on a short hold and then reaches your wallet.' : 'Your ' . Money::format((int) $a['unit_reward_kobo']) . ' reward is in your wallet.',
                 ], 'Open my submission', $url);
-                if ($a['advertiser_email']) {
+                if ($a['advertiser_email'] && empty($a['is_platform'])) {
                     $lines = ['A YOLOTASK reviewer overturned your rejection of submission #' . (int) $a['submission_id'] . ' on "' . $a['campaign_title'] . '" after the earner appealed.',
                         'Your rejection reason: ' . (string) $a['rejection_reason'], 'Reviewer note: ' . $note];
                     if ((int) $a['wallet_kobo'] > 0) $lines[] = 'Your campaign budget was already used, so ' . Money::format((int) $a['wallet_kobo']) . ' was charged from your wallet for this task.';

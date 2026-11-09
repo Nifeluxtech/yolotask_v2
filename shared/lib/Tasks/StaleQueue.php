@@ -15,6 +15,8 @@ use YoloTask\Support\Pagination;
  * the normal Approvals path with source 'reviewer' (same money path, the
  * reviewer recorded as decider and in reviewer_actions). Anything still
  * pending is auto-approved when the campaign's auto-approve window ends.
+ * Proofs on YOLOTASK tasks (migration 0019) have no advertiser, so they
+ * join this queue as soon as they are submitted, labelled YOLOTASK.
  */
 final class StaleQueue
 {
@@ -27,7 +29,7 @@ final class StaleQueue
 
     public static function count(PDO $pdo): int
     {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM submissions WHERE status = 'pending' AND submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id WHERE s.status = 'pending' AND (c.is_platform = 1 OR s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR))");
         $stmt->bindValue('h', self::hours($pdo), PDO::PARAM_INT);
         $stmt->execute();
         return (int) $stmt->fetchColumn();
@@ -35,20 +37,31 @@ final class StaleQueue
 
     public static function isStale(PDO $pdo, array $s): bool
     {
-        return (string) $s['status'] === 'pending' && strtotime((string) $s['submitted_at'] . ' UTC') < time() - self::hours($pdo) * 3600;
+        if ((string) $s['status'] !== 'pending') return false;
+        if (self::isPlatform($pdo, $s)) return true; // YOLOTASK task proofs have no advertiser: reviewers decide them straight away
+        return strtotime((string) $s['submitted_at'] . ' UTC') < time() - self::hours($pdo) * 3600;
+    }
+
+    /** Is this submission on a YOLOTASK task (migration 0019)? */
+    public static function isPlatform(PDO $pdo, array $s): bool
+    {
+        if (array_key_exists('is_platform', $s)) return (int) $s['is_platform'] === 1;
+        $stmt = $pdo->prepare('SELECT is_platform FROM campaigns WHERE id = :c');
+        $stmt->execute(['c' => (int) $s['campaign_id']]);
+        return (int) $stmt->fetchColumn() === 1;
     }
 
     /** Reviewer queue: stale pending submissions, oldest first, with any active claim. */
     public static function queue(PDO $pdo, int $page): array
     {
-        $where = "WHERE s.status = 'pending' AND s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)";
-        $sql = "SELECT s.id, s.campaign_id, s.submitted_at, s.auto_approve_at, s.attempts, s.comment, s.instructions_version, s.unit_price_kobo, s.unit_reward_kobo, c.title campaign_title, c.link_url, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
+        $where = "WHERE s.status = 'pending' AND (c.is_platform = 1 OR s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR))";
+        $sql = "SELECT s.id, s.campaign_id, c.is_platform, s.submitted_at, s.auto_approve_at, s.attempts, s.comment, s.instructions_version, s.unit_price_kobo, s.unit_reward_kobo, c.title campaign_title, c.link_url, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
                 u.display_name earner_name, rc.reviewer_user_id claim_user_id, rc.expires_at claim_expires_at, cu.display_name claim_reviewer_name,
                 (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id
             FROM submissions s JOIN campaigns c ON c.id = s.campaign_id JOIN platforms p ON p.id = c.platform_id JOIN task_types t ON t.id = c.task_type_id JOIN users u ON u.id = s.earner_user_id
             LEFT JOIN review_claims rc ON rc.item_type = 'submission' AND rc.item_id = s.id AND rc.expires_at > UTC_TIMESTAMP() LEFT JOIN users cu ON cu.id = rc.reviewer_user_id
             {$where} ORDER BY s.submitted_at ASC, s.id ASC";
-        return Pagination::query($pdo, "SELECT COUNT(*) FROM submissions s {$where}", $sql, ['h' => self::hours($pdo)], $page, self::PAGE_SIZE);
+        return Pagination::query($pdo, "SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id {$where}", $sql, ['h' => self::hours($pdo)], $page, self::PAGE_SIZE);
     }
 
     public static function claim(PDO $pdo, array $reviewer, int $submissionId): string

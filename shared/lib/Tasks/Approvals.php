@@ -27,6 +27,8 @@ use YoloTask\Security\Audit;
  * (source 'reviewer'); an appeal overturn reuses postApproval() with its own
  * idempotency key (see Appeals).
  * Release: held rewards past reward_release_at move to the earner (cron).
+ * YOLOTASK tasks (migration 0019): Dr system:platform_task_payouts (reward) / Cr
+ * earner or system:reward_hold; no escrow, no margin, nothing to refund.
  */
 final class Approvals
 {
@@ -92,6 +94,14 @@ final class Approvals
         $earner = Wallet::find($pdo, (int) $row['earner_user_id']);
         if ($earner === null) throw new RuntimeException('Earner wallet missing.');
         $toAccount = $holdHours > 0 ? Ledger::systemAccountId($pdo, Ledger::REWARD_HOLD) : (int) $earner['available_account_id'];
+        if (!empty($c['is_platform'])) {
+            // YOLOTASK task (migration 0019): no escrow; the platform pays the reward (Dr system:platform_task_payouts). Price = reward, no margin.
+            if ($price !== $reward) throw new RuntimeException('YOLOTASK task price and reward differ.');
+            $tx = Ledger::post($pdo, $key, 'task_reward', 'YOLOTASK task reward: ' . mb_substr((string) $c['title'], 0, 120), [
+                [Ledger::systemAccountId($pdo, Ledger::PLATFORM_TASK_PAYOUTS), 'debit', $reward], [$toAccount, 'credit', $reward],
+            ], 'submission', (int) $row['id'], $actorId);
+            return ['tx_id' => $tx['id'], 'created' => $tx['created'], 'held' => $holdHours > 0, 'release_at' => $holdHours > 0 ? gmdate('Y-m-d H:i:s', time() + $holdHours * 3600) : null];
+        }
         $legs = [[(int) $c['escrow_account_id'], 'debit', $price], [$toAccount, 'credit', $reward]];
         if ($margin > 0) $legs[] = [Ledger::systemAccountId($pdo, Ledger::REVENUE), 'credit', $margin];
         $tx = Ledger::post($pdo, $key, 'task_reward', 'Task reward: ' . mb_substr((string) $c['title'], 0, 120), $legs, 'submission', (int) $row['id'], $actorId);

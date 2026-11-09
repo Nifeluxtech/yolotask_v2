@@ -119,7 +119,7 @@ final class Submissions
             && empty($s['appeal_id']);
     }
 
-    private const SELECT = 'SELECT s.*, c.title campaign_title, c.status campaign_status, c.advertiser_user_id, c.link_url, c.quantity, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
+    private const SELECT = 'SELECT s.*, c.title campaign_title, c.status campaign_status, c.is_platform, c.bundle_id, c.advertiser_user_id, c.link_url, c.quantity, COALESCE(c.custom_platform_name, p.name) platform_name, COALESCE(c.custom_task_name, t.name) task_type_name,
         u.display_name earner_name, u.email earner_email,
         (SELECT pr.id FROM submission_proofs pr WHERE pr.submission_id = s.id AND pr.is_appeal = 0 ORDER BY pr.attempt DESC, pr.id DESC LIMIT 1) latest_proof_id,
         (SELECT ap.id FROM submission_appeals ap WHERE ap.submission_id = s.id) appeal_id,
@@ -171,9 +171,10 @@ final class Submissions
         $where = 'WHERE 1 = 1';
         $args = [];
         if (in_array($status, ['pending', 'approved', 'rejected'], true)) { $where .= ' AND s.status = :st'; $args['st'] = $status; }
-        if ($status === 'stale') { $where .= " AND s.status = 'pending' AND s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)"; $args['h'] = StaleQueue::hours($pdo); }
+        if ($status === 'stale') { $where .= " AND s.status = 'pending' AND c.is_platform = 0 AND s.submitted_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)"; $args['h'] = StaleQueue::hours($pdo); }
+        if ($status === 'yolotask') $where .= " AND s.status = 'pending' AND c.is_platform = 1";
         if ($q !== '') { $where .= ' AND (u.email LIKE :q OR c.title LIKE :q2)'; $like = '%' . addcslashes($q, '%_\\') . '%'; $args += ['q' => $like, 'q2' => $like]; }
-        $order = in_array($status, ['pending', 'stale'], true) ? 's.submitted_at ASC' : 's.id DESC';
+        $order = in_array($status, ['pending', 'stale', 'yolotask'], true) ? 's.submitted_at ASC' : 's.id DESC';
         return Pagination::query($pdo, "SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id JOIN users u ON u.id = s.earner_user_id {$where}", self::SELECT . " {$where} ORDER BY {$order}", $args, $page, self::PAGE_SIZE);
     }
 
