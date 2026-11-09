@@ -1,20 +1,25 @@
 -- YOLOTASK V2 read-only pre-release checks. Rows = problems.
--- Run the *_reconciliation.sql files as well (wallet, payment orders, campaign funding, referral awards, deposit cashback).
+-- Run the *_reconciliation.sql files as well (wallet, payment orders, campaign funding, referral awards, deposit cashback, platform tasks).
 
--- 1. Expected migrations applied (through 0013; 0010/0011 are skipped placeholders).
+-- 1. Expected migrations applied (through 0018; 0010/0011 are skipped placeholders).
 SELECT 'missing_migration' AS problem, m.f AS filename FROM (
     SELECT '0001_users_sessions_security.sql' AS f UNION ALL SELECT '0002_account_security.sql' UNION ALL SELECT '0003_wallets_ledger.sql'
     UNION ALL SELECT '0004_payments_banks_withdrawals.sql' UNION ALL SELECT '0005_campaigns_funding_links.sql' UNION ALL SELECT '0006_tasks_submissions_proofs_appeals.sql'
     UNION ALL SELECT '0007_afrstar_callback_forwards.sql' UNION ALL SELECT '0008_appeals_reviewer_queue.sql' UNION ALL SELECT '0009_referrals_levels_notifications.sql'
-    UNION ALL SELECT '0012_leaderboard.sql' UNION ALL SELECT '0013_deposit_cashback.sql'
+    UNION ALL SELECT '0012_leaderboard.sql' UNION ALL SELECT '0013_deposit_cashback.sql' UNION ALL SELECT '0014_withdrawal_fee_daily_checkin.sql'
+    UNION ALL SELECT '0015_leaderboard_all_time.sql' UNION ALL SELECT '0016_custom_tasks.sql' UNION ALL SELECT '0017_retire_premium.sql' UNION ALL SELECT '0019_platform_tasks_activation.sql'
 ) m LEFT JOIN schema_migrations s ON s.filename = m.f WHERE s.filename IS NULL;
 
 -- 2. System ledger accounts exist.
 SELECT 'missing_system_account' AS problem, x.code FROM (
     SELECT 'system:afrstar_clearing' AS code UNION ALL SELECT 'system:adjustments' UNION ALL SELECT 'system:revenue' UNION ALL SELECT 'system:reward_hold'
     UNION ALL SELECT 'system:advertiser_receivable' UNION ALL SELECT 'system:referral_bonus' UNION ALL SELECT 'system:referral_commission' UNION ALL SELECT 'system:bonuses'
-    UNION ALL SELECT 'system:deposit_cashback'
+    UNION ALL SELECT 'system:deposit_cashback' UNION ALL SELECT 'system:activation_revenue' UNION ALL SELECT 'system:platform_task_payouts'
 ) x LEFT JOIN ledger_accounts a ON a.code = x.code WHERE a.id IS NULL;
+
+-- 2b. YOLOTASK tasks (migration 0019): the YOLOTASK system account exists, is closed and owns the setting.
+SELECT 'platform_tasks_account' AS problem, st.setting_value FROM settings st LEFT JOIN users u ON CAST(u.id AS CHAR) = st.setting_value AND u.status = 'closed'
+WHERE st.setting_key = 'platform_tasks.owner_user_id' AND u.id IS NULL;
 
 -- 3. At least one active admin.
 SELECT 'no_active_admin' AS problem FROM (SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active') t WHERE t.n = 0;

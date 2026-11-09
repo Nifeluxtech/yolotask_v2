@@ -1,15 +1,18 @@
 -- YOLOTASK V2 read-only check: campaign escrow (Phase 4). Rows = problems.
 -- Same rules as Money\Ledger::reconcileCampaigns (cron/hourly.php, cron/daily.php).
+-- YOLOTASK tasks (campaigns.is_platform = 1, migration 0019) have no escrow or
+-- budget: the platform pays their rewards. They are left out of the escrow
+-- checks below and checked in platform_tasks_reconciliation.sql.
 
 -- 1. Each campaign's escrow account equals its unspent budget.
 SELECT 'escrow_vs_unspent' AS problem, c.id, c.funded_kobo - c.spent_kobo - c.refunded_kobo AS unspent, COALESCE(a.balance_kobo, 0) AS escrow
 FROM campaigns c LEFT JOIN ledger_accounts a ON a.id = c.escrow_account_id
-WHERE COALESCE(a.balance_kobo, 0) <> c.funded_kobo - c.spent_kobo - c.refunded_kobo OR c.funded_kobo - c.spent_kobo - c.refunded_kobo < 0;
+WHERE c.is_platform = 0 AND (COALESCE(a.balance_kobo, 0) <> c.funded_kobo - c.spent_kobo - c.refunded_kobo OR c.funded_kobo - c.spent_kobo - c.refunded_kobo < 0);
 
 -- 2. Total escrow equals total unspent budgets.
 SELECT 'escrow_total' AS problem, e.escrow, u.unspent
 FROM (SELECT COALESCE(SUM(balance_kobo), 0) AS escrow FROM ledger_accounts WHERE kind = 'campaign_escrow') e,
-     (SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) AS unspent FROM campaigns) u
+     (SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) AS unspent FROM campaigns WHERE is_platform = 0) u
 WHERE e.escrow <> u.unspent;
 
 -- 3. Funded campaigns were funded with exactly their budget, once, plus any
@@ -41,12 +44,12 @@ HAVING approved_value <> c.spent_kobo OR approved_n <> c.approved_count OR pendi
 --    pending work at the old and the new price).
 SELECT 'closed_escrow' AS problem, c.id, c.status, c.funded_kobo - c.spent_kobo - c.refunded_kobo AS unspent,
        (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending') AS needed
-FROM campaigns c WHERE c.status IN ('completed', 'cancelled', 'ended', 'rejected')
+FROM campaigns c WHERE c.is_platform = 0 AND c.status IN ('completed', 'cancelled', 'ended', 'rejected')
   AND c.funded_kobo - c.spent_kobo - c.refunded_kobo <> (SELECT COALESCE(SUM(s.unit_price_kobo), 0) FROM submissions s WHERE s.campaign_id = c.id AND s.status = 'pending');
 
 -- 7. Never more taken slots than quantity, except approvals paid on appeal
 --    over the budget (Phase 5), which are recorded in extra_approved_count.
-SELECT 'overfilled' AS problem, id, quantity, extra_approved_count, approved_count, pending_count FROM campaigns WHERE approved_count + pending_count > quantity + extra_approved_count;
+SELECT 'overfilled' AS problem, id, quantity, extra_approved_count, approved_count, pending_count FROM campaigns WHERE is_platform = 0 AND approved_count + pending_count > quantity + extra_approved_count;
 
 -- 7b. Every over-budget approval is an overturned appeal marked over_budget.
 SELECT 'over_budget_unrecorded' AS problem, c.id, c.extra_approved_count,
