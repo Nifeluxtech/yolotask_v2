@@ -278,6 +278,7 @@ final class Campaigns
      */
     public static function settle(PDO $pdo, array $c, string $note, ?int $actorId = null): int
     {
+        if (!empty($c['is_platform'])) return 0; // YOLOTASK tasks (migration 0019) have no escrow to refund
         if (!in_array((string) $c['status'], self::CLOSED, true)) return 0;
         $unspent = (int) $c['funded_kobo'] - (int) $c['spent_kobo'] - (int) $c['refunded_kobo'];
         $refund = $unspent - self::pendingValue($pdo, (int) $c['id']);
@@ -396,6 +397,7 @@ final class Campaigns
     {
         $owner = self::find($pdo, $id);
         if ($owner === null) throw new RuntimeException('Campaign not found.');
+        if (!empty($owner['is_platform'])) throw new RuntimeException('YOLOTASK tasks are managed on the YOLOTASK tasks page.');
         $pdo->beginTransaction();
         try {
             Wallet::lock($pdo, (int) $owner['advertiser_user_id']);
@@ -459,6 +461,7 @@ final class Campaigns
      */
     public static function capacity(array $c): int
     {
+        if (!empty($c['is_platform'])) return PHP_INT_MAX; // YOLOTASK tasks: no slot limit, each earner once (migration 0019)
         return (int) $c['quantity'] + (int) ($c['extra_approved_count'] ?? 0);
     }
 
@@ -487,7 +490,7 @@ final class Campaigns
 
     public static function listForAdmin(PDO $pdo, string $status, string $q, int $page): array
     {
-        $where = 'WHERE 1 = 1';
+        $where = 'WHERE c.is_platform = 0'; // YOLOTASK tasks have their own admin page
         $args = [];
         $all = ['draft', 'pending_approval', 'live', 'paused', 'rejected', 'completed', 'cancelled', 'ended'];
         if (in_array($status, $all, true)) { $where .= ' AND c.status = :s'; $args['s'] = $status; }
@@ -499,7 +502,7 @@ final class Campaigns
     public static function adminCounts(PDO $pdo): array
     {
         $out = ['pending_approval' => 0, 'live' => 0, 'paused' => 0, 'all' => 0];
-        foreach ($pdo->query('SELECT status, COUNT(*) n FROM campaigns GROUP BY status') as $r) {
+        foreach ($pdo->query('SELECT status, COUNT(*) n FROM campaigns WHERE is_platform = 0 GROUP BY status') as $r) {
             $out[(string) $r['status']] = (int) $r['n'];
             $out['all'] += (int) $r['n'];
         }

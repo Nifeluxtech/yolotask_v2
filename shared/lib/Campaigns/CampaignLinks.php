@@ -83,7 +83,8 @@ final class CampaignLinks
     {
         // Custom tasks on one link are told apart by their wording (case-insensitive collation).
         $extra = $customTask !== null ? ' AND custom_task_name = :ct' : '';
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM campaigns WHERE link_hash = :h AND task_type_id = :t AND status IN ('pending_approval', 'live', 'paused') AND id <> :id" . $extra);
+        // YOLOTASK tasks (migration 0019) never block an advertiser's campaign for the same link.
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM campaigns WHERE link_hash = :h AND task_type_id = :t AND status IN ('pending_approval', 'live', 'paused') AND is_platform = 0 AND id <> :id" . $extra);
         $args = ['h' => $hash, 't' => $taskTypeId, 'id' => $exceptCampaignId ?? 0];
         if ($customTask !== null) $args['ct'] = $customTask;
         $stmt->execute($args);
