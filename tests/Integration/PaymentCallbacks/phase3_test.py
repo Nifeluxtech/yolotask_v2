@@ -472,7 +472,9 @@ check('callback endpoints refuse GET', s == 405)
 check('every ledger transaction balances', one("SELECT COUNT(*) FROM (SELECT transaction_id FROM ledger_entries GROUP BY transaction_id HAVING SUM(CASE WHEN direction='debit' THEN amount_kobo ELSE -CAST(amount_kobo AS SIGNED) END) <> 0) x") == '0')
 check('total debits equal total credits', one("SELECT SUM(CASE WHEN direction='debit' THEN amount_kobo ELSE 0 END) = SUM(CASE WHEN direction='credit' THEN amount_kobo ELSE 0 END) FROM ledger_entries") == '1')
 clearing = int(one("SELECT balance_kobo FROM ledger_accounts WHERE code = 'system:afrstar_clearing'"))
-check('AfrStar clearing equals top-ups in minus net payouts out (fees stay with the platform)', clearing == int(one("SELECT COALESCE(SUM(credited_kobo),0) FROM payment_orders WHERE status='paid'")) - int(one("SELECT COALESCE(SUM(amount_kobo - fee_kobo),0) FROM withdrawals WHERE status='paid'")), clearing)
+# Account activation fees (migration 0019) also come in through AfrStar clearing (as platform revenue, never a wallet credit).
+activations_in = int(one("SELECT COALESCE(SUM(revenue_kobo),0) FROM activation_payments WHERE status='paid'") or 0) if one("SHOW TABLES LIKE 'activation_payments'") else 0
+check('AfrStar clearing equals top-ups and activation fees in minus net payouts out (fees stay with the platform)', clearing == int(one("SELECT COALESCE(SUM(credited_kobo),0) FROM payment_orders WHERE status='paid'")) + activations_in - int(one("SELECT COALESCE(SUM(amount_kobo - fee_kobo),0) FROM withdrawals WHERE status='paid'")), clearing)
 s, l, h = admin.get('/wallets.php')
 admin.post('/wallets.php', {'_csrf': admin.csrf(h), 'action': 'reconcile'})
 s, l, h = admin.get('/wallets.php')
