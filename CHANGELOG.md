@@ -1,5 +1,12 @@
 # Changelog
 
+## Outbound email budget (hosting suspension fix)
+
+- **Site-wide mail budget** in `Messaging\Mailer`: every real send (sendmail, SMTP or mail()) is counted in a locked file under private runtime storage (`runtime/cache/mail-budget.json`), shared by web requests, cron and CLI scripts. Default 25 emails per 15 minutes and 60 per hour (`mail.max_per_15min`, `mail.max_per_hour` in config-private). Over the budget a send is dropped and logged as `mail.budget_exceeded`; if storage is unusable the mailer fails closed. Added after Truehost suspended the account on 2026-11-09 for sending 184 emails in 15 minutes.
+- **Removed** `scripts/broadcast-earners.php` and `scripts/broadcasts/`. Announcements to many users go through the in-app announcement banner, or a dedicated bulk email service, never the hosting server's mail.
+- Existing per-form limits unchanged: sign-in (5 failures / 15 min), registration (5 per IP per hour), password reset (10 per IP, 3 per email per hour), verification codes (5 per user per hour). No form emails an address other than the account's own.
+- Test: `tests/Unit/Mail/mail_budget_test.php`.
+
 ## YOLOTASK tasks, bundles and optional account activation
 
 - **YOLOTASK tasks.** Tasks YOLOTASK provides itself, so earners have work while advertisers are few. Shown in the normal task feed with no label, always after advertisers' tasks. Grouped in **bundles** (`platform_task_bundles`: one social account = platform, account name, profile link, `bundle_key`); each task is its own `campaigns` row (`is_platform = 1`, `bundle_id`) with its own link, task type, instructions, reward and proof, owned by the closed system account "YOLOTASK" (`platform_tasks.owner_user_id`). Normal flow (reserve, proof, review, appeals, auto-approve); no escrow, budget or slot limit; once per earner; the level's held-task limit applies. Reward = the task type's normal reward × `platform_tasks.reward_percent` (default 50 = half), rounded down to the kobo, paid by the platform (Dr `system:platform_task_payouts` / Cr earner); repriced when the percent or the catalog reward changes (started slots keep theirs). Approved YOLOTASK tasks count toward referral milestones, leaderboards and levels. Full description: `docs/platform-tasks.md`.
