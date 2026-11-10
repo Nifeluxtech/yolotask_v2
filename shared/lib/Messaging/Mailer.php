@@ -3,10 +3,18 @@ declare(strict_types=1);
 namespace YoloTask\Messaging;
 
 use YoloTask\Core\Logger;
+use YoloTask\Support\Storage;
 
 /**
  * Transactional email. Driver "mail" uses the host's sendmail (cPanel),
  * driver "log" writes messages to a file for local testing.
+ *
+ * Every real send passes a site-wide outbound budget first (default 25 per
+ * 15 minutes and 60 per hour, config mail.max_per_15min / mail.max_per_hour).
+ * Shared hosting suspends accounts that send bulk mail, so the app must never
+ * be able to do that, whether through a script, a bot on a form, or a burst
+ * of review notifications. Mail over the budget is dropped and logged.
+ * Announcements to many users belong in a bulk email service, not here.
  */
 final class Mailer
 {
@@ -21,6 +29,11 @@ final class Mailer
         $driver = (string) ($config['driver'] ?? 'mail');
         if (!filter_var($to, FILTER_VALIDATE_EMAIL) || !filter_var($from, FILTER_VALIDATE_EMAIL)) return false;
         $subject = str_replace(["\r", "\n"], ' ', $subject);
+
+        if (($driver !== 'log' || !empty($config['budget_in_log'])) && !self::withinBudget($config)) {
+            Logger::error('mail.budget_exceeded', ['subject' => mb_substr($subject, 0, 80)]);
+            return false;
+        }
 
         $html = self::renderHtml($heading, $paragraphs, $button, $code, $footnote);
         $text = self::renderText($heading, $paragraphs, $button, $code, $footnote);
@@ -137,6 +150,47 @@ final class Mailer
             $cmd($data . "\r\n.", [250]);
             fwrite($fp, "QUIT\r\n");
         } finally {
+            fclose($fp);
+        }
+    }
+
+    /**
+     * Records one send against the site-wide budget and says whether it fits.
+     * Uses a locked file under private runtime storage so web requests, cron
+     * and CLI scripts share one count. Fails closed if storage is unusable.
+     */
+    private static function withinBudget(array $config): bool
+    {
+        $per15 = max(1, (int) ($config['max_per_15min'] ?? 25));
+        $perHour = max($per15, (int) ($config['max_per_hour'] ?? 60));
+        $dir = Storage::dir('cache');
+        if ($dir === null) {
+            Logger::error('mail.budget_storage_unavailable', []);
+            return false;
+        }
+        $fp = @fopen($dir . '/mail-budget.json', 'c+');
+        if ($fp === false) {
+            Logger::error('mail.budget_storage_unavailable', []);
+            return false;
+        }
+        try {
+            if (!flock($fp, LOCK_EX)) return false;
+            $raw = stream_get_contents($fp);
+            $now = time();
+            $stamps = array_values(array_filter(
+                is_array($d = json_decode((string) $raw, true)) ? $d : [],
+                static fn($t) => is_int($t) && $t > $now - 3600 && $t <= $now + 60
+            ));
+            $recent = count(array_filter($stamps, static fn(int $t) => $t > $now - 900));
+            if ($recent >= $per15 || count($stamps) >= $perHour) return false;
+            $stamps[] = $now;
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($stamps));
+            fflush($fp);
+            return true;
+        } finally {
+            flock($fp, LOCK_UN);
             fclose($fp);
         }
     }
