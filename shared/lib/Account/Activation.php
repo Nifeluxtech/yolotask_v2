@@ -81,11 +81,19 @@ final class Activation
         return !self::required($pdo) || self::isActivated($pdo, $userId);
     }
 
-    /** What the activation card needs, or null when it must not show (switch off, or already activated). @return array{fee:int}|null */
+    /**
+     * What the activation card needs, or null when it must not show (switch
+     * off, or already activated): the fee, the tasks waiting for this earner
+     * and their total reward, and the referral bonus for invited earners who
+     * activate (0 = none).
+     * @return array{fee:int,tasks:int,reward:int,referral_bonus:int}|null
+     */
     public static function offer(PDO $pdo, int $userId): ?array
     {
         if (self::canWork($pdo, $userId)) return null;
-        return ['fee' => self::fee($pdo)];
+        $avail = \YoloTask\Tasks\Tasks::availableSummary($pdo, $userId);
+        return ['fee' => self::fee($pdo), 'tasks' => $avail['count'], 'reward' => $avail['reward'],
+            'referral_bonus' => \YoloTask\Growth\Referrals::enabled($pdo) ? \YoloTask\Growth\Referrals::activationBonus($pdo) : 0];
     }
 
     public static function isActivationRef(string $orderSn): bool
@@ -186,9 +194,14 @@ final class Activation
         return ['tx_id' => $tx['id'], 'activated' => $activated];
     }
 
-    /** Inbox item + email once an earner is activated (never throws). */
+    /**
+     * After an earner is activated (every path, after its transaction
+     * commits): inbox item + email, then the referrer's activation bonus
+     * (migration 0020). Never throws.
+     */
     public static function notifyActivated(PDO $pdo, int $userId, int $paymentId, string $orderSn, int $amount): void
     {
+        \YoloTask\Growth\Referrals::afterActivation($pdo, $userId);
         try {
             Notifications::notify($pdo, $userId, 'payments', 'Account activated', 'Your ' . Money::format($amount) . ' activation was received (' . $orderSn . '). Every task is now open to you.',
                 'tasks.php', 'account-activated:' . $userId, [
