@@ -1,0 +1,14 @@
+{
+  "subject": "YOLOTASK is back online, with 1,000 new tasks",
+  "heading": "YOLOTASK is back online",
+  "lines": [
+    "Thank you for your patience during our brief downtime. YOLOTASK is fully back online, and your account, wallet balance and task history are all safe.",
+    "We've also added 1,000 new tasks across Instagram, YouTube, X, TikTok, Facebook and Threads. They're waiting in your task feed now.",
+    "Sign in to pick up where you left off and start earning."
+  ],
+  "button": {"label": "Open my tasks", "url": "https://earner.yolotask.com.ng"},
+  "announcement": {
+    "title": "YOLOTASK is back online, with 1,000 new tasks",
+    "body": "Thank you for your patience during our brief downtime. Everything is back to normal, and 1,000 new tasks are now in your task feed."
+  }
+}
