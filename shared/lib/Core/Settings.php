@@ -52,6 +52,8 @@ final class Settings
         'levels.enabled' => '1',
         'notifications.retention_days' => '90',
         'referrals.ip_allowance' => '3',       // referred sign-ups per IP address / device per referrer before admin review (1-100)
+        'referrals.activation_bonus_kobo' => '10000', // paid to the referrer once when a referred earner activates their account, ₦100 (0 = off; migration 0020)
+        'referrals.activation_bonus_since' => '2026-11-11 11:00:00', // UTC; activations before this earn no bonus (not editable)
         // Advertiser deposit cashback (rows seeded by migration 0013).
         'cashback.rate_bps' => '0',            // % of each confirmed AfrStar deposit paid back to the advertiser (0 = off, 0-5000 bps)
         'cashback.min_deposit_kobo' => '0',    // deposits below this get no cashback (0 = no minimum)
