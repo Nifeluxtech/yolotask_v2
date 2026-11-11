@@ -24,6 +24,11 @@ use YoloTask\Security\Crypto;
  *   tasks = reward) once per referee; milestones stack. Ledger: Dr
  *   system:referral_bonus / Cr referrer available, key
  *   ref-milestone:<referralId>:<milestoneId>.
+ * - Referred earner activates their account (migration 0020): the referrer
+ *   earns referrals.activation_bonus_kobo (default ₦100, 0 = off) once per
+ *   referee, for activations paid on or after referrals.activation_bonus_since.
+ *   Ledger: Dr system:referral_bonus / Cr referrer available, key
+ *   ref-activation:<referralId>.
  * - Referred advertiser: the referrer earns referrals.commission_bps of every
  *   confirmed AfrStar deposit, for life. Ledger: Dr system:referral_commission
  *   / Cr referrer available, key ref-commission:<paymentOrderId>. Admin wallet
@@ -67,6 +72,14 @@ final class Referrals
     public static function commissionBps(PDO $pdo): int
     {
         return max(0, min(self::MAX_BPS, Settings::int($pdo, 'referrals.commission_bps')));
+    }
+
+    public const MAX_ACTIVATION_BONUS = 10000000; // ₦100,000
+
+    /** Paid to the referrer when a referred earner activates their account (0 = off). */
+    public static function activationBonus(PDO $pdo): int
+    {
+        return max(0, min(self::MAX_ACTIVATION_BONUS, Settings::int($pdo, 'referrals.activation_bonus_kobo')));
     }
 
     /** "5%" / "2.5%" for a basis-point rate. */
@@ -368,6 +381,82 @@ final class Referrals
     }
 
     /**
+     * After a referred earner's account is activated (Account\Activation,
+     * after its transaction commits): pay the referrer the activation bonus
+     * once. Never throws.
+     */
+    public static function afterActivation(PDO $pdo, int $earnerId): bool
+    {
+        try {
+            if (!self::enabled($pdo) || self::activationBonus($pdo) <= 0) return false;
+            $stmt = $pdo->prepare("SELECT * FROM referrals WHERE referee_user_id = :u AND referee_role = 'earner' AND status = 'active'");
+            $stmt->execute(['u' => $earnerId]);
+            $r = $stmt->fetch();
+            if (!is_array($r)) return false;
+            return self::payActivation($pdo, (int) $r['id']);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('referral.after_activation_failed', ['earner_id' => $earnerId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /** The referee's activation time (UTC, from the paid activation payment), or null when not activated. */
+    private static function activatedAt(PDO $pdo, int $refereeId): ?string
+    {
+        $stmt = $pdo->prepare("SELECT ap.paid_at FROM account_activations aa JOIN activation_payments ap ON ap.id = aa.activation_payment_id WHERE aa.user_id = :u AND ap.status = 'paid'");
+        $stmt->execute(['u' => $refereeId]);
+        $v = $stmt->fetchColumn();
+        return $v === false || $v === null ? null : (string) $v;
+    }
+
+    private static function payActivation(PDO $pdo, int $referralId): bool
+    {
+        $peek = $pdo->prepare('SELECT referrer_user_id, referee_user_id FROM referrals WHERE id = :id');
+        $peek->execute(['id' => $referralId]);
+        $ref = $peek->fetch();
+        if (!is_array($ref)) return false;
+        $referrerId = (int) $ref['referrer_user_id'];
+        $at = self::activatedAt($pdo, (int) $ref['referee_user_id']);
+        if ($at === null || $at < Settings::get($pdo, 'referrals.activation_bonus_since', '2026-11-11 11:00:00')) return false;
+        $amount = self::activationBonus($pdo);
+        if ($amount <= 0) return false;
+        Wallet::forUser($pdo, $referrerId);
+        $pdo->beginTransaction();
+        try {
+            $wallet = Wallet::lock($pdo, $referrerId);
+            $r = self::lockReferral($pdo, $referralId);
+            if ((string) $r['referee_role'] !== 'earner' || !self::payable($pdo, $r)) { $pdo->commit(); return false; }
+            $done = $pdo->prepare("SELECT id FROM referral_payouts WHERE referral_id = :r AND kind = 'activation'");
+            $done->execute(['r' => $referralId]);
+            if ($done->fetchColumn() !== false) { $pdo->commit(); return false; }
+            $tx = Ledger::post($pdo, 'ref-activation:' . $referralId, 'referral_bonus',
+                'Referral bonus: referee activated their account (referral #' . $referralId . ')', [
+                    [Ledger::systemAccountId($pdo, self::BONUS), 'debit', $amount],
+                    [$wallet['available_account_id'], 'credit', $amount],
+                ], 'referral', $referralId);
+            $pdo->prepare("INSERT INTO referral_payouts (referral_id, referrer_user_id, referee_user_id, kind, base_kobo, amount_kobo, status, ledger_transaction_id, created_at)
+                VALUES (:r, :rr, :re, 'activation', 0, :a, 'paid', :t, UTC_TIMESTAMP())")
+                ->execute(['r' => $referralId, 'rr' => $referrerId, 're' => (int) $r['referee_user_id'], 'a' => $amount, 't' => $tx['id']]);
+            $payoutId = (int) $pdo->lastInsertId();
+            Audit::record($pdo, null, 'referral.activation_paid', 'referral_payout', $payoutId);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+        $name = self::maskName(self::displayName($pdo, (int) $r['referee_user_id']));
+        Notifications::notify($pdo, $referrerId, 'rewards', 'Referral bonus: ' . Money::format($amount),
+            "{$name} activated their account, so " . Money::format($amount) . ' was added to your wallet.',
+            'referrals.php', 'ref-payout:' . $payoutId, [
+                'subject' => 'You earned a ' . Money::format($amount) . ' referral bonus', 'heading' => 'Referral bonus earned',
+                'lines' => ["Someone you invited ({$name}) activated their YOLOTASK account.", Money::format($amount) . ' has been added to your wallet balance.'],
+                'button' => ['label' => 'See your referrals', 'url' => yolotask_portal_url(self::role($pdo, $referrerId)) . '/referrals.php'],
+            ]);
+        return true;
+    }
+
+    /**
      * After an admin reverses an approval (appeal override): no automatic
      * claw-back; milestone payouts the referee no longer qualifies for are
      * flagged for an admin to review. Never throws.
@@ -466,11 +555,12 @@ final class Referrals
      * advertisers that have no payout row yet (a crash after commit, a
      * referral approved by an admin, a milestone added later, or the
      * programme switched back on). Idempotent.
-     * @return array{milestones:int,commissions:int}
+     * Also activation bonuses of referred earners who activated (migration 0020).
+     * @return array{milestones:int,commissions:int,activations:int}
      */
     public static function sweep(PDO $pdo, int $limit = 500): array
     {
-        $out = ['milestones' => 0, 'commissions' => 0];
+        $out = ['milestones' => 0, 'commissions' => 0, 'activations' => 0];
         if (!self::enabled($pdo)) return $out;
         $rows = $pdo->query("SELECT r.* FROM referrals r WHERE r.status = 'active' AND r.referee_role = 'earner' AND EXISTS (
                 SELECT 1 FROM referral_milestones m WHERE m.is_active = 1
@@ -489,6 +579,20 @@ final class Referrals
             WHERE o.status = 'paid' AND o.paid_at >= r.created_at AND NOT EXISTS (SELECT 1 FROM referral_payouts p WHERE p.payment_order_id = o.id) ORDER BY o.id LIMIT " . max(1, $limit))->fetchAll(PDO::FETCH_COLUMN) ?: [];
         foreach ($orders as $oid) {
             if (self::afterTopupCredited($pdo, (int) $oid)) $out['commissions']++;
+        }
+        if (self::activationBonus($pdo) > 0) {
+            $act = $pdo->prepare("SELECT r.id FROM referrals r JOIN account_activations aa ON aa.user_id = r.referee_user_id JOIN activation_payments ap ON ap.id = aa.activation_payment_id AND ap.status = 'paid'
+                WHERE r.status = 'active' AND r.referee_role = 'earner' AND ap.paid_at >= :since
+                AND NOT EXISTS (SELECT 1 FROM referral_payouts p WHERE p.referral_id = r.id AND p.kind = 'activation') ORDER BY r.id LIMIT " . max(1, $limit));
+            $act->execute(['since' => Settings::get($pdo, 'referrals.activation_bonus_since', '2026-11-11 11:00:00')]);
+            foreach ($act->fetchAll(PDO::FETCH_COLUMN) ?: [] as $rid) {
+                try {
+                    if (self::payActivation($pdo, (int) $rid)) $out['activations']++;
+                } catch (\Throwable $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    Logger::error('referral.sweep_activation_failed', ['referral_id' => (int) $rid, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+                }
+            }
         }
         return $out;
     }
@@ -514,6 +618,7 @@ final class Referrals
         if ($decision === 'approve') {
             if ((string) $r['referee_role'] === 'earner') {
                 self::afterApproval($pdo, (int) $r['referee_user_id']);
+                self::afterActivation($pdo, (int) $r['referee_user_id']);
             } else {
                 $o = $pdo->prepare("SELECT id FROM payment_orders WHERE user_id = :u AND status = 'paid' ORDER BY id");
                 $o->execute(['u' => (int) $r['referee_user_id']]);
@@ -541,7 +646,7 @@ final class Referrals
             if ((string) $p['status'] !== 'paid') throw new RuntimeException('Only paid payouts can be reversed.');
             $amount = (int) $p['amount_kobo'];
             if ($wallet['available_kobo'] < $amount) throw new RuntimeException('The referrer no longer has ' . Money::format($amount) . ' available. Recover it with a wallet adjustment first, then reverse.');
-            $expense = (string) $p['kind'] === 'milestone' ? self::BONUS : self::COMMISSION;
+            $expense = (string) $p['kind'] === 'commission' ? self::COMMISSION : self::BONUS;
             $tx = Ledger::post($pdo, 'ref-reverse:' . $payoutId, 'referral_reversal', 'Referral payout #' . $payoutId . ' reversed: ' . $reason, [
                 [$wallet['available_account_id'], 'debit', $amount],
                 [Ledger::systemAccountId($pdo, $expense), 'credit', $amount],
@@ -589,7 +694,8 @@ final class Referrals
             $rows[] = ['id' => (int) $r['id'], 'name' => self::maskName((string) $r['display_name']), 'role' => (string) $r['referee_role'], 'status' => (string) $r['status'],
                 'joined' => (string) $r['created_at'], 'approved' => (int) $r['approved'], 'deposits' => (int) $r['deposits'], 'earned' => (int) $r['earned'], 'next' => $next];
         }
-        $tot = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'milestone' THEN amount_kobo END), 0) m, COALESCE(SUM(CASE WHEN kind = 'commission' THEN amount_kobo END), 0) c
+        $tot = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN kind = 'milestone' THEN amount_kobo END), 0) m, COALESCE(SUM(CASE WHEN kind = 'commission' THEN amount_kobo END), 0) c,
+                COALESCE(SUM(CASE WHEN kind = 'activation' THEN amount_kobo END), 0) a
             FROM referral_payouts WHERE referrer_user_id = :u AND status = 'paid'");
         $tot->execute(['u' => $userId]);
         $t = $tot->fetch();
@@ -598,7 +704,8 @@ final class Referrals
         $recent->execute(['u' => $userId]);
         $payouts = $recent->fetchAll() ?: [];
         foreach ($payouts as &$p) $p['display_name'] = self::maskName((string) $p['display_name']);
-        return ['referees' => $rows, 'milestone_total' => (int) $t['m'], 'commission_total' => (int) $t['c'], 'payouts' => $payouts, 'milestones' => $milestones];
+        return ['referees' => $rows, 'milestone_total' => (int) $t['m'], 'commission_total' => (int) $t['c'], 'activation_total' => (int) $t['a'], 'payouts' => $payouts, 'milestones' => $milestones,
+            'activation_bonus' => self::enabled($pdo) ? self::activationBonus($pdo) : 0];
     }
 
     public static function payouts(PDO $pdo, string $filter, int $page): array
@@ -607,6 +714,7 @@ final class Referrals
             'flagged' => "WHERE p.flagged_at IS NOT NULL AND p.status = 'paid'",
             'milestone' => "WHERE p.kind = 'milestone' AND p.status <> 'skipped'",
             'commission' => "WHERE p.kind = 'commission' AND p.status <> 'skipped'",
+            'activation' => "WHERE p.kind = 'activation' AND p.status <> 'skipped'",
             'reversed' => "WHERE p.status = 'reversed'",
             default => "WHERE p.status <> 'skipped'",
         };
@@ -653,10 +761,14 @@ final class Referrals
     {
         if (!(bool) $pdo->query("SHOW TABLES LIKE 'referral_payouts'")->fetchColumn()) return [];
         $problems = [];
-        foreach (['milestone' => self::BONUS, 'commission' => self::COMMISSION] as $kind => $code) {
+        foreach (["'milestone', 'activation'" => self::BONUS, "'commission'" => self::COMMISSION] as $kinds => $code) {
             $bal = (int) $pdo->query("SELECT COALESCE(MAX(balance_kobo), 0) FROM ledger_accounts WHERE code = '{$code}'")->fetchColumn();
-            $sum = (int) $pdo->query("SELECT COALESCE(SUM(amount_kobo), 0) FROM referral_payouts WHERE kind = '{$kind}' AND status = 'paid'")->fetchColumn();
-            if ($bal !== $sum) $problems[] = "Account {$code} {$bal} != paid referral {$kind} payouts {$sum}";
+            $sum = (int) $pdo->query("SELECT COALESCE(SUM(amount_kobo), 0) FROM referral_payouts WHERE kind IN ({$kinds}) AND status = 'paid'")->fetchColumn();
+            $label = str_replace("'", '', $kinds);
+            if ($bal !== $sum) $problems[] = "Account {$code} {$bal} != paid referral {$label} payouts {$sum}";
+        }
+        foreach ($pdo->query("SELECT p.id FROM referral_payouts p LEFT JOIN account_activations aa ON aa.user_id = p.referee_user_id WHERE p.kind = 'activation' AND aa.user_id IS NULL LIMIT 50") as $r) {
+            $problems[] = "Referral activation bonus #{$r['id']} has no account activation";
         }
         $sql = "SELECT p.id FROM referral_payouts p LEFT JOIN ledger_transactions t ON t.id = p.ledger_transaction_id LEFT JOIN ledger_transactions rt ON rt.id = p.reverse_transaction_id
                 WHERE (p.status IN ('paid', 'reversed') AND (t.id IS NULL OR t.amount_kobo <> p.amount_kobo OR p.amount_kobo <= 0))
