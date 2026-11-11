@@ -12,7 +12,7 @@ require_once __DIR__ . '/growth-helpers.php';
 /* Admin: referral programme settings, milestones, flagged referrals and payouts, and advertiser deposit cashback. */
 [$pdo, $admin] = yolotask_admin_growth_boot('admin.referrals_load_failed');
 $adminId = (int) $admin['id'];
-$filter = in_array($_GET['f'] ?? '', ['flagged', 'milestone', 'commission', 'reversed'], true) ? (string) $_GET['f'] : 'all';
+$filter = in_array($_GET['f'] ?? '', ['flagged', 'milestone', 'commission', 'activation', 'reversed'], true) ? (string) $_GET['f'] : 'all';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $back = 'referrals.php' . ($filter !== 'all' ? '?f=' . $filter : '');
@@ -25,7 +25,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $oldAllowance = Referrals::ipAllowance($pdo);
             $allow = array_key_exists('ip_allowance', $_POST) ? trim(yolotask_post_str('ip_allowance')) : (string) $oldAllowance; // older forms without the field keep the current value
             if (!preg_match('/^\d{1,3}$/', $allow) || (int) $allow < 1 || (int) $allow > Referrals::MAX_IP_ALLOWANCE) throw new RuntimeException('Sign-ups per network or device must be a whole number from 1 to ' . Referrals::MAX_IP_ALLOWANCE . '.');
-            Settings::save($pdo, $adminId, ['referrals.enabled' => yolotask_post_str('enabled') === '1' ? '1' : '0', 'referrals.commission_bps' => (string) (int) round((float) $pct * 100), 'referrals.ip_allowance' => (string) (int) $allow]);
+            $actInput = array_key_exists('activation_bonus', $_POST) ? trim(yolotask_post_str('activation_bonus')) : '';
+            $actBonus = $actInput === '' ? Referrals::activationBonus($pdo) : ($actInput === '0' ? 0 : yolotask_parse_naira($actInput)); // older forms without the field keep the current value
+            if ($actBonus === null || $actBonus < 0 || $actBonus > Referrals::MAX_ACTIVATION_BONUS) throw new RuntimeException('The activation bonus must be from ₦0 to ' . \YoloTask\Money\Money::format(Referrals::MAX_ACTIVATION_BONUS) . '.');
+            Settings::save($pdo, $adminId, ['referrals.enabled' => yolotask_post_str('enabled') === '1' ? '1' : '0', 'referrals.commission_bps' => (string) (int) round((float) $pct * 100), 'referrals.ip_allowance' => (string) (int) $allow,
+                'referrals.activation_bonus_kobo' => (string) $actBonus]);
             if ((int) $allow !== $oldAllowance) \YoloTask\Security\Audit::record($pdo, $adminId, 'admin.referral_ip_allowance_changed', 'settings', (int) $allow);
             yolotask_flash('Referral settings saved.');
             $back = 'referrals.php#settings';
@@ -61,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             yolotask_flash('Payout reversed in the ledger.');
         } elseif ($action === 'sweep') {
             $r = Referrals::sweep($pdo);
-            yolotask_flash('Catch-up finished: ' . $r['milestones'] . ' milestone and ' . $r['commissions'] . ' commission payout(s).');
+            yolotask_flash('Catch-up finished: ' . $r['milestones'] . ' milestone, ' . $r['activations'] . ' activation and ' . $r['commissions'] . ' commission payout(s).');
         }
     } catch (RuntimeException $e) {
         yolotask_flash($e->getMessage(), 'error');
@@ -76,6 +80,7 @@ $stats = Referrals::adminStats($pdo);
 $enabled = Referrals::enabled($pdo);
 $bps = Referrals::commissionBps($pdo);
 $ipAllowance = Referrals::ipAllowance($pdo);
+$activationBonus = Referrals::activationBonus($pdo);
 $milestones = Referrals::milestones($pdo);
 $flagged = Referrals::flagged($pdo);
 $page = max(1, (int) ($_GET['page'] ?? 1));
@@ -106,6 +111,9 @@ ob_start();
       <div class="field"><label class="label" for="commission_percent">Advertiser deposit commission (%)</label>
         <input class="input" id="commission_percent" name="commission_percent" inputmode="decimal" value="<?= h(rtrim(rtrim(number_format($bps / 100, 2, '.', ''), '0'), '.')) ?>" required>
         <span class="text-xs text-faint">0 to 50. Paid on every confirmed AfrStar top-up by a referred advertiser, for life. Admin wallet credits never earn commission.</span></div>
+      <div class="field"><label class="label" for="activation_bonus">Bonus when an invited earner activates (₦)</label>
+        <input class="input" id="activation_bonus" name="activation_bonus" inputmode="decimal" value="<?= h($naira($activationBonus)) ?>" required>
+        <span class="text-xs text-faint">Paid to the referrer once, when someone they invited pays the account activation fee (or an admin confirms it). 0 = off.</span></div>
       <div class="field"><label class="label" for="ip_allowance">Sign-ups allowed per network or device</label>
         <input class="input" id="ip_allowance" name="ip_allowance" type="number" inputmode="numeric" min="1" max="<?= Referrals::MAX_IP_ALLOWANCE ?>" value="<?= $ipAllowance ?>" required>
         <span class="text-xs text-faint">Per referrer. This many referred sign-ups from one IP address (the referrer's own network included) or one device are accepted and paid as usual; the next one is flagged for review. A sign-up on the referrer's own device is always flagged.</span></div>
@@ -212,7 +220,7 @@ ob_start();
 <section class="card" id="payouts" aria-labelledby="payouts-title">
   <div class="card-header"><h2 id="payouts-title">Referral payouts</h2><span class="badge badge-info"><?= number_format($payouts['total']) ?></span></div>
   <nav class="money-tabs" aria-label="Payout filter">
-    <?php foreach (['all' => 'All', 'flagged' => 'Flagged', 'milestone' => 'Milestones', 'commission' => 'Commission', 'reversed' => 'Reversed'] as $k => $label): ?>
+    <?php foreach (['all' => 'All', 'flagged' => 'Flagged', 'milestone' => 'Milestones', 'activation' => 'Activations', 'commission' => 'Commission', 'reversed' => 'Reversed'] as $k => $label): ?>
       <a href="referrals.php<?= $k === 'all' ? '' : '?f=' . $k ?>#payouts"<?= $filter === $k ? ' class="active" aria-current="page"' : '' ?>><?= h($label) ?></a>
     <?php endforeach; ?>
   </nav>
@@ -226,7 +234,7 @@ ob_start();
             <strong>#<?= (int) $p['id'] ?> · <?= h(yolotask_money($p['amount_kobo'])) ?> to <?= h((string) $p['referrer_name']) ?></strong>
             <span class="text-xs text-faint text-break"><?= (string) $p['kind'] === 'milestone'
                 ? 'Milestone: ' . h((string) $p['referee_name']) . ' reached ' . number_format((int) $p['milestone_task_count']) . ' approved tasks'
-                : 'Commission ' . h(Referrals::percent((int) $p['rate_bps'])) . ' of ' . h(yolotask_money($p['base_kobo'])) . ' top-up ' . h((string) ($p['order_sn'] ?? '')) . ' by ' . h((string) $p['referee_name']) ?> · <?= h(yolotask_wat((string) $p['created_at'])) ?></span>
+                : ((string) $p['kind'] === 'activation' ? 'Activation: ' . h((string) $p['referee_name']) . ' activated their account' : 'Commission ' . h(Referrals::percent((int) $p['rate_bps'])) . ' of ' . h(yolotask_money($p['base_kobo'])) . ' top-up ' . h((string) ($p['order_sn'] ?? '')) . ' by ' . h((string) $p['referee_name'])) ?> · <?= h(yolotask_wat((string) $p['created_at'])) ?></span>
             <span class="user-tags">
               <span class="badge <?= $isPaid ? 'badge-success' : 'badge-danger' ?>"><?= h(ucfirst((string) $p['status'])) ?></span>
               <?php if ($p['flagged_at'] !== null && $isPaid): ?><span class="badge badge-warning">Flagged</span><?php endif; ?>

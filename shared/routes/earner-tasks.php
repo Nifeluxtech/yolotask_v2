@@ -21,6 +21,7 @@ try {
     $working = Tasks::inProgress($pdo, $uid);
     $platforms = Pricing::platforms($pdo);
     $stats = Tasks::earnerStats($pdo, $uid);
+    $available = Tasks::availableSummary($pdo, $uid); // tasks open to this earner and what they pay in total (shown even before activation)
     $activationOffer = Activation::offer($pdo, $uid); // account activation required and not done yet: the activation card (migration 0019)
 } catch (Throwable $e) {
     Logger::error('tasks.feed_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
@@ -41,6 +42,8 @@ ob_start();
   <section class="grid grid-4 dash-stats money-stats" aria-label="Your earnings">
     <article class="stat-card stat-success"><span class="stat-label">Earned</span><span class="stat-value"><?= h(yolotask_money($stats['earned'] ?? 0)) ?></span><span class="text-xs text-faint"><?= (int) ($stats['approved'] ?? 0) ?> approved</span></article>
     <article class="stat-card stat-warning"><span class="stat-label">Waiting</span><span class="stat-value"><?= (int) ($stats['pending'] ?? 0) ?></span><span class="text-xs text-faint">Proofs in review</span></article>
+    <article class="stat-card"><span class="stat-label">Tasks available</span><span class="stat-value"><?= number_format((int) $available['count']) ?></span><span class="text-xs text-faint">Open to you now</span></article>
+    <article class="stat-card stat-success"><span class="stat-label">Amount to earn</span><span class="stat-value"><?= h(yolotask_money($available['reward'])) ?></span><span class="text-xs text-faint">If you complete them all</span></article>
   </section>
 
   <?php if ($activationOffer !== null): ?>

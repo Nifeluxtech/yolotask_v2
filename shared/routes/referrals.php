@@ -24,7 +24,8 @@ try {
     yolotask_error_page(500);
 }
 $milestones = $data['milestones'];
-$total = $data['milestone_total'] + $data['commission_total'];
+$total = $data['milestone_total'] + $data['commission_total'] + $data['activation_total'];
+$activationBonus = $data['activation_bonus'];
 $statusBadge = static fn (string $s): string => match ($s) {
     'active' => '<span class="badge badge-success">Active</span>',
     'flagged' => '<span class="badge badge-warning">Under review</span>',
@@ -41,6 +42,7 @@ ob_start();
   <div class="wallet-balance"><span class="amount"><?= h(yolotask_money($total)) ?></span></div>
   <div class="wallet-sub">
     <span>Referrals <strong><?= number_format(count($data['referees'])) ?></strong></span>
+    <?php if ($data['activation_total'] > 0 || $activationBonus > 0): ?><span>Activations <strong><?= h(yolotask_money($data['activation_total'])) ?></strong></span><?php endif; ?>
     <span>Milestones <strong><?= h(yolotask_money($data['milestone_total'])) ?></strong></span>
     <span>Commission <strong><?= h(yolotask_money($data['commission_total'])) ?></strong></span>
   </div>
@@ -66,8 +68,9 @@ ob_start();
     <div class="card-header"><h2 id="how-title">How you earn</h2></div>
     <ul class="stack dash-tips">
       <li><strong>Earners you invite</strong>
+        <?php if ($activationBonus > 0): ?><p class="text-sm text-faint">You earn <strong><?= h(yolotask_money($activationBonus)) ?></strong> as soon as each one activates their account.</p><?php endif; ?>
         <?php if ($milestones === []): ?><p class="text-sm text-faint">No milestones are running right now.</p>
-        <?php else: ?><p class="text-sm text-faint">You earn a bonus each time they reach these approved-task milestones (all of them add up):</p>
+        <?php else: ?><p class="text-sm text-faint"><?= $activationBonus > 0 ? 'Then a' : 'You earn a' ?> bonus each time they reach these approved-task milestones (all of them add up):</p>
           <ul class="milestone-chips"><?php foreach ($milestones as $m): ?><li><?= number_format($m['task_count']) ?> tasks · <strong><?= h(yolotask_money($m['reward_kobo'])) ?></strong></li><?php endforeach; ?></ul>
         <?php endif; ?>
       </li>
@@ -116,7 +119,7 @@ ob_start();
         <li class="tx-row">
           <span class="tx-icon"><?= yolotask_nav_icon('sparkle') ?></span>
           <div class="tx-meta">
-            <strong><?= (string) $p['kind'] === 'milestone' ? h((string) $p['display_name']) . ' reached ' . number_format((int) $p['milestone_task_count']) . ' tasks' : h(Referrals::percent((int) $p['rate_bps'])) . ' of ' . h((string) $p['display_name']) . '’s ' . h(yolotask_money($p['base_kobo'])) . ' top-up' ?></strong>
+            <strong><?= (string) $p['kind'] === 'milestone' ? h((string) $p['display_name']) . ' reached ' . number_format((int) $p['milestone_task_count']) . ' tasks' : ((string) $p['kind'] === 'activation' ? h((string) $p['display_name']) . ' activated their account' : h(Referrals::percent((int) $p['rate_bps'])) . ' of ' . h((string) $p['display_name']) . '’s ' . h(yolotask_money($p['base_kobo'])) . ' top-up') ?></strong>
             <span class="text-xs text-faint"><?= h(yolotask_wat((string) $p['created_at'])) ?><?= $rev ? ' · reversed' : '' ?></span>
           </div>
           <div class="tx-amount"><span class="<?= $rev ? 'tx-out' : 'tx-in' ?>"><?= $rev ? '' : '+' ?><?= h(yolotask_money($p['amount_kobo'])) ?></span></div>
