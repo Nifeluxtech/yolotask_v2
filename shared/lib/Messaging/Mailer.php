@@ -195,6 +195,16 @@ final class Mailer
         }
     }
 
+    /**
+     * The branded HTML and plain-text bodies, for senders outside this class
+     * (the Brevo announcement script).
+     * @return array{html:string,text:string}
+     */
+    public static function render(string $heading, array $paragraphs, ?array $button = null, ?string $footnote = null): array
+    {
+        return ['html' => self::renderHtml($heading, $paragraphs, $button, null, $footnote), 'text' => self::renderText($heading, $paragraphs, $button, null, $footnote)];
+    }
+
     private static function encodeName(string $name): string
     {
         return preg_match('/^[A-Za-z0-9 ._-]+$/', $name) ? '"' . $name . '"' : '=?UTF-8?B?' . base64_encode($name) . '?=';
