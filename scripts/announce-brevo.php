@@ -19,11 +19,15 @@ declare(strict_types=1);
  * across runs; run it once a day (cron) until "remaining 0".
  * --announce posts the in-app announcement once.
  *
- * Usage: php scripts/announce-brevo.php --file=msg.json [--daily-limit=290] [--batch=50]
+ * Pacing: one run sends at most --per-run (default 100) and refuses to run again
+ * within 10 minutes of the last send, so run it from cron every 10 minutes
+ * (100 per 10 minutes; a single burst got the Brevo account flagged).
+ *
+ * Usage: php scripts/announce-brevo.php --file=msg.json [--daily-limit=290] [--per-run=100] [--batch=50]
  *        [--announce] [--include-unverified] [--dry-run] [--state=path] [--config-dir=...]
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
-$opts = getopt('', ['config-dir:', 'file:', 'daily-limit:', 'batch:', 'announce', 'include-unverified', 'dry-run', 'state:', 'api-base:']);
+$opts = getopt('', ['config-dir:', 'file:', 'daily-limit:', 'per-run:', 'batch:', 'announce', 'include-unverified', 'dry-run', 'state:', 'api-base:']);
 if (isset($opts['config-dir'])) putenv('YOLOTASK_CONFIG_DIR=' . $opts['config-dir']);
 define('YOLOTASK_APP_ROLE', 'cron');
 define('YOLOTASK_APP_ROOT', dirname(__DIR__));
@@ -51,6 +55,7 @@ if ($apiKey === '' && !$dry) {
 }
 $apiBase = rtrim((string) ($opts['api-base'] ?? 'https://api.brevo.com'), '/');
 $dailyLimit = max(1, (int) ($opts['daily-limit'] ?? 290));
+$perRun = min(100, max(1, (int) ($opts['per-run'] ?? 100)));
 $batch = min(100, max(1, (int) ($opts['batch'] ?? 50)));
 $name = preg_replace('/[^a-z0-9_-]+/i', '-', pathinfo($file, PATHINFO_FILENAME));
 $state = (string) ($opts['state'] ?? (\YoloTask\Support\Storage::dir('logs') ?? sys_get_temp_dir()) . '/announce-' . $name . '.sent');
@@ -82,7 +87,13 @@ if (isset($opts['announce']) && is_array($msg['announcement'] ?? null) && !$anno
 $sql = "SELECT id, email FROM users WHERE role = 'earner' AND status = 'active'" . (isset($opts['include-unverified']) ? '' : ' AND email_verified_at IS NOT NULL') . ' ORDER BY id';
 $all = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 $todo = array_values(array_filter($all, static fn ($u) => !isset($sent[(string) $u['id']]) && filter_var($u['email'], FILTER_VALIDATE_EMAIL)));
-$room = max(0, $dailyLimit - $sentToday);
+$room = min($perRun, max(0, $dailyLimit - $sentToday));
+$lastFile = $state . '.last';
+$last = is_file($lastFile) ? (int) trim((string) file_get_contents($lastFile)) : 0;
+if (!$dry && $last > 0 && time() - $last < 600) {
+    echo 'announce-brevo: last send ' . (time() - $last) . "s ago; waiting for the 10-minute window.\n";
+    exit(0);
+}
 $now = array_slice($todo, 0, $room);
 echo 'announce-brevo: earners matched: ' . count($all) . ', already sent: ' . count($sent) . ", sent today: $sentToday, to send now: " . count($now) . ($dry ? ' (dry run)' : '') . "\n";
 if ($dry || $now === []) { echo 'announce-brevo: remaining ' . count($todo) . "\n"; exit(0); }
@@ -90,6 +101,7 @@ if ($dry || $now === []) { echo 'announce-brevo: remaining ' . count($todo) . "\
 $button = is_array($msg['button'] ?? null) ? $msg['button'] : null;
 $body = Mailer::render((string) ($msg['heading'] ?? $msg['subject']), $msg['lines'], $button);
 $ok = 0; $fail = 0;
+file_put_contents($lastFile, (string) time(), LOCK_EX);
 foreach (array_chunk($now, $batch) as $chunk) {
     $payload = [
         'sender' => $sender,
