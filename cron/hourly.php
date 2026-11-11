@@ -20,7 +20,7 @@ try {
     fwrite(STDOUT, "{$t} tasks: rewards released: " . \YoloTask\Tasks\Approvals::releaseDue($pdo) . "\n");
     // Phase 6: pay referral milestones / deposit commissions that the immediate path missed (idempotent).
     $sw = \YoloTask\Growth\Referrals::sweep($pdo);
-    fwrite(STDOUT, "{$t} referrals: catch-up paid {$sw['milestones']} milestone(s), {$sw['commissions']} commission(s)\n");
+    fwrite(STDOUT, "{$t} referrals: catch-up paid {$sw['milestones']} milestone(s), {$sw['commissions']} commission(s), {$sw['activations']} activation bonus(es)\n");
     // Deposit cashback on deposits confirmed in the last 48 h that the immediate path missed (idempotent).
     fwrite(STDOUT, "{$t} cashback: catch-up paid " . \YoloTask\Growth\DepositCashback::sweep($pdo) . "\n");
     $problems = \YoloTask\Money\Ledger::reconcileCampaigns($pdo);
