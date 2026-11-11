@@ -4,9 +4,9 @@
 -- Growth\Referrals::reconcile (part of Money\Ledger::reconcile, daily cron).
 -- Usage: mysql DBNAME < database/verify/referral_award_reconciliation.sql
 
--- 1. The milestone expense account equals the milestone payouts still standing.
+-- 1. The bonus expense account equals the milestone and activation payouts still standing (activation: migration 0020).
 SELECT 'referral_bonus_account' AS problem, a.balance_kobo, p.paid
-FROM ledger_accounts a, (SELECT COALESCE(SUM(amount_kobo), 0) AS paid FROM referral_payouts WHERE kind = 'milestone' AND status = 'paid') p
+FROM ledger_accounts a, (SELECT COALESCE(SUM(amount_kobo), 0) AS paid FROM referral_payouts WHERE kind IN ('milestone', 'activation') AND status = 'paid') p
 WHERE a.code = 'system:referral_bonus' AND a.balance_kobo <> p.paid;
 
 -- 2. The commission expense account equals the commission payouts still standing.
@@ -55,3 +55,8 @@ WHERE p.kind = 'milestone' AND p.status = 'paid'
 SELECT 'bonus_shape' AS problem, t.id FROM ledger_transactions t
 WHERE t.type = 'bonus' AND (SELECT COUNT(*) FROM ledger_entries e JOIN ledger_accounts a ON a.id = e.account_id
     WHERE e.transaction_id = t.id AND ((a.code = 'system:bonuses' AND e.direction = 'debit') OR (a.kind = 'wallet_available' AND e.direction = 'credit'))) <> 2;
+
+-- 11. Every activation bonus belongs to a referee whose account is activated (migration 0020).
+SELECT 'activation_bonus_without_activation' AS problem, p.id FROM referral_payouts p
+LEFT JOIN account_activations aa ON aa.user_id = p.referee_user_id
+WHERE p.kind = 'activation' AND aa.user_id IS NULL;
