@@ -66,6 +66,20 @@ final class Tasks
     }
 
     /**
+     * How many tasks this earner could start and what they pay in total
+     * (ignoring account activation; shown on the activation card).
+     * @return array{count:int,reward:int}
+     */
+    public static function availableSummary(PDO $pdo, int $earnerId): array
+    {
+        [$where, $args] = self::feedWhere($earnerId, null);
+        $stmt = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(c.unit_reward_kobo), 0) r FROM campaigns c {$where}");
+        $stmt->execute($args);
+        $row = $stmt->fetch() ?: ['n' => 0, 'r' => 0];
+        return ['count' => (int) $row['n'], 'reward' => (int) $row['r']];
+    }
+
+    /**
      * The earner's feed. Advertisers' tasks first (newest approval first),
      * then YOLOTASK tasks bundle by bundle. A page holds PAGE_SIZE units: an
      * advertiser task, or one bundle's tasks for this earner (shown together).
