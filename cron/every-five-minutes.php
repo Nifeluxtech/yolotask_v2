@@ -12,7 +12,9 @@ declare(strict_types=1);
  *  - (Phase 5) deletes expired reviewer claims so appeals and stale proofs
  *    return to the queue (decisions already ignore expired claims),
  *  - (Phase 6) delivers scheduled announcements to inboxes once they start.
- * AfrStar has no status-query API, so callbacks stay the source of truth.
+ *  - (migration 0021) asks Korapay for the status of Korapay pay-ins still
+ *    waiting and payouts still processing, so a lost webhook never strands money.
+ * AfrStar has no status-query API, so its callbacks stay the source of truth.
  * cPanel cron:
  *   0-59/5 * * * * /opt/cpanel/ea-php84/root/usr/bin/php $HOME/yolotask-v2-live/current/cron/every-five-minutes.php >> $HOME/yolotask-v2-live/runtime/logs/cron-5min.log 2>&1
  */
@@ -29,6 +31,8 @@ try {
     $t = gmdate('Y-m-d H:i:s') . 'Z';
     $r = \YoloTask\Payments\CallbackProcessor::retryUnfinished($pdo);
     fwrite(STDOUT, "{$t} payments: unfinished callbacks retried: {$r['retried']}, failed again: {$r['failed']}\n");
+    $k = \YoloTask\Payments\KorapayProcessor::sweep($pdo);
+    fwrite(STDOUT, "{$t} payments: Korapay status checks: {$k['checked']}, settled: {$k['settled']}, failed: {$k['failed']}\n");
     fwrite(STDOUT, "{$t} payments: stale top-up orders expired: " . \YoloTask\Payments\PaymentOrders::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stale activation payments expired: " . \YoloTask\Account\Activation::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stuck payouts flagged for review: " . \YoloTask\Payments\CallbackProcessor::flagStuckPayouts($pdo) . "\n");
