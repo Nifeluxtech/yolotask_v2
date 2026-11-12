@@ -1,5 +1,14 @@
 # Changelog
 
+## Korapay gateway with an admin switch (migration 0021)
+
+- **Korapay** added beside AfrStar for top-ups, account activation fees and withdrawals (`Payments\KorapayClient`, `Payments\KorapayProcessor`). Pay-ins use Korapay Checkout Redirect (bank transfer + card); payouts use Korapay disburse.
+- **Admin switch**: Money settings → Payment gateway, one choice for top-ups/activation and one for withdrawals (`payments.gateway_payin`, `payments.gateway_payout`). A gateway that is not connected cannot be chosen. Rows keep the gateway they started on, so switching never strands money in flight.
+- **Webhook** `https://yolotask.com.ng/hooks/korapay/webhook.php`: HMAC `x-korapay-signature` checked, then status and amount re-read from Korapay's verify endpoints before anything is credited or paid. Customers' return pages and the five-minute cron (`KorapayProcessor::sweep`) run the same check, so a missed webhook never strands money.
+- **Shared settlement**: `CallbackProcessor::settleTopup`, `settleActivation`, `settlePayout` now serve AfrStar and Korapay (same ledger keys, review queue and notifications). Korapay money posts to the new `system:korapay_clearing`.
+- **Config**: `config-private/korapay.key` (secret key on one line) or `korapay` in `payments.local.php`. See `docs/payments.md`.
+- Tested end to end against a fake Korapay API on MariaDB: top-up credit, replay, underpayment review, return-page and cron settlement, refusal, activation, withdrawal paid and failed, gateway switch-back, AfrStar regression.
+
 ## Outbound email budget (hosting suspension fix)
 
 - **Announcements through Brevo** `scripts/announce-brevo.php --file=<json> [--announce] [--daily-limit=290] [--batch=50] [--dry-run]`: emails active, email-verified earners through Brevo's API (`config-private/brevo.local.php`: `api_key`, `sender_email`, `sender_name`; see `config/brevo.example.php`), never the hosting server's mail. Each recipient gets their own copy (`messageVersions`), up to 50 per API call. Resumable state file (`runtime/logs/announce-<name>.sent`, one `<user id> <date>` line per email) so nobody gets it twice; `--daily-limit` (default 290, under the free plan's 300 a day) counts across runs in a Lagos calendar day, so a daily cron finishes a large list over several days. Stops at the first refusal from Brevo. `--announce` posts the in-app banner once. `Mailer::render()` exposes the branded HTML and text bodies.
