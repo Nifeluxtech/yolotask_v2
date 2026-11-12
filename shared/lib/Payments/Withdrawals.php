@@ -15,7 +15,7 @@ use YoloTask\Security\Crypto;
 
 /**
  * Earner withdrawals: request (available -> held, pending_review), admin
- * approve (AfrStar payout of the net amount, processing) or reject (the full
+ * approve (payout of the net amount on the active payout gateway, AfrStar or Korapay; processing) or reject (the full
  * gross amount released). The payout callback finishes it (CallbackProcessor).
  * The withdrawal fee (Money\Fees, migration 0014) is fixed on the row at
  * request time; the payout sends amount - fee and the paid posting moves the
@@ -101,7 +101,7 @@ final class Withdrawals
     {
         if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before withdrawing.');
-        if (!AfrstarClient::isConfigured()) throw new RuntimeException('Payments are not available yet.');
+        if (!Gateway::payoutReady($pdo)) throw new RuntimeException('Payments are not available yet.');
         if (!preg_match('/^[a-f0-9]{32}$/', $idemKey)) throw new RuntimeException('Your form expired. Please try again.');
         $userId = (int) $user['id'];
         $limits = self::limits($pdo);
@@ -151,11 +151,21 @@ final class Withdrawals
         return $id;
     }
 
-    /** Approve and send to AfrStar. Returns a message for the admin. */
+    /** Approve and send to the active payout gateway (AfrStar or Korapay). Returns a message for the admin. */
     public static function approve(PDO $pdo, int $adminId, int $withdrawalId): string
     {
-        if (!AfrstarClient::isConfigured()) throw new RuntimeException('Payments are not available yet.');
+        $gateway = Gateway::payout($pdo);
+        if (!Gateway::isConfigured($gateway)) throw new RuntimeException('Payments are not available yet.');
+        $label = Gateway::label($gateway);
         $userId = self::ownerOf($pdo, $withdrawalId);
+        $korapayBank = null;
+        if ($gateway === Gateway::KORAPAY) {
+            $codeStmt = $pdo->prepare('SELECT bank_code, bank_name FROM withdrawals WHERE id = :id');
+            $codeStmt->execute(['id' => $withdrawalId]);
+            $bankRow = $codeStmt->fetch() ?: ['bank_code' => '', 'bank_name' => ''];
+            $korapayBank = KorapayClient::bankCode((string) $bankRow['bank_code']);
+            if ($korapayBank === null) throw new RuntimeException('Korapay does not list ' . $bankRow['bank_name'] . '. Add it to korapay.bank_code_map in payments.local.php, or switch payouts to AfrStar. Nothing was sent.');
+        }
         $pdo->beginTransaction();
         try {
             Wallet::lock($pdo, $userId);
@@ -163,8 +173,8 @@ final class Withdrawals
             if ((string) $w['status'] !== 'pending_review') throw new RuntimeException('This withdrawal is no longer waiting for review.');
             $attempt = (int) $w['attempts'] + 1;
             $orderSn = 'YTW' . str_pad((string) $withdrawalId, 8, '0', STR_PAD_LEFT) . 'A' . $attempt;
-            $pdo->prepare("UPDATE withdrawals SET status = 'processing', attempts = :a, order_sn = :sn, reviewed_by_user_id = :r, reviewed_at = UTC_TIMESTAMP(), provider_message = NULL WHERE id = :id")
-                ->execute(['a' => $attempt, 'sn' => $orderSn, 'r' => $adminId, 'id' => $withdrawalId]);
+            $pdo->prepare("UPDATE withdrawals SET status = 'processing', attempts = :a, order_sn = :sn, gateway = :g, reviewed_by_user_id = :r, reviewed_at = UTC_TIMESTAMP(), provider_message = NULL WHERE id = :id")
+                ->execute(['a' => $attempt, 'sn' => $orderSn, 'g' => $gateway, 'r' => $adminId, 'id' => $withdrawalId]);
             Audit::record($pdo, $adminId, 'admin.withdrawal_approved', 'withdrawal', $withdrawalId);
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -173,22 +183,30 @@ final class Withdrawals
         }
 
         // Committed as processing before the API call, so a double click can never pay twice.
+        $net = (int) $w['amount_kobo'] - (int) $w['fee_kobo'];
         try {
-            $res = AfrstarClient::payout($orderSn, (int) $w['amount_kobo'] - (int) $w['fee_kobo'], (string) $w['account_name'], (string) $w['account_number'], (string) $w['bank_code'], 'YOLOTASK withdrawal');
-        } catch (AfrstarException $e) {
+            if ($gateway === Gateway::KORAPAY) {
+                $emailStmt = $pdo->prepare('SELECT email FROM users WHERE id = :id');
+                $emailStmt->execute(['id' => $userId]);
+                $res = KorapayClient::disburse($orderSn, $net, (string) $korapayBank, (string) $w['account_number'], (string) $w['account_name'], (string) $emailStmt->fetchColumn(), 'YOLOTASK withdrawal');
+                $res = ['platform_osn' => '', 'status' => $res['status']];
+            } else {
+                $res = AfrstarClient::payout($orderSn, $net, (string) $w['account_name'], (string) $w['account_number'], (string) $w['bank_code'], 'YOLOTASK withdrawal');
+            }
+        } catch (AfrstarException|KorapayException $e) {
             if ($e->definitive) {
                 $pdo->prepare("UPDATE withdrawals SET status = 'pending_review', order_sn = NULL, provider_message = :m WHERE id = :id AND status = 'processing' AND order_sn = :sn")
                     ->execute(['m' => mb_substr($e->getMessage(), 0, 255), 'id' => $withdrawalId, 'sn' => $orderSn]);
                 throw new RuntimeException($e->getMessage() . ' The withdrawal is back in the review list; nothing was sent.');
             }
             $pdo->prepare('UPDATE withdrawals SET provider_message = :m WHERE id = :id')
-                ->execute(['m' => 'Outcome unknown when sending; waiting for the AfrStar callback.', 'id' => $withdrawalId]);
-            Logger::error('payments.payout_outcome_unknown', ['withdrawal_id' => $withdrawalId]);
-            return 'AfrStar did not answer clearly. The withdrawal stays in processing until AfrStar confirms by callback; check the AfrStar portal for ' . $orderSn . '.';
+                ->execute(['m' => 'Outcome unknown when sending; waiting for the ' . $label . ' confirmation.', 'id' => $withdrawalId]);
+            Logger::error('payments.payout_outcome_unknown', ['withdrawal_id' => $withdrawalId, 'gateway' => $gateway]);
+            return $label . ' did not answer clearly. The withdrawal stays in processing until ' . $label . ' confirms; check the ' . $label . ' dashboard for ' . $orderSn . '.';
         }
         $pdo->prepare('UPDATE withdrawals SET platform_osn = COALESCE(platform_osn, :o), provider_message = :m WHERE id = :id')
-            ->execute(['o' => $res['platform_osn'] !== '' ? $res['platform_osn'] : null, 'm' => 'Sent to AfrStar (' . ($res['status'] ?: 'init') . ')', 'id' => $withdrawalId]);
-        return 'Withdrawal approved and sent to AfrStar. It completes when AfrStar confirms.';
+            ->execute(['o' => $res['platform_osn'] !== '' ? $res['platform_osn'] : null, 'm' => 'Sent to ' . $label . ' (' . ($res['status'] ?: 'init') . ')', 'id' => $withdrawalId]);
+        return 'Withdrawal approved and sent to ' . $label . '. It completes when ' . $label . ' confirms.';
     }
 
     public static function reject(PDO $pdo, int $adminId, int $withdrawalId, string $reason): void

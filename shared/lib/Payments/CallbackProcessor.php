@@ -11,7 +11,9 @@ use YoloTask\Money\Wallet;
 use YoloTask\Account\Activation;
 
 /**
- * Applies AfrStar collection and payout callbacks.
+ * Applies AfrStar collection and payout callbacks, and holds the settlement
+ * steps (settleTopup / settleActivation / settlePayout) that AfrStar and
+ * Korapay (KorapayProcessor) share.
  * Collection references: YTP… wallet top-ups (credited to the advertiser's
  * wallet) and YTA… account activation fees (platform revenue, migration 0019).
  *
@@ -65,25 +67,50 @@ final class CallbackProcessor
         }
 
         $paid = CallbackVerifier::amount($payload['amount_paid'] ?? null) ?? CallbackVerifier::amount($payload['amount'] ?? null);
+        $ref = mb_substr((string) (($payload['utr'] ?? '') ?: ($payload['session_id'] ?? '')), 0, 120) ?: null;
+        try {
+            $res = self::settleTopup($pdo, $logId, (int) $order['id'], $paid, $osn, $ref, mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), Gateway::AFRSTAR);
+        } catch (\Throwable $e) {
+            Logger::error('payments.collection_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return self::finish($pdo, $logId, 500, 'error', true);
+        }
+        return self::finish($pdo, $logId, 200, $res['outcome'], true, $res['after']);
+    }
+
+    /**
+     * Settle a confirmed top-up payment (any gateway). Paid in full: wallet
+     * credited from the gateway's clearing account and the order marked paid.
+     * Any other amount: held for review, nothing credited. Replays (the order
+     * is already paid, in review or rejected) do nothing and report
+     * 'duplicate'. Runs its own transaction; throws on database errors.
+     * @return array{outcome:string,after:list<callable>}
+     */
+    public static function settleTopup(PDO $pdo, ?int $logId, int $orderId, ?int $paid, ?string $osn, ?string $ref, string $message, string $gateway): array
+    {
         $after = [];
+        $label = Gateway::label($gateway);
+        $userStmt = $pdo->prepare('SELECT user_id FROM payment_orders WHERE id = :id');
+        $userStmt->execute(['id' => $orderId]);
+        $userId = (int) $userStmt->fetchColumn();
         $pdo->beginTransaction();
         try {
-            $wallet = Wallet::lock($pdo, (int) $order['user_id']);
+            $wallet = Wallet::lock($pdo, $userId);
             $lock = $pdo->prepare('SELECT * FROM payment_orders WHERE id = :id FOR UPDATE');
-            $lock->execute(['id' => (int) $order['id']]);
+            $lock->execute(['id' => $orderId]);
             $order = $lock->fetch();
             if (in_array((string) $order['status'], ['paid', 'review', 'rejected'], true)) {
                 $pdo->commit();
-                return self::finish($pdo, $logId, 200, 'duplicate', true);
+                return ['outcome' => 'duplicate', 'after' => []];
             }
-            $ref = mb_substr((string) (($payload['utr'] ?? '') ?: ($payload['session_id'] ?? '')), 0, 120) ?: null;
+            $orderAmount = (int) $order['amount_kobo'];
+            $osn = $osn !== null && $osn !== '' ? $osn : null;
             if ($paid !== null && $paid === $orderAmount) {
-                $tx = Ledger::post($pdo, 'payin:' . $order['order_sn'], 'topup', 'AfrStar top-up ' . $order['order_sn'], [
-                    [Ledger::systemAccountId($pdo, Ledger::CLEARING), 'debit', $orderAmount],
+                $tx = Ledger::post($pdo, 'payin:' . $order['order_sn'], 'topup', $label . ' top-up ' . $order['order_sn'], [
+                    [Ledger::systemAccountId($pdo, Gateway::clearingAccount($gateway)), 'debit', $orderAmount],
                     [$wallet['available_account_id'], 'credit', $orderAmount],
                 ], 'payment_order', (int) $order['id']);
                 $pdo->prepare("UPDATE payment_orders SET status = 'paid', amount_paid_kobo = :p, credited_kobo = :c, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, ledger_transaction_id = :t, paid_at = UTC_TIMESTAMP(), provider_message = :m WHERE id = :id")
-                    ->execute(['p' => $paid, 'c' => $orderAmount, 'o' => $osn, 'r' => $ref, 't' => $tx['id'], 'm' => mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), 'id' => (int) $order['id']]);
+                    ->execute(['p' => $paid, 'c' => $orderAmount, 'o' => $osn, 'r' => $ref, 't' => $tx['id'], 'm' => mb_substr($message, 0, 255), 'id' => (int) $order['id']]);
                 $outcome = 'credited';
                 $after[] = self::notifyLater($pdo, (int) $order['user_id'], 'topup:' . $order['id'], 'Top-up credited: ' . Money::format($orderAmount),
                     'Your payment of ' . Money::format($orderAmount) . ' was added to your wallet (' . $order['order_sn'] . ').', 'wallet.php',
@@ -95,17 +122,16 @@ final class CallbackProcessor
             } else {
                 $pdo->prepare("UPDATE payment_orders SET status = 'review', amount_paid_kobo = :p, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m WHERE id = :id")
                     ->execute(['p' => $paid, 'o' => $osn, 'r' => $ref, 'm' => 'Paid amount differs from the order; held for review', 'id' => (int) $order['id']]);
-                self::openReview($pdo, 'mismatch:' . $order['id'], 'amount_mismatch', (int) $order['id'], null, $logId, (string) $order['order_sn'], $osn, $orderAmount, $paid,
-                    'Customer paid ' . ($paid === null ? 'an unreadable amount' : Money::format($paid)) . ' for a ' . Money::format($orderAmount) . ' order.');
+                self::openReview($pdo, 'mismatch:' . $order['id'], 'amount_mismatch', (int) $order['id'], null, $logId, (string) $order['order_sn'], (string) ($osn ?? ''), $orderAmount, $paid,
+                    $label . ': customer paid ' . ($paid === null ? 'an unreadable amount' : Money::format($paid)) . ' for a ' . Money::format($orderAmount) . ' order.');
                 $outcome = 'review';
             }
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            Logger::error('payments.collection_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
-            return self::finish($pdo, $logId, 500, 'error', true);
+            throw $e;
         }
-        return self::finish($pdo, $logId, 200, $outcome, true, $after);
+        return ['outcome' => $outcome, 'after' => $after];
     }
 
     /**
@@ -136,17 +162,37 @@ final class CallbackProcessor
         }
         $paid = CallbackVerifier::amount($payload['amount_paid'] ?? null) ?? CallbackVerifier::amount($payload['amount'] ?? null);
         $ref = mb_substr((string) (($payload['utr'] ?? '') ?: ($payload['session_id'] ?? '')), 0, 120) ?: null;
+        try {
+            $res = self::settleActivation($pdo, $logId, (int) $p['id'], $paid, $osn, $ref, mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), Gateway::AFRSTAR);
+        } catch (\Throwable $e) {
+            Logger::error('payments.activation_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return self::finish($pdo, $logId, 500, 'error', true);
+        }
+        return self::finish($pdo, $logId, 200, $res['outcome'], true, $res['after']);
+    }
+
+    /**
+     * Settle a confirmed activation payment (any gateway): paid in full
+     * activates the earner (revenue posted from the gateway's clearing
+     * account); any other amount goes to review. Replays report 'duplicate'.
+     * Runs its own transaction; throws on database errors.
+     * @return array{outcome:string,after:list<callable>}
+     */
+    public static function settleActivation(PDO $pdo, ?int $logId, int $paymentId, ?int $paid, ?string $osn, ?string $ref, string $message, string $gateway): array
+    {
         $after = [];
+        $osn = $osn !== null && $osn !== '' ? $osn : null;
         $pdo->beginTransaction();
         try {
-            $p = Activation::lockPayment($pdo, (int) $p['id']);
+            $p = Activation::lockPayment($pdo, $paymentId);
             if (in_array((string) $p['status'], ['paid', 'review', 'rejected'], true)) {
                 $pdo->commit();
-                return self::finish($pdo, $logId, 200, 'duplicate', true);
+                return ['outcome' => 'duplicate', 'after' => []];
             }
+            $orderAmount = (int) $p['amount_kobo'];
             if ($paid !== null && $paid === $orderAmount) {
                 $res = Activation::settlePaid($pdo, $p, $orderAmount, 'activation:' . $p['order_sn'], 'payment', null,
-                    ['amount_paid' => $paid, 'osn' => $osn, 'reference' => $ref, 'message' => mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255)]);
+                    ['amount_paid' => $paid, 'osn' => $osn, 'reference' => $ref, 'message' => mb_substr($message, 0, 255), 'clearing' => Gateway::clearingAccount($gateway)]);
                 if ($res['activated']) {
                     $uid = (int) $p['user_id'];
                     $pid = (int) $p['id'];
@@ -154,24 +200,23 @@ final class CallbackProcessor
                     $after[] = static function () use ($pdo, $uid, $pid, $sn, $orderAmount): void { Activation::notifyActivated($pdo, $uid, $pid, $sn, $orderAmount); };
                     $outcome = 'activated';
                 } else {
-                    self::openReview($pdo, 'activation-duplicate:' . $p['id'], 'activation_duplicate', null, null, $logId, (string) $p['order_sn'], $osn, $orderAmount, $paid,
+                    self::openReview($pdo, 'activation-duplicate:' . $p['id'], 'activation_duplicate', null, null, $logId, (string) $p['order_sn'], (string) ($osn ?? ''), $orderAmount, $paid,
                         'Earner was already activated; this second activation payment needs a refund outside the app.', (int) $p['id']);
                     $outcome = 'paid_duplicate';
                 }
             } else {
                 $pdo->prepare("UPDATE activation_payments SET status = 'review', amount_paid_kobo = :p, platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m WHERE id = :id")
                     ->execute(['p' => $paid, 'o' => $osn, 'r' => $ref, 'm' => 'Paid amount differs from the activation fee; held for review', 'id' => (int) $p['id']]);
-                self::openReview($pdo, 'mismatch-activation:' . $p['id'], 'amount_mismatch', null, null, $logId, (string) $p['order_sn'], $osn, $orderAmount, $paid,
-                    'Earner paid ' . ($paid === null ? 'an unreadable amount' : Money::format($paid)) . ' for the ' . Money::format($orderAmount) . ' account activation.', (int) $p['id']);
+                self::openReview($pdo, 'mismatch-activation:' . $p['id'], 'amount_mismatch', null, null, $logId, (string) $p['order_sn'], (string) ($osn ?? ''), $orderAmount, $paid,
+                    Gateway::label($gateway) . ': earner paid ' . ($paid === null ? 'an unreadable amount' : Money::format($paid)) . ' for the ' . Money::format($orderAmount) . ' account activation.', (int) $p['id']);
                 $outcome = 'review';
             }
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            Logger::error('payments.activation_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
-            return self::finish($pdo, $logId, 500, 'error', true);
+            throw $e;
         }
-        return self::finish($pdo, $logId, 200, $outcome, true, $after);
+        return ['outcome' => $outcome, 'after' => $after];
     }
 
     public static function payout(PDO $pdo, string $raw, array $post = [], string $ip = '', ?int $logId = null): array
@@ -204,37 +249,64 @@ final class CallbackProcessor
         if ($w['platform_osn'] !== null && !hash_equals((string) $w['platform_osn'], $osn)) return self::finish($pdo, $logId, 400, 'osn_mismatch', true);
         if ($status !== '1' && $status !== '9') return self::finish($pdo, $logId, 200, 'ignored_status', true);
 
+        try {
+            $res = self::settlePayout($pdo, $logId, (int) $w['id'], $status === '1', $osn, mb_substr((string) ($payload['utr'] ?? ''), 0, 120) ?: null,
+                mb_substr((string) ($payload['message'] ?? ''), 0, 255) ?: null, Gateway::AFRSTAR, $status);
+        } catch (\Throwable $e) {
+            Logger::error('payments.payout_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return self::finish($pdo, $logId, 500, 'error', true);
+        }
+        return self::finish($pdo, $logId, 200, $res['outcome'], true, $res['after']);
+    }
+
+    /**
+     * Settle a payout the gateway has finished (paid or failed). Only a
+     * withdrawal in 'processing' moves: paid posts the held gross out (net to
+     * the gateway's clearing account, fee to revenue); failed returns the gross
+     * to the wallet. A repeat of the same result is 'duplicate'; a result for
+     * a withdrawal in any other state opens a payout_conflict review.
+     * Runs its own transaction; throws on database errors.
+     * @return array{outcome:string,after:list<callable>}
+     */
+    public static function settlePayout(PDO $pdo, ?int $logId, int $withdrawalId, bool $paid, ?string $osn, ?string $ref, ?string $msg, string $gateway, string $statusLabel = ''): array
+    {
         $after = [];
+        $label = Gateway::label($gateway);
+        $osn = $osn !== null && $osn !== '' ? $osn : null;
+        $owner = $pdo->prepare('SELECT user_id FROM withdrawals WHERE id = :id');
+        $owner->execute(['id' => $withdrawalId]);
+        $userId = (int) $owner->fetchColumn();
         $pdo->beginTransaction();
         try {
-            $wallet = Wallet::lock($pdo, (int) $w['user_id']);
+            $wallet = Wallet::lock($pdo, $userId);
             $lock = $pdo->prepare('SELECT * FROM withdrawals WHERE id = :id FOR UPDATE');
-            $lock->execute(['id' => (int) $w['id']]);
+            $lock->execute(['id' => $withdrawalId]);
             $w = $lock->fetch();
-            $ref = mb_substr((string) ($payload['utr'] ?? ''), 0, 120) ?: null;
-            $msg = mb_substr((string) ($payload['message'] ?? ''), 0, 255) ?: null;
-            $current = (string) $w['status'];
-            if (($current === 'paid' && $status === '1') || ($current === 'failed' && $status === '9')) {
-                $pdo->commit();
-                return self::finish($pdo, $logId, 200, 'duplicate', true);
-            }
-            if ($current !== 'processing') {
-                self::openReview($pdo, 'conflict:' . $w['id'] . ':' . $status, 'payout_conflict', null, (int) $w['id'], $logId, $orderSn, $osn, $payoutAmount, $payoutAmount,
-                    'AfrStar reported status ' . $status . ' for a withdrawal that is ' . $current . '.');
-                $pdo->commit();
-                return self::finish($pdo, $logId, 200, 'conflict', true);
-            }
+            $orderSn = (string) $w['order_sn'];
             $amount = (int) $w['amount_kobo']; // the held (gross) amount
             $fee = (int) $w['fee_kobo'];         // fixed when the withdrawal was requested (0 before migration 0014)
-            if ($status === '1') {
-                // Paid: the held gross leaves the wallet; the net went out through AfrStar
-                // (clearing) and the fee is platform revenue (system:withdrawal_fees).
+            $payoutAmount = $amount - $fee;
+            $current = (string) $w['status'];
+            if (($current === 'paid' && $paid) || ($current === 'failed' && !$paid)) {
+                $pdo->commit();
+                return ['outcome' => 'duplicate', 'after' => []];
+            }
+            if ($current !== 'processing') {
+                $statusText = $statusLabel !== '' ? $statusLabel : ($paid ? 'success' : 'failed');
+                self::openReview($pdo, 'conflict:' . $w['id'] . ':' . $statusText, 'payout_conflict', null, (int) $w['id'], $logId, $orderSn, (string) ($osn ?? ''), $payoutAmount, $payoutAmount,
+                    $label . ' reported status ' . $statusText . ' for a withdrawal that is ' . $current . '.');
+                $pdo->commit();
+                return ['outcome' => 'conflict', 'after' => []];
+            }
+            if ($paid) {
+                // Paid: the held gross leaves the wallet; the net went out through the
+                // gateway (its clearing account) and the fee is platform revenue (system:withdrawal_fees).
                 $legs = [
                     [$wallet['held_account_id'], 'debit', $amount],
-                    [Ledger::systemAccountId($pdo, Ledger::CLEARING), 'credit', $amount - $fee],
+                    [Ledger::systemAccountId($pdo, Gateway::clearingAccount($gateway)), 'credit', $amount - $fee],
                 ];
                 if ($fee > 0) $legs[] = [Ledger::systemAccountId($pdo, \YoloTask\Money\Fees::WITHDRAWAL_FEE_ACCOUNT), 'credit', $fee];
-                $tx = Ledger::post($pdo, 'wd-paid:' . $w['id'], 'withdrawal_paid', 'Withdrawal ' . $orderSn . ' paid by AfrStar' . ($fee > 0 ? ' (fee ' . Money::format($fee) . ')' : ''), $legs, 'withdrawal', (int) $w['id']);
+                $tx = Ledger::post($pdo, 'wd-paid:' . $w['id'], 'withdrawal_paid', 'Withdrawal ' . $orderSn . ' paid by ' . $label . ($fee > 0 ? ' (fee ' . Money::format($fee) . ')' : ''), $legs, 'withdrawal', (int) $w['id']);
                 $pdo->prepare("UPDATE withdrawals SET status = 'paid', platform_osn = COALESCE(platform_osn, :o), provider_reference = :r, provider_message = :m, final_transaction_id = :t, completed_at = UTC_TIMESTAMP() WHERE id = :id")
                     ->execute(['o' => $osn, 'r' => $ref, 'm' => $msg, 't' => $tx['id'], 'id' => (int) $w['id']]);
                 $after[] = self::notifyLater($pdo, (int) $w['user_id'], 'wd-paid:' . $w['id'], 'Withdrawal paid: ' . Money::format($payoutAmount),
@@ -242,7 +314,7 @@ final class CallbackProcessor
                     [Money::format($payoutAmount) . ' was sent to ' . $w['bank_name'] . ' ' . self::mask(\YoloTask\Security\Crypto::revealOr((string) $w['account_number'], (string) ($w['account_last4'] ?? ''))) . '.', 'Reference: ' . $orderSn]);
                 $outcome = 'paid';
             } else {
-                $tx = Ledger::post($pdo, 'wd-release:' . $w['id'], 'withdrawal_release', 'Withdrawal ' . $orderSn . ' failed at AfrStar; funds returned', [
+                $tx = Ledger::post($pdo, 'wd-release:' . $w['id'], 'withdrawal_release', 'Withdrawal ' . $orderSn . ' failed at ' . $label . '; funds returned', [
                     [$wallet['held_account_id'], 'debit', $amount],
                     [$wallet['available_account_id'], 'credit', $amount],
                 ], 'withdrawal', (int) $w['id']);
@@ -257,10 +329,9 @@ final class CallbackProcessor
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            Logger::error('payments.payout_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
-            return self::finish($pdo, $logId, 500, 'error', true);
+            throw $e;
         }
-        return self::finish($pdo, $logId, 200, $outcome, true, $after);
+        return ['outcome' => $outcome, 'after' => $after];
     }
 
     /**
@@ -273,13 +344,19 @@ final class CallbackProcessor
      */
     public static function retryUnfinished(PDO $pdo, int $limit = 50): array
     {
-        $rows = $pdo->query("SELECT id, kind, raw_body, remote_ip FROM payment_callbacks WHERE outcome = 'received' AND processed_at IS NULL
+        $rows = $pdo->query("SELECT id, kind, gateway, signature, raw_body, remote_ip FROM payment_callbacks WHERE outcome = 'received' AND processed_at IS NULL
             AND received_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE) AND received_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY) ORDER BY id LIMIT " . max(1, $limit))->fetchAll() ?: [];
         $out = ['retried' => 0, 'failed' => 0];
         foreach ($rows as $r) {
             $id = (int) $r['id'];
             try {
                 $raw = (string) $r['raw_body'];
+                if ((string) ($r['gateway'] ?? 'afrstar') === Gateway::KORAPAY) {
+                    $res = KorapayProcessor::webhook($pdo, $raw, (string) ($r['signature'] ?? ''), (string) $r['remote_ip'], $id);
+                    foreach ($res['after'] as $job) $job();
+                    $out['retried']++;
+                    continue;
+                }
                 parse_str($raw, $form);
                 $post = json_decode($raw, true) === null && is_array($form) ? $form : [];
                 $res = (string) $r['kind'] === 'payout'
@@ -297,11 +374,11 @@ final class CallbackProcessor
         return $out;
     }
 
-    /** Cron: withdrawals sent to AfrStar with no callback after money.payout_stuck_hours go to the review queue. */
+    /** Cron: withdrawals sent to a gateway with no confirmation after money.payout_stuck_hours go to the review queue. */
     public static function flagStuckPayouts(PDO $pdo): int
     {
         $hours = max(1, \YoloTask\Core\Settings::int($pdo, 'money.payout_stuck_hours'));
-        $stmt = $pdo->prepare("SELECT id, order_sn, platform_osn, amount_kobo, fee_kobo FROM withdrawals WHERE status = 'processing' AND reviewed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)");
+        $stmt = $pdo->prepare("SELECT id, order_sn, platform_osn, amount_kobo, fee_kobo, gateway FROM withdrawals WHERE status = 'processing' AND reviewed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR)");
         $stmt->bindValue('h', $hours, PDO::PARAM_INT);
         $stmt->execute();
         $n = 0;
@@ -309,7 +386,7 @@ final class CallbackProcessor
             $before = (int) $pdo->query('SELECT COUNT(*) FROM payment_reviews')->fetchColumn();
             $amount = (int) $w['amount_kobo'] - (int) $w['fee_kobo'];
             self::openReview($pdo, 'stuck:' . $w['id'] . ':' . $w['order_sn'], 'payout_conflict', null, (int) $w['id'], null, (string) $w['order_sn'], (string) ($w['platform_osn'] ?? ''), $amount, null,
-                "No AfrStar callback {$hours}+ hours after sending withdrawal #{$w['id']}. Check {$w['order_sn']} in the AfrStar portal; the hold stays until AfrStar confirms.");
+                "No " . Gateway::label((string) $w['gateway']) . " confirmation {$hours}+ hours after sending withdrawal #{$w['id']}. Check {$w['order_sn']} in the " . Gateway::label((string) $w['gateway']) . " dashboard; the hold stays until it confirms.");
             if ((int) $pdo->query('SELECT COUNT(*) FROM payment_reviews')->fetchColumn() > $before) $n++;
         }
         return $n;
