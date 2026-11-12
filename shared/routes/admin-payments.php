@@ -48,7 +48,7 @@ $status = is_string($_GET['status'] ?? null) ? $_GET['status'] : '';
 $q = trim(is_string($_GET['q'] ?? null) ? mb_substr($_GET['q'], 0, 100) : '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $orders = PaymentOrders::list($pdo, $status, $q, $page);
-$callbacks = $pdo->query('SELECT id, kind, order_sn, platform_osn, provider_status, signature_valid, outcome, http_status, remote_ip, raw_body, received_at FROM payment_callbacks ORDER BY id DESC LIMIT 20')->fetchAll() ?: [];
+$callbacks = $pdo->query('SELECT id, kind, gateway, order_sn, platform_osn, provider_status, signature_valid, outcome, http_status, remote_ip, raw_body, received_at FROM payment_callbacks ORDER BY id DESC LIMIT 20')->fetchAll() ?: [];
 $forwards = \YoloTask\Payments\CallbackForwarder::recent($pdo, 20);
 $csrf = Csrf::token();
 $kindLabel = ['amount_mismatch' => 'Amount mismatch', 'unmatched_callback' => 'Unknown order', 'payout_conflict' => 'Payout conflict', 'activation_duplicate' => 'Second activation payment'];
@@ -58,7 +58,7 @@ ob_start();
 <?= yolotask_admin_money_tabs($pdo, 'payments') ?>
 <section class="card" id="review" aria-labelledby="review-title">
   <div class="card-header"><h2 id="review-title">Payment review queue</h2><span class="badge <?= $reviews ? 'badge-warning' : 'badge-success' ?>"><?= count($reviews) ?> open</span></div>
-  <p class="text-sm text-faint">Nothing here is ever credited automatically. For an amount mismatch you can credit what the customer actually paid, or reject it and settle the payment with AfrStar outside the app.</p>
+  <p class="text-sm text-faint">Nothing here is ever credited automatically. For an amount mismatch you can credit what the customer actually paid, or reject it and settle the payment with the gateway (AfrStar or Korapay) outside the app.</p>
   <?php if ($reviews === []): ?>
     <div class="empty-state"><p class="text-faint">The queue is clear.</p></div>
   <?php else: ?>
@@ -103,7 +103,7 @@ ob_start();
 <section class="card" id="orders" aria-labelledby="orders-title">
   <div class="card-header"><h2 id="orders-title">Top-up orders</h2><span class="badge badge-info"><?= number_format($orders['total']) ?></span></div>
   <form method="get" action="payments.php#orders" class="filter-bar">
-    <input class="input" type="search" name="q" value="<?= h($q) ?>" placeholder="Order, AfrStar ref or email" aria-label="Search orders">
+    <input class="input" type="search" name="q" value="<?= h($q) ?>" placeholder="Order, gateway ref or email" aria-label="Search orders">
     <select class="input" name="status" aria-label="Status"><?= $opt('', 'Any status', $status) . $opt('pending', 'Waiting', $status) . $opt('paid', 'Paid', $status) . $opt('review', 'In review', $status) . $opt('expired', 'Expired', $status) . $opt('failed', 'Failed', $status) . $opt('rejected', 'Rejected', $status) ?></select>
     <span></span>
     <button class="btn btn-primary" type="submit">Filter</button>
@@ -117,7 +117,7 @@ ob_start();
           <div class="tx-meta">
             <strong class="mono"><?= h((string) $o['order_sn']) ?></strong>
             <span class="text-xs text-faint text-break"><?= h((string) $o['display_name']) ?> · <?= h((string) $o['email']) ?></span>
-            <span class="text-xs text-faint"><?= h(yolotask_wat((string) $o['created_at'])) ?><?= $o['platform_osn'] ? ' · AfrStar ' . h((string) $o['platform_osn']) : '' ?></span>
+            <span class="text-xs text-faint"><?= h(yolotask_wat((string) $o['created_at'])) ?><?= ' · ' . h(\YoloTask\Payments\Gateway::label((string) ($o['gateway'] ?? 'afrstar'))) ?><?= $o['platform_osn'] ? ' ' . h((string) $o['platform_osn']) : '' ?></span>
           </div>
           <div class="tx-amount"><span><?= h(yolotask_money($o['amount_kobo'])) ?></span><?php if ($o['amount_paid_kobo'] !== null && (int) $o['amount_paid_kobo'] !== (int) $o['amount_kobo']): ?><span class="text-xs text-warning">paid <?= h(yolotask_money($o['amount_paid_kobo'])) ?></span><?php endif; ?><?= yolotask_money_badge((string) $o['status']) ?></div>
         </li>
@@ -128,14 +128,14 @@ ob_start();
 </section>
 
 <section class="card" id="callbacks" aria-labelledby="cb-title">
-  <div class="card-header"><h2 id="cb-title">Latest AfrStar callbacks</h2><span class="badge badge-info">Raw log</span></div>
+  <div class="card-header"><h2 id="cb-title">Latest gateway callbacks</h2><span class="badge badge-info">Raw log</span></div>
   <?php if ($callbacks === []): ?>
     <div class="empty-state"><p class="text-faint">No callbacks received yet.</p></div>
   <?php else: ?>
     <ul class="tx-list">
       <?php foreach ($callbacks as $c): ?>
         <li class="tx-row"><div class="tx-meta">
-          <strong><?= h(ucfirst((string) $c['kind'])) ?> · <span class="mono"><?= h((string) ($c['order_sn'] ?? '—')) ?></span></strong>
+          <strong><?= h(\YoloTask\Payments\Gateway::label((string) ($c['gateway'] ?? 'afrstar'))) ?> <?= h((string) $c['kind']) ?> · <span class="mono"><?= h((string) ($c['order_sn'] ?? '—')) ?></span></strong>
           <span class="text-xs text-faint"><?= h(yolotask_wat((string) $c['received_at'])) ?> · status <?= h((string) ($c['provider_status'] ?? '—')) ?> · <?= h((string) $c['outcome']) ?> · HTTP <?= h((string) ($c['http_status'] ?? '—')) ?><?= $c['signature_valid'] === null ? '' : ((int) $c['signature_valid'] ? ' · signature ok' : ' · bad signature') ?> · <?= h((string) ($c['remote_ip'] ?? '')) ?></span>
           <details><summary class="text-xs">Raw body</summary><pre class="raw-body"><?= h(mb_substr((string) $c['raw_body'], 0, 4000)) ?></pre></details>
         </div></li>

@@ -7,6 +7,8 @@ use YoloTask\Core\Settings;
 use YoloTask\Money\Fees;
 use YoloTask\Money\Money;
 use YoloTask\Payments\AfrstarClient;
+use YoloTask\Payments\Gateway;
+use YoloTask\Payments\KorapayClient;
 use YoloTask\Security\Audit;
 use YoloTask\Security\Crypto;
 use YoloTask\Security\Csrf;
@@ -36,6 +38,31 @@ $intFields = [
     'money.bank_change_cooldown_hours' => ['Withdrawal pause after a bank account change (hours)', 0, 168, '0 = no pause. Adding the first account never pauses withdrawals.'],
     'money.payout_stuck_hours' => ['Flag a payout with no AfrStar callback after (hours)', 1, 72, 'Flagged payouts appear in Payments & review.'],
 ];
+
+// Gateway switch (migration 0021): its own form, so switching never re-validates the money rules.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'gateway') {
+    yolotask_admin_csrf_or_back('payment-settings.php');
+    try {
+        $payin = is_string($_POST['gateway_payin'] ?? null) ? $_POST['gateway_payin'] : '';
+        $payout = is_string($_POST['gateway_payout'] ?? null) ? $_POST['gateway_payout'] : '';
+        if (!in_array($payin, Gateway::ALL, true) || !in_array($payout, Gateway::ALL, true)) throw new RuntimeException('Choose AfrStar or Korapay.');
+        foreach (['top-ups' => $payin, 'withdrawals' => $payout] as $what => $g) {
+            if (!Gateway::isConfigured($g)) throw new RuntimeException(Gateway::label($g) . ' is not connected yet, so it cannot handle ' . $what . '. Add its key to the private config first.');
+        }
+        $oldIn = Gateway::payin($pdo);
+        $oldOut = Gateway::payout($pdo);
+        Settings::save($pdo, (int) $admin['id'], ['payments.gateway_payin' => $payin, 'payments.gateway_payout' => $payout]);
+        if ($oldIn !== $payin) Audit::record($pdo, (int) $admin['id'], 'admin.payin_gateway_changed', 'settings', null);
+        if ($oldOut !== $payout) Audit::record($pdo, (int) $admin['id'], 'admin.payout_gateway_changed', 'settings', null);
+        yolotask_flash('Gateways saved: top-ups and activation through ' . Gateway::label($payin) . ', withdrawals through ' . Gateway::label($payout) . '. Payments already started finish on their own gateway.');
+    } catch (RuntimeException $e) {
+        yolotask_flash($e->getMessage(), 'error');
+    } catch (Throwable $e) {
+        Logger::error('admin.gateway_settings_failed', ['exception' => get_class($e)]);
+        yolotask_flash('Something went wrong. Please try again.', 'error');
+    }
+    yolotask_redirect('payment-settings.php');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     yolotask_admin_csrf_or_back('payment-settings.php');
@@ -79,6 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $all = Settings::all($pdo);
 $csrf = Csrf::token();
 $configured = AfrstarClient::isConfigured();
+$korapayConfigured = KorapayClient::isConfigured();
+$korapayTest = KorapayClient::isTestMode();
+$payinGateway = Gateway::payin($pdo);
+$payoutGateway = Gateway::payout($pdo);
+$gwOpt = static fn (string $value, string $current, bool $ready): string => '<option value="' . h($value) . '"' . ($value === $current ? ' selected' : '') . ($ready || $value === $current ? '' : ' disabled') . '>' . h(Gateway::label($value)) . ($ready ? '' : ' (not connected)') . '</option>';
 // Readiness: bank numbers are sealed with OpenSSL AES-256-GCM (enc2:). ext-sodium
 // is optional; it is only needed to read legacy enc1: values.
 $cryptoOk = Crypto::gcmAvailable();
@@ -89,6 +121,26 @@ ob_start();
 ?>
 <?= yolotask_admin_money_tabs($pdo, 'settings') ?>
 <div class="wallet-grid">
+  <section class="card" aria-labelledby="gw-title" data-section="gateways">
+    <div class="card-header"><h2 id="gw-title">Payment gateway</h2><span class="badge badge-info">In: <?= h(Gateway::label($payinGateway)) ?> · Out: <?= h(Gateway::label($payoutGateway)) ?></span></div>
+    <form method="post" action="payment-settings.php" class="stack">
+      <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
+      <input type="hidden" name="form" value="gateway">
+      <div class="field"><label class="label" for="gateway_payin">Top-ups and account activation</label>
+        <select class="input" id="gateway_payin" name="gateway_payin"><?= $gwOpt('afrstar', $payinGateway, $configured) ?><?= $gwOpt('korapay', $payinGateway, $korapayConfigured) ?></select></div>
+      <div class="field"><label class="label" for="gateway_payout">Withdrawals (payouts)</label>
+        <select class="input" id="gateway_payout" name="gateway_payout"><?= $gwOpt('afrstar', $payoutGateway, $configured) ?><?= $gwOpt('korapay', $payoutGateway, $korapayConfigured) ?></select>
+        <p class="input-hint">Applies to new top-ups and to withdrawals you approve from now on. Payments already started keep their gateway and are still confirmed by it.</p></div>
+      <button class="btn btn-primary" type="submit">Save gateways</button>
+    </form>
+  </section>
+  <section class="card notice-card<?= $korapayConfigured ? '' : ' notice-warning' ?>" role="status" data-check="korapay">
+    <span class="verify-icon"><?= yolotask_nav_icon($korapayConfigured ? 'shield' : 'bell') ?></span>
+    <div><strong>Korapay <?= $korapayConfigured ? 'connected' . ($korapayTest ? ' (test mode)' : '') : 'not connected' ?></strong>
+      <p class="text-sm text-faint"><?= $korapayConfigured
+        ? 'Secret key loaded from the private server configuration. Webhook URL to set in the Korapay dashboard: ' . h(KorapayClient::webhookUrl())
+        : 'Add your Korapay secret key (sk_live_…) as a one-line korapay.key file in the private config directory, or under \'korapay\' in payments.local.php.' ?></p></div>
+  </section>
   <section class="card notice-card<?= $configured ? '' : ' notice-warning' ?>" role="status">
     <span class="verify-icon"><?= yolotask_nav_icon($configured ? 'shield' : 'bell') ?></span>
     <div><strong>AfrStar <?= $configured ? 'connected' : 'not connected' ?></strong>

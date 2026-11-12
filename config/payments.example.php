@@ -34,6 +34,24 @@ return [
         // signatures are always verified).
         'callback_ips' => [],
     ],
+    // Korapay (migration 0021). Only the secret key is required. Instead of
+    // this block you can put the secret key alone in config-private/korapay.key
+    // (one line, mode 0600). Choose which gateway handles top-ups and which
+    // handles withdrawals in Admin → Money settings → Payment gateway.
+    // Set the webhook URL in the Korapay dashboard (Settings → API Configuration):
+    //   https://yolotask.com.ng/hooks/korapay/webhook.php
+    // and whitelist this server's IP for payouts.
+    'korapay' => [
+        'secret_key' => '',            // sk_live_… (sk_test_… for the sandbox)
+        'public_key' => '',            // optional; only used to read Korapay's bank list
+        // Optional: AfrStar bank code => Korapay bank code, for banks the name
+        // match misses, e.g. '80000030' => '999992'. Others are matched by name
+        // against Korapay's bank list (cached 24 h in runtime/cache).
+        'bank_code_map' => [],
+        'channels' => ['bank_transfer', 'card'], // checkout payment methods
+        'timeout' => 20,
+        'base_url' => 'https://api.korapay.com', // only change for local testing
+    ],
     // Optional Paystack account-name lookup on the bank account page.
     // Leave secret_key empty to skip the lookup (users type the name and
     // nothing is sent to Paystack). With a key, the name returned by the

@@ -36,7 +36,7 @@ try {
     if ($ref === 'payment_order') {
         $q = $pdo->prepare('SELECT order_sn, platform_osn, provider_reference, amount_kobo, paid_at FROM payment_orders WHERE id = :id AND user_id = :u');
         $q->execute(['id' => $rid, 'u' => $user['id']]);
-        if ($o = $q->fetch()) $details = ['Order' => $o['order_sn'], 'AfrStar reference' => $o['platform_osn'] ?: '—', 'Bank reference' => $o['provider_reference'] ?: '—', 'Paid' => yolotask_wat((string) $o['paid_at']) . ' WAT'];
+        if ($o = $q->fetch()) $details = ['Order' => $o['order_sn'], 'Payment reference' => $o['platform_osn'] ?: ($o['order_sn'] ?: '—'), 'Bank reference' => $o['provider_reference'] ?: '—', 'Paid' => yolotask_wat((string) $o['paid_at']) . ' WAT'];
     } elseif ($ref === 'withdrawal') {
         $q = $pdo->prepare('SELECT id, order_sn, bank_name, account_last4, account_name, status, provider_reference, created_at, completed_at FROM withdrawals WHERE id = :id AND user_id = :u');
         $q->execute(['id' => $rid, 'u' => $user['id']]);

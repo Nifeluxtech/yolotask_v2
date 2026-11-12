@@ -110,7 +110,7 @@ final class Activation
         if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts need activation.');
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before activating your account.');
         if (!self::required($pdo)) throw new RuntimeException('Your account does not need activation right now. Every task is open to you.');
-        if (!AfrstarClient::isConfigured()) throw new RuntimeException('Payments are not available yet.');
+        if (!\YoloTask\Payments\Gateway::payinReady($pdo)) throw new RuntimeException('Payments are not available yet.');
         $userId = (int) $user['id'];
         if (self::isActivated($pdo, $userId)) throw new RuntimeException('Your account is already activated.');
         $inReview = $pdo->prepare("SELECT COUNT(*) FROM activation_payments WHERE user_id = :u AND status = 'review'");
@@ -119,9 +119,9 @@ final class Activation
         $amount = self::fee($pdo);
         // A waiting order for the same fee is reused, so a second tap never creates a second transfer.
         $hours = max(1, Settings::int($pdo, 'money.payin_expiry_hours'));
-        $open = $pdo->prepare("SELECT order_sn, pay_url FROM activation_payments WHERE user_id = :u AND status = 'pending' AND amount_kobo = :a AND pay_url IS NOT NULL
+        $open = $pdo->prepare("SELECT order_sn, pay_url FROM activation_payments WHERE user_id = :u AND status = 'pending' AND amount_kobo = :a AND gateway = :g AND pay_url IS NOT NULL
             AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR) ORDER BY id DESC LIMIT 1");
-        $open->execute(['u' => $userId, 'a' => $amount, 'h' => $hours]);
+        $open->execute(['u' => $userId, 'a' => $amount, 'g' => \YoloTask\Payments\Gateway::payin($pdo), 'h' => $hours]);
         $row = $open->fetch();
         if (is_array($row)) return ['order_sn' => (string) $row['order_sn'], 'pay_url' => (string) $row['pay_url'], 'reused' => true];
 
@@ -133,14 +133,15 @@ final class Activation
         $localPhone = str_starts_with($e164, '+234') ? '0' . substr($e164, 4) : ltrim($e164, '+');
 
         $orderSn = self::PREFIX . gmdate('ymdHis') . strtoupper(bin2hex(random_bytes(5)));
-        $pdo->prepare("INSERT INTO activation_payments (order_sn, user_id, amount_kobo, status) VALUES (:sn, :u, :a, 'created')")->execute(['sn' => $orderSn, 'u' => $userId, 'a' => $amount]);
+        $gateway = \YoloTask\Payments\Gateway::payin($pdo);
+        $pdo->prepare("INSERT INTO activation_payments (order_sn, user_id, amount_kobo, status, gateway) VALUES (:sn, :u, :a, 'created', :g)")->execute(['sn' => $orderSn, 'u' => $userId, 'a' => $amount, 'g' => $gateway]);
         $id = (int) $pdo->lastInsertId();
         Audit::record($pdo, $userId, 'account.activation_started', 'activation_payment', $id);
         try {
-            $res = AfrstarClient::payin($orderSn, $amount, mb_substr((string) $user['display_name'], 0, 80), (string) $user['email'], $localPhone,
+            $res = \YoloTask\Payments\Gateway::startPayin($gateway, $orderSn, $amount, mb_substr((string) $user['display_name'], 0, 80), (string) $user['email'], $localPhone,
                 'YOLOTASK account activation', rtrim($returnBaseUrl, '/') . '/activate.php?o=' . rawurlencode($orderSn));
-        } catch (AfrstarException $e) {
-            // Definitive refusal: nothing exists at AfrStar. Unknown outcome: keep it pending so a late callback can still activate.
+        } catch (AfrstarException|\YoloTask\Payments\KorapayException $e) {
+            // Definitive refusal: nothing exists at the gateway. Unknown outcome: keep it pending so a late callback can still activate.
             $pdo->prepare('UPDATE activation_payments SET status = :s, provider_message = :m WHERE id = :id')
                 ->execute(['s' => $e->definitive ? 'failed' : 'pending', 'm' => mb_substr($e->getMessage(), 0, 255), 'id' => $id]);
             throw new RuntimeException('We could not start the payment. Please try again shortly.');
@@ -166,7 +167,7 @@ final class Activation
 
     public static function recentForUser(PDO $pdo, int $userId, int $limit = 5): array
     {
-        $stmt = $pdo->prepare("SELECT order_sn, amount_kobo, amount_paid_kobo, status, pay_url, provider_message, created_at, paid_at FROM activation_payments WHERE user_id = :u AND status <> 'created' ORDER BY id DESC LIMIT " . (int) $limit);
+        $stmt = $pdo->prepare("SELECT order_sn, amount_kobo, amount_paid_kobo, status, gateway, pay_url, provider_message, created_at, paid_at FROM activation_payments WHERE user_id = :u AND status <> 'created' ORDER BY id DESC LIMIT " . (int) $limit);
         $stmt->execute(['u' => $userId]);
         return $stmt->fetchAll() ?: [];
     }
@@ -179,7 +180,7 @@ final class Activation
     public static function settlePaid(PDO $pdo, array $p, int $revenue, string $key, string $source, ?int $actorId, array $fields = []): array
     {
         $tx = Ledger::post($pdo, $key, 'activation_fee', 'Account activation ' . $p['order_sn'] . ($source === 'payment' ? '' : ' (' . ($source === 'review' ? 'reviewed' : 'verified by admin') . ')'), [
-            [Ledger::systemAccountId($pdo, Ledger::CLEARING), 'debit', $revenue],
+            [Ledger::systemAccountId($pdo, (string) ($fields['clearing'] ?? \YoloTask\Payments\Gateway::clearingAccount(\YoloTask\Payments\Gateway::clean(isset($p['gateway']) ? (string) $p['gateway'] : null)))), 'debit', $revenue],
             [Ledger::systemAccountId($pdo, self::REVENUE_ACCOUNT), 'credit', $revenue],
         ], 'activation_payment', (int) $p['id'], $actorId);
         $pdo->prepare("UPDATE activation_payments SET status = 'paid', revenue_kobo = :r, ledger_transaction_id = :t, paid_at = COALESCE(paid_at, UTC_TIMESTAMP()),

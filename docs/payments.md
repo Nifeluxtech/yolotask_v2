@@ -154,3 +154,42 @@ referral commission. The top-up page shows "Get X% cashback on deposits"
 (and the minimum) only while the rate is above 0. There is no deposit
 reversal in the system; an admin can reverse a paid cashback from the
 cashback list (reason required).
+
+## Korapay (migration 0021)
+
+Korapay is a second gateway beside AfrStar. Admin → Money settings → **Payment
+gateway** has two switches: one for top-ups and account activation fees
+(`payments.gateway_payin`) and one for withdrawals (`payments.gateway_payout`).
+A gateway that is not connected cannot be selected. Switching only affects new
+orders and withdrawals approved afterwards: `payment_orders`,
+`activation_payments`, `withdrawals` and `payment_callbacks` record the gateway
+each row used, and late confirmations still settle on that row's gateway.
+
+- **Credentials.** `config-private/korapay.key` (one line: the secret key,
+  `sk_live_…`, mode 0600), or `'korapay' => ['secret_key' => …]` in
+  `payments.local.php` (see `config/payments.example.php`). `sk_test_…` keys
+  work against the sandbox and the settings page says "test mode".
+- **Pay-ins** use Checkout Redirect (`POST /merchant/api/v1/charges/initialize`,
+  reference = our `YTP…`/`YTA…` order number, channels bank transfer + card,
+  merchant bears the fee). The customer returns to `topup-return.php` /
+  `activate.php`, which asks Korapay for the status once.
+- **Payouts** use `POST /merchant/api/v1/transactions/disburse` with reference
+  `YTW<id>A<attempt>`. Bank accounts keep AfrStar bank codes; the Korapay code
+  is found by bank name in Korapay's bank list (cached 24 h) or from
+  `korapay.bank_code_map`. If a bank cannot be mapped, approval stops with a
+  message and nothing is sent. Whitelist the server IP in the Korapay
+  dashboard for payouts.
+- **Webhook:** `https://yolotask.com.ng/hooks/korapay/webhook.php`
+  (`hooks/korapay_webhook.php`). Every request is logged in
+  `payment_callbacks` (gateway `korapay`), the `x-korapay-signature` HMAC is
+  checked, and then the status and amount are always re-read from
+  `GET /charges/{ref}` or `GET /transactions/{ref}` before anything is
+  credited or paid. A 200 is returned once the result is stored; a non-200
+  makes Korapay retry (72 h).
+- **Settlement** is shared with AfrStar (`CallbackProcessor::settleTopup`,
+  `settleActivation`, `settlePayout`): same ledger keys (`payin:`,
+  `activation:`, `wd-paid:`, `wd-release:`), same review queue, same
+  notifications. Korapay money is posted against `system:korapay_clearing`.
+- **Cron** (`every-five-minutes.php`): `KorapayProcessor::sweep` checks Korapay
+  pay-ins still waiting and payouts still processing, so a lost webhook never
+  strands money.

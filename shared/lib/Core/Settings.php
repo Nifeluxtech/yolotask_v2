@@ -65,6 +65,9 @@ final class Settings
         'activation.fee_kobo' => '50000',      // one-time account activation fee, ₦500 (₦100 to ₦100,000)
         'platform_tasks.reward_percent' => '50', // YOLOTASK task reward = this % of the task type's normal reward, rounded down to the kobo (1-100)
         'platform_tasks.owner_user_id' => '0', // the closed system account "YOLOTASK" that owns YOLOTASK tasks (set by migration 0019; not editable)
+        // Payment gateways (rows seeded by migration 0021): 'afrstar' or 'korapay'.
+        'payments.gateway_payin' => 'afrstar',   // new top-ups and activation fees
+        'payments.gateway_payout' => 'afrstar',  // new withdrawal payouts
     ];
 
     private static ?array $cache = null;

@@ -12,7 +12,7 @@ use YoloTask\Money\Wallet;
 use YoloTask\Security\Audit;
 use YoloTask\Security\Throttle;
 
-/** Wallet top-ups through AfrStar collection orders. Crediting happens only in CallbackProcessor. */
+/** Wallet top-ups through the active pay-in gateway (AfrStar or Korapay, see Gateway). Crediting happens only in CallbackProcessor::settleTopup. */
 final class PaymentOrders
 {
     public static function limits(PDO $pdo): array
@@ -21,14 +21,14 @@ final class PaymentOrders
     }
 
     /**
-     * Create an order and get AfrStar's hosted payment link.
+     * Create an order and get the gateway's hosted payment link.
      * @return array{order_sn:string,pay_url:string}
      */
     public static function create(PDO $pdo, array $user, int $amountKobo, string $phone, string $returnBaseUrl): array
     {
         if ((string) $user['role'] !== 'advertiser') throw new RuntimeException('Only advertiser accounts can top up.');
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before funding your wallet.');
-        if (!AfrstarClient::isConfigured()) throw new RuntimeException('Payments are not available yet.');
+        if (!Gateway::payinReady($pdo)) throw new RuntimeException('Payments are not available yet.');
         $limits = self::limits($pdo);
         if ($amountKobo < $limits['min']) throw new RuntimeException('The minimum top-up is ' . Money::format($limits['min']) . '.');
         if ($amountKobo > $limits['max']) throw new RuntimeException('The maximum top-up is ' . Money::format($limits['max']) . '.');
@@ -44,16 +44,17 @@ final class PaymentOrders
 
         $wallet = Wallet::forUser($pdo, $userId);
         $orderSn = 'YTP' . gmdate('ymdHis') . strtoupper(bin2hex(random_bytes(5)));
-        $pdo->prepare('INSERT INTO payment_orders (order_sn, user_id, wallet_id, amount_kobo, fee_kobo, status) VALUES (:sn, :u, :w, :a, :f, \'created\')')
-            ->execute(['sn' => $orderSn, 'u' => $userId, 'w' => $wallet['id'], 'a' => $amountKobo, 'f' => Fees::topup($amountKobo)]);
+        $gateway = Gateway::payin($pdo);
+        $pdo->prepare('INSERT INTO payment_orders (order_sn, user_id, wallet_id, amount_kobo, fee_kobo, status, gateway) VALUES (:sn, :u, :w, :a, :f, \'created\', :g)')
+            ->execute(['sn' => $orderSn, 'u' => $userId, 'w' => $wallet['id'], 'a' => $amountKobo, 'f' => Fees::topup($amountKobo), 'g' => $gateway]);
         $orderId = (int) $pdo->lastInsertId();
         Audit::record($pdo, $userId, 'wallet.topup_started', 'payment_order', $orderId);
 
         try {
-            $res = AfrstarClient::payin($orderSn, $amountKobo, mb_substr((string) $user['display_name'], 0, 80), (string) $user['email'], $localPhone,
+            $res = Gateway::startPayin($gateway, $orderSn, $amountKobo, mb_substr((string) $user['display_name'], 0, 80), (string) $user['email'], $localPhone,
                 'YOLOTASK wallet top-up', rtrim($returnBaseUrl, '/') . '/topup-return.php?o=' . rawurlencode($orderSn));
-        } catch (AfrstarException $e) {
-            // Definitive refusal: nothing exists at AfrStar. Unknown outcome:
+        } catch (AfrstarException|KorapayException $e) {
+            // Definitive refusal: nothing exists at the gateway. Unknown outcome:
             // keep it pending so a late callback can still credit it.
             $pdo->prepare('UPDATE payment_orders SET status = :s, provider_message = :m WHERE id = :id')
                 ->execute(['s' => $e->definitive ? 'failed' : 'pending', 'm' => mb_substr($e->getMessage(), 0, 255), 'id' => $orderId]);

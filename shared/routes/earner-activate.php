@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
-use YoloTask\Payments\AfrstarClient;
+use YoloTask\Payments\Gateway;
+use YoloTask\Payments\KorapayProcessor;
 use YoloTask\Account\Activation;
 use YoloTask\Security\Csrf;
 
@@ -13,8 +14,9 @@ require_once __DIR__ . '/money-helpers.php';
  * Earner: activate the account with the one-time activation fee (migration 0019).
  * Only needed while an admin has switched activation.required on; otherwise
  * the page just says no activation is needed (nothing links here).
- * Earners cannot deposit, so the fee is paid by bank transfer on AfrStar's page;
- * AfrStar returns here with ?o=<order> and the collection callback activates the account.
+ * Earners cannot deposit, so the fee is paid on the active pay-in gateway's page
+ * (AfrStar or Korapay); it returns here with ?o=<order> and the gateway's
+ * callback/webhook activates the account (Korapay is also checked on return).
  */
 if (yolotask_role() !== 'earner') yolotask_error_page(404);
 yolotask_private_headers();
@@ -49,7 +51,13 @@ try {
     $activation = Activation::activation($pdo, $uid);
     $fee = Activation::fee($pdo);
     $orderSn = is_string($_GET['o'] ?? null) ? substr($_GET['o'], 0, 64) : '';
+    if ($orderSn === '' && is_string($_GET['reference'] ?? null)) $orderSn = substr($_GET['reference'], 0, 64);
     $order = $orderSn !== '' ? Activation::findForUser($pdo, $uid, $orderSn) : null;
+    if ($order !== null && ($order['gateway'] ?? '') === Gateway::KORAPAY && in_array((string) $order['status'], ['created', 'pending', 'expired'], true)) {
+        KorapayProcessor::checkOnReturn($pdo, (string) $order['order_sn']);
+        $order = Activation::findForUser($pdo, $uid, (string) $order['order_sn']);
+        $activation = Activation::activation($pdo, $uid);
+    }
     if ($orderSn !== '' && $order === null) yolotask_error_page(404);
     $recent = Activation::recentForUser($pdo, $uid, 5);
     if ($order === null && $activation === null) {
@@ -59,7 +67,10 @@ try {
     Logger::error('account.activate_page_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
     yolotask_error_page(500);
 }
-$configured = AfrstarClient::isConfigured();
+$payinGateway = Gateway::payin($pdo);
+$gatewayLabel = Gateway::label($payinGateway);
+$configured = Gateway::isConfigured($payinGateway);
+$orderGatewayLabel = Gateway::label((string) ($order['gateway'] ?? $payinGateway));
 $verified = !empty($user['email_verified_at']);
 $status = $order !== null ? (string) $order['status'] : '';
 $waiting = $activation === null && in_array($status, ['created', 'pending'], true);
@@ -92,12 +103,12 @@ ob_start();
             'rejected' => 'This payment needs support',
             'expired' => 'This payment expired',
             'failed' => 'This payment could not start',
-            default => 'We\'ll activate your account once AfrStar confirms',
+            default => 'We\'ll activate your account once ' . $orderGatewayLabel . ' confirms',
         }) ?></h2>
         <div class="wallet-balance"><span class="amount"><?= h(yolotask_money($order['amount_kobo'])) ?></span></div>
         <p class="text-faint"><?= h(match ($status) {
             'paid' => 'Thank you. Your account is being activated.',
-            'review' => 'The amount AfrStar reported is different from the activation fee, so a person is checking it. You will get a message when it is resolved.',
+            'review' => 'The amount ' . $orderGatewayLabel . ' reported is different from the activation fee, so a person is checking it. You will get a message when it is resolved.',
             'rejected' => 'Our team could not match this payment. Contact support with the reference above.',
             'expired' => 'We did not receive confirmation within the time limit. If you paid, contact support with the reference above and we will check it.',
             'failed' => 'Nothing was charged. Please start again.',
@@ -129,7 +140,7 @@ ob_start();
         <li>Each task is paid to your wallet as soon as it is approved.</li>
         <li>The fee is not added to your wallet and cannot be withdrawn.</li>
       </ul>
-      <p class="text-sm text-faint">You will pay <?= h(yolotask_money($fee)) ?> by bank transfer on AfrStar's secure page. Your account is activated automatically as soon as AfrStar confirms the payment.</p>
+      <p class="text-sm text-faint">You will pay <?= h(yolotask_money($fee)) ?> on <?= h($gatewayLabel) ?>'s secure page<?= $payinGateway === Gateway::KORAPAY ? ' by bank transfer or card' : ' by bank transfer' ?>. Your account is activated automatically as soon as <?= h($gatewayLabel) ?> confirms the payment.</p>
       <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Payments from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>
       <?php if ($waiting): ?>
         <p class="text-sm">You already started a payment. Use <strong>Open payment page</strong> above to finish it; a new one is not needed.</p>
@@ -139,7 +150,7 @@ ob_start();
           <div class="field">
             <label class="label" for="phone">Phone number</label>
             <input class="input" id="phone" name="phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" required placeholder="0803 123 4567" value="<?= h($phone) ?>">
-            <p class="input-hint">AfrStar asks for it on the payment page.</p>
+            <p class="input-hint">We pass it to <?= h($gatewayLabel) ?> for the payment page.</p>
           </div>
           <button class="btn btn-primary btn-block" type="submit"<?= $configured && $verified ? '' : ' disabled' ?>>Pay <?= h(yolotask_money($fee)) ?> and activate</button>
         </form>
