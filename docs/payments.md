@@ -169,6 +169,9 @@ each row used, and late confirmations still settle on that row's gateway.
   `sk_live_…`, mode 0600), or `'korapay' => ['secret_key' => …]` in
   `payments.local.php` (see `config/payments.example.php`). `sk_test_…` keys
   work against the sandbox and the settings page says "test mode".
+  Payouts also need the public key (`pk_live_…`), because Korapay's bank list
+  (`/misc/banks`) only accepts it: `config-private/korapay.pub` (one line) or
+  `'public_key'` in the korapay block.
 - **Pay-ins** use Checkout Redirect (`POST /merchant/api/v1/charges/initialize`,
   reference = our `YTP…`/`YTA…` order number, channels bank transfer + card,
   merchant bears the fee). The customer returns to `topup-return.php` /
