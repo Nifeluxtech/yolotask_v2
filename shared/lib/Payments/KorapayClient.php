@@ -315,12 +315,16 @@ final class KorapayClient
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_FOLLOWLOCATION => false,
+            // Korapay's payout IP whitelist takes IPv4 addresses; api.korapay.com also has
+            // IPv6 records, so force IPv4 or the server may call out from an unlisted IPv6 address.
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
         ];
         if ($body !== null) $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         curl_setopt_array($ch, $opts);
         $raw = curl_exec($ch);
         $errno = curl_errno($ch);
         $http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $localIp = (string) curl_getinfo($ch, CURLINFO_LOCAL_IP);
         curl_close($ch);
         $route = $method === 'GET' ? (string) preg_replace('#/(charges|transactions)/[^/?]+$#', '/$1/{ref}', strtok($path, '?') ?: $path) : (strtok($path, '?') ?: $path);
         if ($raw === false || $errno !== 0) {
@@ -338,7 +342,7 @@ final class KorapayClient
         }
         if ($http < 200 || $http >= 300 || empty($json['status'])) {
             $message = mb_substr((string) ($json['message'] ?? 'Request declined'), 0, 160);
-            Logger::error('korapay.api_error', ['path' => $route, 'http' => $http, 'message' => $message]);
+            Logger::error('korapay.api_error', ['path' => $route, 'http' => $http, 'message' => $message, 'local_ip' => $localIp]);
             // 4xx with status=false is a clear refusal; anything else stays "unknown".
             throw new KorapayException('Korapay declined the request: ' . $message, $http >= 400 && $http < 500);
         }
