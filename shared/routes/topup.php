@@ -6,7 +6,7 @@ use YoloTask\Core\Logger;
 use YoloTask\Growth\DepositCashback;
 use YoloTask\Growth\Referrals;
 use YoloTask\Money\Wallet;
-use YoloTask\Payments\AfrstarClient;
+use YoloTask\Payments\Gateway;
 use YoloTask\Payments\PaymentOrders;
 use YoloTask\Security\Csrf;
 
@@ -21,7 +21,9 @@ try {
     Logger::error('topup.load_failed', ['exception' => get_class($e)]);
     yolotask_error_page(500);
 }
-$configured = AfrstarClient::isConfigured();
+$gateway = Gateway::payin($pdo);
+$gatewayLabel = Gateway::label($gateway);
+$configured = Gateway::isConfigured($gateway);
 $verified = !empty($user['email_verified_at']);
 $limits = PaymentOrders::limits($pdo);
 
@@ -68,8 +70,12 @@ ob_start();
     <?php if ($cashbackBps > 0): ?>
       <p class="cashback-offer text-sm" role="note"><span class="badge badge-success">Get <?= h(Referrals::percent($cashbackBps)) ?> cashback on deposits</span><?php if ($cashbackMin > 0): ?> <span class="text-faint">Minimum top-up for cashback: <?= h(yolotask_money($cashbackMin)) ?>.</span><?php endif; ?></p>
     <?php endif; ?>
+    <?php if ($gateway === Gateway::KORAPAY): ?>
+    <p class="text-sm text-faint">You will pay on Korapay's secure page by bank transfer or card. Your wallet is credited automatically as soon as Korapay confirms the payment. No fees.</p>
+    <?php else: ?>
     <p class="text-sm text-faint">You will pay on AfrStar's secure page by bank transfer. Your wallet is credited automatically as soon as AfrStar confirms the payment. No fees.</p>
     <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Deposits from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>
+    <?php endif; ?>
     <form method="post" action="topup.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
       <div class="field">
@@ -80,7 +86,7 @@ ob_start();
       <div class="field">
         <label class="label" for="phone">Phone number</label>
         <input class="input" id="phone" name="phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" required placeholder="0803 123 4567" value="<?= h($phone) ?>">
-        <p class="input-hint">AfrStar asks for it on the payment page.</p>
+        <p class="input-hint">We pass it to <?= h($gatewayLabel) ?> for the payment page.</p>
       </div>
       <button class="btn btn-primary btn-block" type="submit"<?= $configured && $verified ? '' : ' disabled' ?>>Continue to payment</button>
     </form>

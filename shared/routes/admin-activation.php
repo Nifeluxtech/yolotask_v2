@@ -90,7 +90,7 @@ ob_start();
 
   <section class="card" id="settings" aria-labelledby="as-title">
     <div class="card-header"><h2 id="as-title">Activation settings</h2><span class="badge <?= $required ? 'badge-warning' : 'badge-success' ?>" data-activation-switch="<?= $required ? 'on' : 'off' ?>"><?= $required ? 'On' : 'Off' ?></span></div>
-    <p class="text-sm text-faint">When ON, an earner who has not activated cannot see or start any task (advertisers' or YOLOTASK's). Their feed and dashboard show “Activate your account with <?= h(yolotask_money($fee)) ?> to access tasks.” with a bank transfer through AfrStar (reference YTA…). Work they had already started can still be submitted. The fee is platform revenue and never reaches the wallet. When OFF, every earner sees every task and nothing mentions activation. Earners who activated stay activated.</p>
+    <p class="text-sm text-faint">When ON, an earner who has not activated cannot see or start any task (advertisers' or YOLOTASK's). Their feed and dashboard show “Activate your account with <?= h(yolotask_money($fee)) ?> to access tasks.” with a payment through the active pay-in gateway (reference YTA…). Work they had already started can still be submitted. The fee is platform revenue and never reaches the wallet. When OFF, every earner sees every task and nothing mentions activation. Earners who activated stay activated.</p>
     <form method="post" action="activation.php" class="stack">
       <?= $hidden ?><input type="hidden" name="action" value="settings">
       <div class="field"><label class="label" for="fee">Activation fee (₦)</label>
@@ -103,7 +103,7 @@ ob_start();
 
   <section class="card" id="payments" aria-labelledby="pp-title">
     <div class="card-header"><h2 id="pp-title">Activation payments</h2><span class="badge badge-info"><?= number_format($payments['total']) ?></span></div>
-    <p class="text-sm text-faint">Confirmed automatically by the AfrStar callback. A different amount goes to the <a href="payments.php#review">payment review queue</a>. AfrStar has no status lookup, so when an earner paid and no confirmation came, find the transfer in the AfrStar portal and verify it here.</p>
+    <p class="text-sm text-faint">Confirmed automatically by the gateway: the AfrStar callback, or for Korapay its webhook plus a status check (also run on return and every five minutes). A different amount goes to the <a href="payments.php#review">payment review queue</a>. AfrStar has no status lookup, so when an earner paid and no confirmation came, find the transfer in the AfrStar portal and verify it here.</p>
     <form method="get" action="activation.php#payments" class="filter-bar">
       <input class="input" type="search" name="pq" value="<?= h($payQ) ?>" placeholder="Reference or email" aria-label="Search activation payments">
       <select class="input" name="pay" aria-label="Status"><?= $opt('', 'Any status', $payStatus) . $opt('pending', 'Waiting', $payStatus) . $opt('paid', 'Paid', $payStatus) . $opt('review', 'In review', $payStatus) . $opt('expired', 'Expired', $payStatus) . $opt('failed', 'Failed', $payStatus) . $opt('rejected', 'Rejected', $payStatus) ?></select>

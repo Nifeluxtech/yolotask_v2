@@ -16,7 +16,7 @@ function yolotask_money_status(string $status): array
     return match ($status) {
         'paid' => ['Paid', 'badge-success'],
         'credited' => ['Credited', 'badge-success'],
-        'pending', 'created' => ['Waiting for AfrStar', 'badge-warning'],
+        'pending', 'created' => ['Waiting for payment', 'badge-warning'],
         'pending_review' => ['Waiting for review', 'badge-warning'],
         'processing' => ['Sending to bank', 'badge-info'],
         'review' => ['Being checked', 'badge-warning'],
@@ -35,7 +35,7 @@ function yolotask_money_badge(string $status): string
     return '<span class="badge ' . $class . '">' . h($label) . '</span>';
 }
 
-/** Notice card shown when AfrStar credentials are not configured. */
+/** Notice card shown when the active gateway's credentials are not configured. */
 function yolotask_payments_unavailable_card(string $what): string
 {
     return '<section class="card notice-card notice-warning" role="status"><span class="verify-icon">' . yolotask_nav_icon('bell') . '</span>'

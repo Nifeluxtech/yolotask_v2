@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
+use YoloTask\Payments\Gateway;
+use YoloTask\Payments\KorapayProcessor;
 use YoloTask\Payments\PaymentOrders;
 
 require_once __DIR__ . '/money-helpers.php';
@@ -13,13 +15,20 @@ try {
     $pdo = Database::connection();
     $user = yolotask_require_user($pdo);
     $orderSn = is_string($_GET['o'] ?? null) ? substr($_GET['o'], 0, 64) : '';
+    // Korapay appends ?reference=<our order_sn> to the return URL.
+    if ($orderSn === '' && is_string($_GET['reference'] ?? null)) $orderSn = substr($_GET['reference'], 0, 64);
     $order = $orderSn !== '' ? PaymentOrders::findForUser($pdo, (int) $user['id'], $orderSn) : null;
+    if ($order !== null && ($order['gateway'] ?? '') === Gateway::KORAPAY && in_array((string) $order['status'], ['created', 'pending', 'expired'], true)) {
+        KorapayProcessor::checkOnReturn($pdo, (string) $order['order_sn']);
+        $order = PaymentOrders::findForUser($pdo, (int) $user['id'], (string) $order['order_sn']);
+    }
 } catch (Throwable $e) {
     Logger::error('topup.return_failed', ['exception' => get_class($e)]);
     yolotask_error_page(500);
 }
 if ($order === null) yolotask_error_page(404);
 $status = (string) $order['status'];
+$gatewayLabel = Gateway::label((string) ($order['gateway'] ?? Gateway::AFRSTAR));
 $waiting = in_array($status, ['created', 'pending'], true);
 ob_start();
 ?>
@@ -32,12 +41,12 @@ ob_start();
         'rejected' => 'This payment needs support',
         'expired' => 'This top-up expired',
         'failed' => 'This top-up could not start',
-        default => 'We\'ll credit you once AfrStar confirms',
+        default => 'We\'ll credit you once ' . $gatewayLabel . ' confirms',
     }) ?></h2>
     <div class="wallet-balance"><span class="amount"><?= h(yolotask_money($status === 'paid' ? ($order['credited_kobo'] ?? $order['amount_kobo']) : $order['amount_kobo'])) ?></span></div>
     <p class="text-faint"><?= h(match ($status) {
         'paid' => 'Thank you. The money is in your wallet and ready to use.',
-        'review' => 'The amount AfrStar reported is different from your order, so a person is checking it. You will get an email when it is resolved.',
+        'review' => 'The amount ' . $gatewayLabel . ' reported is different from your order, so a person is checking it. You will get an email when it is resolved.',
         'rejected' => 'Our team could not match this payment. Contact support with the reference above.',
         'expired' => 'We did not receive confirmation within the time limit. If you paid, contact support with the reference above.',
         'failed' => 'Nothing was charged. Please start a new top-up.',

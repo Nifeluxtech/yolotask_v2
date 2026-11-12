@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
-use YoloTask\Payments\AfrstarClient;
+use YoloTask\Payments\Gateway;
 use YoloTask\Payments\Withdrawals;
 use YoloTask\Security\Csrf;
 
@@ -47,7 +47,9 @@ $page = max(1, (int) ($_GET['page'] ?? 1));
 $result = Withdrawals::list($pdo, $status, $page);
 $counts = Withdrawals::counts($pdo);
 $csrf = Csrf::token();
-$configured = AfrstarClient::isConfigured();
+$payoutGateway = Gateway::payout($pdo);
+$payoutLabel = Gateway::label($payoutGateway);
+$configured = Gateway::isConfigured($payoutGateway);
 $query = static fn (array $over): string => '?' . http_build_query(array_filter(array_merge(['status' => $status, 'page' => $page], $over), static fn ($v) => $v !== '' && $v !== null));
 $filters = ['pending_review' => 'To review', 'processing' => 'Processing', 'paid' => 'Paid', 'failed' => 'Failed', 'rejected' => 'Rejected', 'all' => 'All'];
 ob_start();
@@ -70,7 +72,7 @@ ob_start();
             <span class="text-xs text-faint text-break"><?= h((string) $w['email']) ?> · <?= h((string) $w['bank_name']) ?> <?= h((string) $w['account_number']) ?> · <?= h((string) $w['account_name']) ?></span>
             <span class="user-tags">
               <?= yolotask_money_badge((string) $w['status']) ?>
-              <span class="text-xs text-faint">Requested <?= h(yolotask_wat((string) $w['created_at'])) ?><?= $w['order_sn'] ? ' · ' . h((string) $w['order_sn']) : '' ?><?= $w['platform_osn'] ? ' · AfrStar ' . h((string) $w['platform_osn']) : '' ?></span>
+              <span class="text-xs text-faint">Requested <?= h(yolotask_wat((string) $w['created_at'])) ?><?= $w['order_sn'] ? ' · ' . h((string) $w['order_sn']) : '' ?><?= $w['order_sn'] ? ' · ' . h(Gateway::label((string) ($w['gateway'] ?? 'afrstar'))) : '' ?><?= $w['platform_osn'] ? ' ' . h((string) $w['platform_osn']) : '' ?></span>
             </span>
             <?php if (!empty($w['provider_message'])): ?><span class="text-xs text-warning"><?= h((string) $w['provider_message']) ?></span><?php endif; ?>
             <?php if (!empty($w['reject_reason'])): ?><span class="text-xs text-faint">Reason: <?= h((string) $w['reject_reason']) ?></span><?php endif; ?>
@@ -78,7 +80,7 @@ ob_start();
               <div class="review-actions">
                 <form method="post" action="withdrawals.php">
                   <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="back" value="<?= h($query([])) ?>"><input type="hidden" name="withdrawal_id" value="<?= (int) $w['id'] ?>">
-                  <button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve"<?= $configured ? '' : ' disabled' ?> data-confirm="Send <?= h(yolotask_money((int) $w['amount_kobo'] - (int) $w['fee_kobo'])) ?> to <?= h((string) $w['account_name']) ?> through AfrStar?">Approve and pay</button>
+                  <button class="btn btn-primary btn-sm btn-block" type="submit" name="action" value="approve"<?= $configured ? '' : ' disabled' ?> data-confirm="Send <?= h(yolotask_money((int) $w['amount_kobo'] - (int) $w['fee_kobo'])) ?> to <?= h((string) $w['account_name']) ?> through <?= h($payoutLabel) ?>?">Approve and pay</button>
                 </form>
                 <form method="post" action="withdrawals.php" class="inline-form">
                   <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="back" value="<?= h($query([])) ?>"><input type="hidden" name="withdrawal_id" value="<?= (int) $w['id'] ?>">
