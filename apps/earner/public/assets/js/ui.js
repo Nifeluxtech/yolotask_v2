@@ -261,7 +261,11 @@
         busy = false;
       };
 
-      fetch(form.action || window.location.href, {
+      // form.action is shadowed when a button or input inside the form is named "action" (it returns
+      // that element, which became the path "[object HTMLButtonElement]" and a 404), so read the attribute.
+      var target = form.getAttribute('action');
+      target = target ? new URL(target, window.location.href).href : window.location.href;
+      fetch(target, {
         method: 'POST',
         body: body,
         credentials: 'same-origin',
