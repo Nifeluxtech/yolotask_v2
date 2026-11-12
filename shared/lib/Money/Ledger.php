@@ -19,6 +19,8 @@ use YoloTask\Core\Logger;
 final class Ledger
 {
     public const CLEARING = 'system:afrstar_clearing';
+    /** Migration 0021: money held at Korapay (debit-normal), the Korapay twin of CLEARING. */
+    public const KORAPAY_CLEARING = 'system:korapay_clearing';
     public const ADJUSTMENTS = 'system:adjustments';
     public const REVENUE = 'system:revenue';
     public const REWARD_HOLD = 'system:reward_hold';
