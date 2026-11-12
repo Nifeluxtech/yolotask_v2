@@ -164,6 +164,7 @@ final class Withdrawals
             $codeStmt->execute(['id' => $withdrawalId]);
             $bankRow = $codeStmt->fetch() ?: ['bank_code' => '', 'bank_name' => ''];
             $korapayBank = KorapayClient::bankCode((string) $bankRow['bank_code']);
+            if ($korapayBank === null && KorapayClient::$banksError !== '') throw new RuntimeException(KorapayClient::$banksError . ' Nothing was sent.');
             if ($korapayBank === null) throw new RuntimeException('Korapay does not list ' . $bankRow['bank_name'] . '. Add it to korapay.bank_code_map in payments.local.php, or switch payouts to AfrStar. Nothing was sent.');
         }
         $pdo->beginTransaction();

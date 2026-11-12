@@ -40,6 +40,13 @@ final class KorapayClient
                 $cfg['secret_key'] = trim((string) file_get_contents($file));
             }
         }
+        if (trim((string) ($cfg['public_key'] ?? '')) === '') {
+            $dir = (string) ($all['_config_dir'] ?? '');
+            $file = $dir !== '' ? $dir . '/korapay.pub' : '';
+            if ($file !== '' && is_file($file) && is_readable($file)) {
+                $cfg['public_key'] = trim((string) file_get_contents($file));
+            }
+        }
         $channels = is_array($cfg['channels'] ?? null) ? array_values(array_filter(array_map('strval', $cfg['channels']))) : ['bank_transfer', 'card'];
         return [
             'secret_key' => trim((string) ($cfg['secret_key'] ?? '')),
@@ -237,9 +244,13 @@ final class KorapayClient
         return $best;
     }
 
+    /** Why the last banks() call returned no list ('' when it did not fail). */
+    public static string $banksError = '';
+
     /** @return list<array{name:string,code:string}> */
     public static function banks(): array
     {
+        self::$banksError = '';
         $c = self::config();
         $dir = class_exists(Storage::class) ? Storage::dir('cache') : null;
         $file = $dir !== null ? $dir . '/korapay-banks-' . substr(md5($c['base_url']), 0, 8) . '.json' : null;
@@ -255,6 +266,9 @@ final class KorapayClient
             }
         } catch (KorapayException $e) {
             Logger::error('korapay.banks_failed', ['message' => $e->getMessage()]);
+            self::$banksError = $c['public_key'] === ''
+                ? 'Korapay\'s bank list needs your Korapay public key. Save it as korapay.pub in the private config folder.'
+                : 'Korapay\'s bank list could not be loaded (' . $e->getMessage() . ').';
         }
         if ($list !== [] && $file !== null) @file_put_contents($file, json_encode($list), LOCK_EX);
         return $list;
