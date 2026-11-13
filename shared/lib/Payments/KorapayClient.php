@@ -226,22 +226,36 @@ final class KorapayClient
      * codes). bank_code_map in config wins; otherwise Korapay's own Nigerian
      * bank list (cached 24 h) is matched by bank name. Null when unknown.
      */
-    public static function bankCode(string $afrstarBankCode): ?string
+    public static function bankCode(string $afrstarBankCode, string $fallbackName = ''): ?string
     {
         $map = self::config()['bank_code_map'];
         if (isset($map[$afrstarBankCode]) && $map[$afrstarBankCode] !== '') return $map[$afrstarBankCode];
-        $name = BankCodes::name($afrstarBankCode);
-        if ($name === null) return null;
-        $want = self::normalize($name);
-        if ($want === '') return null;
-        $best = null;
-        foreach (self::banks() as $b) {
-            $have = self::normalize($b['name']);
-            if ($have === '' || $b['code'] === '') continue;
-            if ($have === $want) return $b['code'];
-            if ($best === null && strlen($want) >= 4 && strlen($have) >= 4 && (str_contains($have, $want) || str_contains($want, $have))) $best = $b['code'];
+        // Names to try, best first: our list's name for the code, then the name saved on the
+        // withdrawal (older rows can carry a code our list lacks), each with its "(short name)" first.
+        $names = [];
+        foreach ([(string) BankCodes::name($afrstarBankCode), $fallbackName] as $n) {
+            $n = trim($n);
+            if ($n === '') continue;
+            if (preg_match('/\(([^)]+)\)\s*$/', $n, $m)) $names[] = $m[1];
+            $names[] = $n;
         }
-        return $best;
+        $wants = [];
+        foreach ($names as $n) { $w = self::normalize($n); if ($w !== '' && !in_array($w, $wants, true)) $wants[] = $w; }
+        if ($wants === []) return null;
+        $banks = self::banks();
+        foreach ($wants as $want) {
+            foreach ($banks as $b) {
+                if ($b['code'] !== '' && self::normalize($b['name']) === $want) return $b['code'];
+            }
+        }
+        foreach ($wants as $want) {
+            foreach ($banks as $b) {
+                $have = self::normalize($b['name']);
+                if ($have === '' || $b['code'] === '') continue;
+                if (strlen($want) >= 4 && strlen($have) >= 4 && (str_contains($have, $want) || str_contains($want, $have))) return $b['code'];
+            }
+        }
+        return null;
     }
 
     /** Why the last banks() call returned no list ('' when it did not fail). */
