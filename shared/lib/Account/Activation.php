@@ -82,6 +82,17 @@ final class Activation
     }
 
     /**
+     * May this earner withdraw? Same rule as canWork: while activation is
+     * required, an earner who has not activated cannot request a withdrawal
+     * (their balance stays in the wallet until they activate). Requests made
+     * before this lock are untouched.
+     */
+    public static function canWithdraw(PDO $pdo, int $userId): bool
+    {
+        return self::canWork($pdo, $userId);
+    }
+
+    /**
      * What the activation card needs, or null when it must not show (switch
      * off, or already activated): the fee, the tasks waiting for this earner
      * and their total reward, and the referral bonus for invited earners who
