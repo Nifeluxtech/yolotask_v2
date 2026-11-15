@@ -84,6 +84,7 @@ final class Withdrawals
     public static function preview(PDO $pdo, array $user, int $amountKobo): array
     {
         if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
+        if (!\YoloTask\Account\Activation::canWithdraw($pdo, (int) $user['id'])) throw new RuntimeException('Activate your account to unlock withdrawals.');
         self::checkAmount($pdo, $amountKobo);
         $wallet = Wallet::forUser($pdo, (int) $user['id']);
         if ($wallet['available_kobo'] < $amountKobo) throw new RuntimeException('Your available balance is ' . Money::format($wallet['available_kobo']) . '.');
@@ -101,6 +102,7 @@ final class Withdrawals
     {
         if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before withdrawing.');
+        if (!\YoloTask\Account\Activation::canWithdraw($pdo, (int) $user['id'])) throw new RuntimeException('Activate your account to unlock withdrawals.');
         if (!Gateway::payoutReady($pdo)) throw new RuntimeException('Payments are not available yet.');
         if (!preg_match('/^[a-f0-9]{32}$/', $idemKey)) throw new RuntimeException('Your form expired. Please try again.');
         $userId = (int) $user['id'];
