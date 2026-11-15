@@ -72,7 +72,8 @@ $limits = Withdrawals::limits($pdo);
 $configured = Gateway::payoutReady($pdo);
 $verified = !empty($user['email_verified_at']);
 $cooldown = BankAccounts::cooldownUntil($pdo, $bank);
-$canRequest = $configured && $verified && $bank !== null && $open === null && $cooldown === null && $wallet['available_kobo'] >= $limits['min'];
+$activationLocked = !\YoloTask\Account\Activation::canWithdraw($pdo, $userId);
+$canRequest = !$activationLocked && $configured && $verified && $bank !== null && $open === null && $cooldown === null && $wallet['available_kobo'] >= $limits['min'];
 $rate = Fees::withdrawalRateFor($pdo, $userId);
 $csrf = Csrf::token();
 $idem = is_string($_POST['idem'] ?? null) && preg_match('/^[a-f0-9]{32}$/', $_POST['idem']) ? $_POST['idem'] : bin2hex(random_bytes(16));
@@ -87,6 +88,15 @@ ob_start();
       <span class="verify-icon"><?= yolotask_nav_icon('bell') ?></span>
       <div><strong>Confirm your email first</strong><p class="text-sm text-faint">Withdrawals are unlocked once your email address is confirmed.</p></div>
       <a class="btn btn-primary btn-sm" href="verify.php">Confirm now</a>
+    </section>
+  <?php endif; ?>
+
+  <?php if ($activationLocked && $configured): ?>
+    <section class="card notice-card notice-warning" role="status" data-activation-locked>
+      <span class="verify-icon"><?= yolotask_nav_icon('shield') ?></span>
+      <div><strong>Activate your account to withdraw</strong>
+        <p class="text-sm text-faint">Withdrawals are locked until your account is activated with the one-time <?= h(yolotask_money(\YoloTask\Account\Activation::fee($pdo))) ?> fee. Your balance stays safe in your wallet.</p></div>
+      <a class="btn btn-primary btn-sm" href="activate.php">Activate</a>
     </section>
   <?php endif; ?>
 
