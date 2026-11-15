@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/autoload.php';
 
+// Site clock is Lagos time (WAT). The database keeps UTC (UTC_TIMESTAMP, gmdate,
+// strtotime(... ' UTC')), so this only changes PHP's own local-time output.
+date_default_timezone_set('Africa/Lagos');
+
 if (!defined('YOLOTASK_APP_ROOT')) {
     throw new RuntimeException('YOLOTASK_APP_ROOT must be defined by the app front controller.');
 }
