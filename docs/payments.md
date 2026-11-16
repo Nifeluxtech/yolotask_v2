@@ -196,3 +196,7 @@ each row used, and late confirmations still settle on that row's gateway.
 - **Cron** (`every-five-minutes.php`): `KorapayProcessor::sweep` checks Korapay
   pay-ins still waiting and payouts still processing, so a lost webhook never
   strands money.
+
+## Marketplace orders (migration 0022)
+
+Marketplace orders (`mkt_orders`, reference `YTM…`) are paid on the active pay-in gateway exactly like account activation and settle through `Marketplace\Orders::settle` (AfrStar collection callback, Korapay webhook / return page / sweep). See `marketplace.md`.
