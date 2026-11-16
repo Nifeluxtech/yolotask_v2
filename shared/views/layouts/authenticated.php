@@ -11,6 +11,7 @@ declare(strict_types=1);
  *   $contentHtml (trusted server HTML, echoed raw), $logoutCsrfToken,
  *   $flash (?string), $flashType ('success'|'error'|'warning'),
  *   Phase 6: $showBell, $unreadCount, $bellActive, $announcementBanners
+ *   Maintenance: $maintenanceOn (admin portal banner)
  * Uses global helper h(string): string for escaping.
  */
 
@@ -148,6 +149,12 @@ $flashIcon = [
 <?php endif; ?>
 
 <main id="main" class="container page">
+  <?php if (!empty($maintenanceOn)): ?>
+    <section class="announcement-banner maintenance-banner" role="alert" data-maintenance-banner>
+      <span class="announcement-icon" aria-hidden="true"><?= yolotask_nav_icon('shield') ?></span>
+      <div class="announcement-body"><strong>Maintenance mode is ON</strong><p>The main site and the earner, advertiser and reviewer portals are showing the maintenance page. <a href="maintenance.php">Manage maintenance</a></p></div>
+    </section>
+  <?php endif; ?>
   <?php foreach ((is_array($announcementBanners ?? null) ? $announcementBanners : []) as $ann): ?>
     <section class="announcement-banner" role="status" data-announcement="<?= (int) $ann['id'] ?>">
       <span class="announcement-icon" aria-hidden="true"><?= yolotask_nav_icon('megaphone') ?></span>
