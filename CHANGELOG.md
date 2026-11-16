@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Marketplace (migration 0022_marketplace.sql)
+
+- **Digital-product marketplace** (Selar-style). Full description: `docs/marketplace.md`.
+- **Dock**: earner and advertiser bottom docks show **Marketplace** instead of Sign out; Sign out stays in the header (now also visible on phones for those portals). Reviewer and admin docks unchanged.
+- **Sellers (advertisers)**: My Products (`my-products.php`, `product-edit.php`): title, cover image, description, **normal price + optional bonus price** (lower promo price; shown with the normal price struck through and charged), who bears the platform fee (buyer or seller), affiliate commission % (0 = off, max 90), resell rights on/off and price, delivery = file upload (private storage) or private link/text revealed after purchase. New products and content edits go to admin review; pause/resume.
+- **Coupons**: owners (sellers, and resellers for their listings) create codes (auto or custom), percent or fixed naira, one product or all, optional expiry and max uses, on/off. Validated server-side at checkout, applied to the charged price before fees; affiliate commission on the discounted price; recorded on the order; uses counted only on confirmed payment.
+- **Affiliates (earners)**: Marketplace tab lists live products with price and "You earn ₦X per sale"; one tap gives a personal link `https://yolotask.com.ng/p.php?id=<product>&ref=<code>` (30-day cookie + session). My Sales: clicks, sales, commission. Self-referral earns nothing.
+- **Resell rights**: earners or advertisers buy them at the seller's resell price and create their own listing (own price/bonus/coupons, optional own title/description/cover, same delivery content), reviewed by admins; the reseller keeps the proceeds minus the platform fee.
+- **Buyers**: public product page with coupon "Apply" and checkout (name, email, phone for AfrStar; no account), paid on the active pay-in gateway like account activation (reference `YTM…`; AfrStar callback, Korapay webhook / return page / five-minute sweep). On payment: thank-you page with the delivery (`order.php`, `download.php`) and an email to the buyer.
+- **Money**: platform fee `marketplace.fee_bps` (default 500 = 5 %) on the price actually charged. Ledger: Dr gateway clearing / Cr `system:marketplace_revenue` (fee) / Cr `system:marketplace_hold` (commission + seller share), key `mkt-sale:<order_sn>`; hourly cron releases each share after `marketplace.hold_hours` (default 72) to the wallet (key `mkt-release:<id>`). Included in `Ledger::reconcile`. Amount mismatches go to admin payment review; admins can confirm an order found paid in the gateway portal.
+- **Advertiser withdrawals**: advertisers can now add a bank account and withdraw **marketplace earnings only** (released marketplace earnings minus their earlier non-rejected/failed withdrawals, capped by the available balance); campaign deposits are never withdrawable. Base withdrawal fee, otherwise the existing earner flow (`Payments\Withdrawals::withdrawable / rateFor / quoteFor`).
+- **Admin → Tasks → Marketplace**: approve/reject products and resale listings, orders (payment review, confirm as paid), freeze/unfreeze sellers (products hidden, earnings held), fee % and hold hours.
+- New notification category `marketplace`; cron: `every-five-minutes.php` expires stale marketplace orders, `hourly.php` releases due earnings.
+- Test: `tests/smoke/marketplace.php` (php CLI only: lint + fee/commission split for customer- vs seller-borne fee, bonus price, coupons, self-referral, resale proceeds, resell rights). Also exercised end to end on MariaDB with a fake Korapay (checkout with coupon and affiliate cookie, return-page settlement, delivery email, file download, resell rights + listing, freeze, reconciliation clean).
+- Deploy: run `php scripts/migrate.php` (applies `0022_marketplace.sql`) before switching the release, since the Korapay sweep reads `mkt_orders`.
+
 ## Unreleased — activation fee wording
 
 - Earner activation card and Activate page now describe the fee as a one-time activation, system and security fee (account setup, verification and fraud checks, payout security, platform upkeep) and say it is non-refundable. Fee amount still comes from `activation.fee_kobo` (set to ₦1,000 on live).
