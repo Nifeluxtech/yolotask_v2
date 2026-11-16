@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — deploy fix: stale OPcache after release switch
+
+- `scripts/deploy/cpanel-release.sh` now gives every PHP file in a new release a fresh modified time. PHP OPcache caches scripts by their path under `current/` and only recompiles when the mtime changes, so unchanged front controllers (earner `login.php`, `register.php`, the main home page) kept running the previous release's code after a deploy. This is why maintenance mode only covered some pages after it shipped.
+
 ## Maintenance mode (no migration)
 
 - **Admin → Tasks → Maintenance** (`maintenance.php`, also on the admin dashboard): ON/OFF switch (**default OFF**), message (up to 255 characters; empty = "YOLOTASK is getting an upgrade. We'll be back shortly."), optional "back by" time in Lagos time (future, within 30 days). CSRF, flash, audited `admin.maintenance_enabled` / `admin.maintenance_disabled` / `admin.maintenance_updated` (plus `admin.settings_updated`). A warning banner shows on every admin page while ON.
