@@ -35,6 +35,7 @@ try {
     fwrite(STDOUT, "{$t} payments: Korapay status checks: {$k['checked']}, settled: {$k['settled']}, failed: {$k['failed']}\n");
     fwrite(STDOUT, "{$t} payments: stale top-up orders expired: " . \YoloTask\Payments\PaymentOrders::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stale activation payments expired: " . \YoloTask\Account\Activation::expireStale($pdo) . "\n");
+    fwrite(STDOUT, "{$t} payments: stale marketplace orders expired: " . \YoloTask\Marketplace\Orders::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stuck payouts flagged for review: " . \YoloTask\Payments\CallbackProcessor::flagStuckPayouts($pdo) . "\n");
     fwrite(STDOUT, "{$t} reviews: expired claims released: " . \YoloTask\Tasks\ReviewClaims::expire($pdo) . "\n");
     fwrite(STDOUT, "{$t} announcements: inbox items delivered: " . \YoloTask\Messaging\Announcements::deliverDue($pdo) . "\n");

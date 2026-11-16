@@ -23,6 +23,8 @@ try {
     fwrite(STDOUT, "{$t} referrals: catch-up paid {$sw['milestones']} milestone(s), {$sw['commissions']} commission(s), {$sw['activations']} activation bonus(es)\n");
     // Deposit cashback on deposits confirmed in the last 48 h that the immediate path missed (idempotent).
     fwrite(STDOUT, "{$t} cashback: catch-up paid " . \YoloTask\Growth\DepositCashback::sweep($pdo) . "\n");
+    // Marketplace (migration 0022): seller shares and affiliate commissions whose hold has passed reach wallets.
+    fwrite(STDOUT, "{$t} marketplace: earnings released: " . \YoloTask\Marketplace\Marketplace::releaseDue($pdo) . "\n");
     $problems = \YoloTask\Money\Ledger::reconcileCampaigns($pdo);
     if ($problems === []) {
         fwrite(STDOUT, "{$t} campaigns: escrow reconciliation OK\n");
