@@ -28,11 +28,8 @@ if [[ ! -d "$RELEASE" ]]; then
   mkdir -p "$RELEASE"
   tar -C "$REPO_ROOT" --exclude='./.git' --exclude='./storage' --exclude='./runtime' -cf - . | tar -C "$RELEASE" -xf -
 fi
-# PHP OPcache keys scripts by the path under the "current" symlink and only
-# recompiles when a file's mtime changes. tar keeps the clone's mtimes, so an
-# unchanged front controller (login.php) kept the previous release's compiled
-# __DIR__ and loaded the OLD shared/bootstrap.php after the switch. Fresh
-# mtimes on every release make each one recompile against its own files.
+# Fresh mtimes help hosts whose OPcache re-checks file times; hosts that do not
+# re-check are handled by the OPcache reset after the switch (below).
 find "$RELEASE" -type f -name '*.php' -exec touch {} + 2>/dev/null || true
 # A restrictive hosting umask can create this directory as 0700. The public
 # app document roots live below it, so make the release root traversable by
@@ -127,6 +124,27 @@ if [[ -e "$BASE/current" && ! -L "$BASE/current" ]]; then
 fi
 mv -Tf "$TEMP_LINK" "$BASE/current"
 echo "Published YOLOTASK V2 scaffold commit $COMMIT to $BASE/current"
+
+# Clear PHP OPcache so no portal keeps serving the previous release (the host
+# does not re-check file times). One-time token, removed straight after.
+# Hosts are configurable; failures are logged and never fail the deploy.
+OPCACHE_HOSTS="${YOLOTASK_OPCACHE_HOSTS-yolotask.com.ng earner.yolotask.com.ng advertiser.yolotask.com.ng reviewer.yolotask.com.ng admin.yolotask.com.ng}"
+OPCACHE_LOG="$BASE/runtime/logs/deploy-opcache.log"
+reset_opcache() {
+  command -v curl >/dev/null 2>&1 || { echo "[$(date -u +%FT%TZ)] $COMMIT opcache: curl not available; skipped" >> "$OPCACHE_LOG"; return 0; }
+  local token_file="$BASE/config-private/opcache-reset.token" token host out
+  token="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [[ ${#token} -ge 32 ]] || { echo "[$(date -u +%FT%TZ)] $COMMIT opcache: no token; skipped" >> "$OPCACHE_LOG"; return 0; }
+  ( umask 077; printf '%s' "$token" > "$token_file" )
+  for host in $OPCACHE_HOSTS; do
+    case "$host" in *[!A-Za-z0-9.-]*|"") continue;; esac
+    out="$(curl -s -m 15 -H "X-Yolotask-Reset-Token: $token" "https://$host/opcache-reset.php?r=$COMMIT" 2>&1 | head -c 200 | tr -d '\r\n')" || true
+    echo "[$(date -u +%FT%TZ)] $COMMIT opcache $host: ${out:-no answer}" | tee -a "$OPCACHE_LOG"
+  done
+  rm -f "$token_file"
+  return 0
+}
+reset_opcache || true
 echo "Database migrations are applied by scripts/migrate.php during each release."
 if [[ -L "${YOLOTASK_PUBLIC_HTML:-$HOME/public_html}" ]]; then
   live_target="$(readlink "${YOLOTASK_PUBLIC_HTML:-$HOME/public_html}")"
