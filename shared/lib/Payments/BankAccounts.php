@@ -42,7 +42,8 @@ final class BankAccounts
     public static function save(PDO $pdo, array $user, string $bankCode, string $accountNumber, string $accountName, string $password): void
     {
         $userId = (int) $user['id'];
-        if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts add payout bank accounts.');
+        // Advertisers add one too since migration 0022, to withdraw marketplace earnings.
+        if (!in_array((string) $user['role'], ['earner', 'advertiser'], true)) throw new RuntimeException('Only earner and advertiser accounts add payout bank accounts.');
         $bankCode = trim($bankCode);
         $accountNumber = preg_replace('/\D/', '', $accountNumber) ?? '';
         $accountName = trim((string) preg_replace('/\s+/', ' ', $accountName));

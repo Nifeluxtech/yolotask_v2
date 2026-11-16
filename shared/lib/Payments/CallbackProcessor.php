@@ -15,7 +15,8 @@ use YoloTask\Account\Activation;
  * steps (settleTopup / settleActivation / settlePayout) that AfrStar and
  * Korapay (KorapayProcessor) share.
  * Collection references: YTP… wallet top-ups (credited to the advertiser's
- * wallet) and YTA… account activation fees (platform revenue, migration 0019).
+ * wallet), YTA… account activation fees (platform revenue, migration 0019)
+ * and YTM… marketplace orders (Marketplace\Orders, migration 0022).
  *
  * Every callback is logged raw first. A result is acknowledged with HTTP 200
  * and the exact body SUCCESS only after it is persisted; anything we cannot
@@ -45,6 +46,8 @@ final class CallbackProcessor
         if ($orderSn === '' || $osn === '' || $status === '') return self::finish($pdo, $logId, 400, 'malformed', null);
         // Account activation fees (YTA…, migration 0019) are platform revenue, never a wallet credit.
         if (Activation::isActivationRef($orderSn)) return self::activation($pdo, $logId, $payload, $orderSn, $osn, $status, $config);
+        // Marketplace orders (YTM…, migration 0022): split between platform fee and held seller/affiliate earnings.
+        if (\YoloTask\Marketplace\Orders::isRef($orderSn)) return self::marketplace($pdo, $logId, $payload, $orderSn, $osn, $status, $config);
 
         $stmt = $pdo->prepare('SELECT id, user_id, amount_kobo, status, platform_osn FROM payment_orders WHERE order_sn = :sn');
         $stmt->execute(['sn' => $orderSn]);
@@ -166,6 +169,39 @@ final class CallbackProcessor
             $res = self::settleActivation($pdo, $logId, (int) $p['id'], $paid, $osn, $ref, mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), Gateway::AFRSTAR);
         } catch (\Throwable $e) {
             Logger::error('payments.activation_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
+            return self::finish($pdo, $logId, 500, 'error', true);
+        }
+        return self::finish($pdo, $logId, 200, $res['outcome'], true, $res['after']);
+    }
+
+    /**
+     * Collection callback for a marketplace order (YTM…, migration 0022).
+     * Same protocol as an activation; settlement is Marketplace\Orders::settle.
+     */
+    private static function marketplace(PDO $pdo, int $logId, array $payload, string $orderSn, string $osn, string $status, array $config): array
+    {
+        $o = \YoloTask\Marketplace\Orders::findBySn($pdo, $orderSn);
+        if ($o === null) {
+            if (CallbackVerifier::merchantMatches($payload, $config)) {
+                self::openReview($pdo, 'unmatched:collection:' . $orderSn . ':' . $osn, 'unmatched_callback', null, null, $logId, $orderSn, $osn, null,
+                    CallbackVerifier::amount($payload['amount_paid'] ?? ($payload['amount'] ?? null)), 'Marketplace callback for an order we do not have (signature cannot be checked).');
+            }
+            return self::finish($pdo, $logId, 404, 'unknown_order', null);
+        }
+        $orderAmount = (int) $o['amount_kobo'];
+        if (!CallbackVerifier::verifyCollection($payload, $config, $orderAmount)) return self::finish($pdo, $logId, 400, 'bad_signature', false);
+        if ($o['platform_osn'] !== null && !hash_equals((string) $o['platform_osn'], $osn)) return self::finish($pdo, $logId, 400, 'osn_mismatch', true);
+        if ($status !== '1') {
+            $pdo->prepare('UPDATE mkt_orders SET provider_message = :m WHERE id = :id')
+                ->execute(['m' => mb_substr('Status ' . $status . ': ' . (string) ($payload['message'] ?? ''), 0, 255), 'id' => (int) $o['id']]);
+            return self::finish($pdo, $logId, 200, 'ignored_status', true);
+        }
+        $paid = CallbackVerifier::amount($payload['amount_paid'] ?? null) ?? CallbackVerifier::amount($payload['amount'] ?? null);
+        $ref = mb_substr((string) (($payload['utr'] ?? '') ?: ($payload['session_id'] ?? '')), 0, 120) ?: null;
+        try {
+            $res = \YoloTask\Marketplace\Orders::settle($pdo, $logId, (int) $o['id'], $paid, $osn, $ref, mb_substr((string) ($payload['message'] ?? 'Paid'), 0, 255), Gateway::AFRSTAR);
+        } catch (\Throwable $e) {
+            Logger::error('payments.marketplace_callback_failed', ['callback_id' => $logId, 'exception' => get_class($e), 'message' => $e->getMessage()]);
             return self::finish($pdo, $logId, 500, 'error', true);
         }
         return self::finish($pdo, $logId, 200, $res['outcome'], true, $res['after']);

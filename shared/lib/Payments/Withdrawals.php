@@ -21,6 +21,14 @@ use YoloTask\Security\Crypto;
  * request time; the payout sends amount - fee and the paid posting moves the
  * fee to system:withdrawal_fees. Lock order everywhere: wallet
  * row first, then the withdrawal row.
+ *
+ * Advertisers (migration 0022, marketplace sellers) may also withdraw, but
+ * only their marketplace earnings: Marketplace::withdrawableEarnings =
+ * released marketplace earnings minus their withdrawals that were not
+ * rejected or failed, capped by the available balance (which also holds
+ * campaign deposits, never withdrawable). They pay the base fee rate (levels
+ * are an earner feature) and need no account activation. Everything else
+ * (bank account, cooldown, velocity, review, payout, callbacks) is shared.
  */
 final class Withdrawals
 {
@@ -77,18 +85,61 @@ final class Withdrawals
         if ($amountKobo > $limits['max']) throw new RuntimeException('The maximum withdrawal is ' . Money::format($limits['max']) . '.');
     }
 
+    /** Roles that can withdraw. */
+    public static function canRole(string $role): bool
+    {
+        return in_array($role, ['earner', 'advertiser'], true);
+    }
+
+    /**
+     * The fee rate for this user: earners get their level rate (Fees),
+     * advertisers the base rate.
+     */
+    public static function rateFor(PDO $pdo, array $user): array
+    {
+        if ((string) $user['role'] === 'earner') return Fees::withdrawalRateFor($pdo, (int) $user['id']);
+        $base = Fees::withdrawalBaseBps($pdo);
+        return ['bps' => $base, 'base_bps' => $base, 'level_id' => null, 'level_name' => null, 'from_level' => false];
+    }
+
+    public static function quoteFor(PDO $pdo, array $user, int $amountKobo): array
+    {
+        $rate = self::rateFor($pdo, $user);
+        $fee = Fees::withdrawal($amountKobo, $rate['bps']);
+        return ['amount' => $amountKobo, 'fee' => $fee, 'net' => $amountKobo - $fee] + $rate;
+    }
+
+    /** What this user can withdraw now: the available balance (earners) or marketplace earnings (advertisers). */
+    public static function withdrawable(PDO $pdo, array $user, ?int $availableKobo = null): int
+    {
+        $available = $availableKobo ?? Wallet::forUser($pdo, (int) $user['id'])['available_kobo'];
+        return (string) $user['role'] === 'advertiser' ? \YoloTask\Marketplace\Marketplace::withdrawableEarnings($pdo, (int) $user['id'], $available) : $available;
+    }
+
+    private static function assertCanWithdraw(PDO $pdo, array $user): void
+    {
+        if (!self::canRole((string) $user['role'])) throw new RuntimeException('Only earner and advertiser accounts can withdraw.');
+        if ((string) $user['role'] === 'earner' && !\YoloTask\Account\Activation::canWithdraw($pdo, (int) $user['id'])) throw new RuntimeException('Activate your account to unlock withdrawals.');
+    }
+
+    private static function balanceMessage(array $user, int $withdrawable): string
+    {
+        return (string) $user['role'] === 'advertiser'
+            ? 'You can withdraw up to ' . Money::format($withdrawable) . ' of marketplace earnings. Campaign deposits cannot be withdrawn.'
+            : 'Your available balance is ' . Money::format($withdrawable) . '.';
+    }
+
     /**
      * Server-computed preview shown before the earner confirms: gross amount,
      * fee at their current rate (rounded down), net they will receive.
      */
     public static function preview(PDO $pdo, array $user, int $amountKobo): array
     {
-        if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
-        if (!\YoloTask\Account\Activation::canWithdraw($pdo, (int) $user['id'])) throw new RuntimeException('Activate your account to unlock withdrawals.');
+        self::assertCanWithdraw($pdo, $user);
         self::checkAmount($pdo, $amountKobo);
-        $wallet = Wallet::forUser($pdo, (int) $user['id']);
-        if ($wallet['available_kobo'] < $amountKobo) throw new RuntimeException('Your available balance is ' . Money::format($wallet['available_kobo']) . '.');
-        return Fees::withdrawalQuote($pdo, (int) $user['id'], $amountKobo);
+        $max = self::withdrawable($pdo, $user);
+        if ($max < $amountKobo) throw new RuntimeException(self::balanceMessage($user, $max));
+        return self::quoteFor($pdo, $user, $amountKobo);
     }
 
     /**
@@ -100,9 +151,8 @@ final class Withdrawals
      */
     public static function request(PDO $pdo, array $user, int $amountKobo, string $idemKey, ?int $quotedFeeKobo = null): int
     {
-        if ((string) $user['role'] !== 'earner') throw new RuntimeException('Only earner accounts can withdraw.');
+        self::assertCanWithdraw($pdo, $user);
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before withdrawing.');
-        if (!\YoloTask\Account\Activation::canWithdraw($pdo, (int) $user['id'])) throw new RuntimeException('Activate your account to unlock withdrawals.');
         if (!Gateway::payoutReady($pdo)) throw new RuntimeException('Payments are not available yet.');
         if (!preg_match('/^[a-f0-9]{32}$/', $idemKey)) throw new RuntimeException('Your form expired. Please try again.');
         $userId = (int) $user['id'];
@@ -125,14 +175,15 @@ final class Withdrawals
             $open->execute(['u' => $userId]);
             if ((int) $open->fetchColumn() > 0) throw new RuntimeException('You already have a withdrawal in progress. Wait for it to finish before requesting another.');
             if ($wallet['status'] !== 'active') throw new RuntimeException('Your wallet is on hold. Contact support.');
-            if ($wallet['available_kobo'] < $amountKobo) throw new RuntimeException('Your available balance is ' . Money::format($wallet['available_kobo']) . '.');
+            $max = self::withdrawable($pdo, $user, $wallet['available_kobo']);
+            if ($max < $amountKobo) throw new RuntimeException(self::balanceMessage($user, $max));
             $velocity = self::velocity($pdo, $userId);
             if ($velocity['count'] >= $limits['daily_count']) throw new RuntimeException('You can make ' . $limits['daily_count'] . ' withdrawal' . ($limits['daily_count'] === 1 ? '' : 's') . ' in 24 hours. Please try again later.');
             if ($velocity['amount'] + $amountKobo > $limits['daily_max']) {
                 throw new RuntimeException('Withdrawals are limited to ' . Money::format($limits['daily_max']) . ' in 24 hours. You can withdraw up to ' . Money::format(max(0, $limits['daily_max'] - $velocity['amount'])) . ' now.');
             }
             // Fee at the rate in force now (base or the earner's level), rounded down; locked onto the row.
-            $quote = Fees::withdrawalQuote($pdo, $userId, $amountKobo);
+            $quote = self::quoteFor($pdo, $user, $amountKobo);
             if ($quotedFeeKobo !== null && $quotedFeeKobo !== $quote['fee']) throw new WithdrawalFeeChanged($quote);
             if ($quote['net'] <= 0) throw new RuntimeException('This amount is too small to withdraw after the fee.');
 

@@ -62,14 +62,15 @@ final class KorapayProcessor
     }
 
     /**
-     * Verify a pay-in reference with Korapay and settle it (top-up YTP… or
-     * activation YTA…). Throws KorapayException when Korapay cannot be asked.
+     * Verify a pay-in reference with Korapay and settle it (top-up YTP…,
+     * activation YTA… or marketplace order YTM…). Throws KorapayException when Korapay cannot be asked.
      * @return array{outcome:string,after:list<callable>}
      */
     public static function reconcileCharge(PDO $pdo, string $reference, ?int $logId = null): array
     {
         $isActivation = Activation::isActivationRef($reference);
-        $row = $isActivation ? Activation::findBySn($pdo, $reference) : self::order($pdo, $reference);
+        $isMarket = \YoloTask\Marketplace\Orders::isRef($reference);
+        $row = $isActivation ? Activation::findBySn($pdo, $reference) : ($isMarket ? \YoloTask\Marketplace\Orders::findBySn($pdo, $reference) : self::order($pdo, $reference));
         if ($row === null) {
             CallbackProcessor::openReview($pdo, 'unmatched:korapay:' . $reference, 'unmatched_callback', null, null, $logId, $reference, null, null, null,
                 'Korapay charge webhook for a reference we do not have.');
@@ -79,7 +80,7 @@ final class KorapayProcessor
         if (in_array((string) $row['status'], ['paid', 'review', 'rejected'], true)) return ['outcome' => 'duplicate', 'after' => []];
 
         $v = KorapayClient::verifyCharge($reference);
-        $table = $isActivation ? 'activation_payments' : 'payment_orders';
+        $table = $isActivation ? 'activation_payments' : ($isMarket ? 'mkt_orders' : 'payment_orders');
         if ($v['status'] !== 'success') {
             if ($v['status'] !== '' && $v['status'] !== 'processing' && $v['status'] !== 'pending') {
                 $pdo->prepare("UPDATE {$table} SET provider_message = :m WHERE id = :id AND status IN ('created', 'pending', 'expired')")
@@ -94,6 +95,7 @@ final class KorapayProcessor
         }
         $ref = $v['payment_reference'] !== '' ? $v['payment_reference'] : null;
         $msg = $v['message'] !== '' ? $v['message'] : 'Paid via Korapay';
+        if ($isMarket) return \YoloTask\Marketplace\Orders::settle($pdo, $logId, (int) $row['id'], $paid, null, $ref, $msg, Gateway::KORAPAY);
         return $isActivation
             ? CallbackProcessor::settleActivation($pdo, $logId, (int) $row['id'], $paid, null, $ref, $msg, Gateway::KORAPAY)
             : CallbackProcessor::settleTopup($pdo, $logId, (int) $row['id'], $paid, null, $ref, $msg, Gateway::KORAPAY);
@@ -159,7 +161,7 @@ final class KorapayProcessor
         if (!KorapayClient::isConfigured()) return $out;
         $hours = max(1, \YoloTask\Core\Settings::int($pdo, 'money.payin_expiry_hours')) + 24;
         $refs = [];
-        foreach (['payment_orders', 'activation_payments'] as $table) {
+        foreach (['payment_orders', 'activation_payments', 'mkt_orders'] as $table) {
             $stmt = $pdo->prepare("SELECT order_sn FROM {$table} WHERE gateway = 'korapay' AND status IN ('pending', 'expired')
                 AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE) AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL :h HOUR) ORDER BY id DESC LIMIT " . max(1, $limit));
             $stmt->bindValue('h', $hours, PDO::PARAM_INT);
