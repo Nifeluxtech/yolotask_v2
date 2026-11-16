@@ -24,6 +24,15 @@ try {
     $isEarner = $role === 'earner';
     $recent = $isEarner ? Withdrawals::forUser($pdo, $userId, 5) : PaymentOrders::recentForUser($pdo, $userId, 5);
     $bank = $isEarner ? BankAccounts::get($pdo, $userId) : null;
+    // Migration 0022: advertisers withdraw marketplace earnings only.
+    $market = null;
+    if (!$isEarner) {
+        $released = \YoloTask\Marketplace\Marketplace::releasedTotal($pdo, $userId);
+        $sum = \YoloTask\Marketplace\Marketplace::earningsSummary($pdo, $userId);
+        $market = ['released' => $released, 'held' => $sum['seller']['held'] + $sum['affiliate']['held'],
+            'withdrawable' => Withdrawals::withdrawable($pdo, $user, $wallet['available_kobo']), 'open' => Withdrawals::openForUser($pdo, $userId)];
+        if ($released > 0 || $market['held'] > 0) $bank = BankAccounts::get($pdo, $userId);
+    }
 } catch (Throwable $e) {
     Logger::error('wallet.load_failed', ['exception' => get_class($e)]);
     yolotask_error_page(500);
@@ -50,6 +59,20 @@ ob_start();
       <?php endif; ?>
     </div>
   </section>
+
+  <?php if ($market !== null && ($market['released'] > 0 || $market['held'] > 0)): ?>
+    <section class="card" aria-labelledby="mkt-wd-title" data-marketplace-earnings>
+      <div class="card-header"><h2 id="mkt-wd-title">Marketplace earnings</h2><span class="badge badge-success">Withdrawable <?= h(yolotask_money($market['withdrawable'])) ?></span></div>
+      <p class="text-sm">Sales earnings reach your wallet after the holding period. You can withdraw them to your bank; campaign deposits stay for campaigns.</p>
+      <div class="wallet-sub"><span>On hold <strong><?= h(yolotask_money($market['held'])) ?></strong></span><span>Earned so far <strong><?= h(yolotask_money($market['released'])) ?></strong></span></div>
+      <?php if ($market['open'] !== null): ?><p class="text-sm text-faint">A withdrawal of <?= h(yolotask_money($market['open']['amount_kobo'])) ?> is in progress <?= yolotask_money_badge((string) $market['open']['status']) ?></p><?php endif; ?>
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-sm" href="withdraw.php">Withdraw earnings</a>
+        <a class="btn btn-secondary btn-sm" href="bank-account.php"><?= $bank ? 'Bank account' : 'Add bank account' ?></a>
+        <a class="btn btn-ghost btn-sm" href="my-sales.php">My Sales</a>
+      </div>
+    </section>
+  <?php endif; ?>
 
   <section class="card" aria-labelledby="recent-title">
     <div class="card-header"><h2 id="recent-title"><?= $isEarner ? 'Withdrawals' : 'Top-ups' ?></h2><span class="badge badge-info">Latest 5</span></div>

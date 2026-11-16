@@ -9,7 +9,7 @@ use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/money-helpers.php';
 
-if (yolotask_role() !== 'earner') yolotask_error_page(404);
+if (!in_array(yolotask_role(), ['earner', 'advertiser'], true)) yolotask_error_page(404); // advertisers: marketplace earnings (0022)
 yolotask_private_headers();
 try {
     $pdo = Database::connection();

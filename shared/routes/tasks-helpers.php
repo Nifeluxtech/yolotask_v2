@@ -88,11 +88,13 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
     $stale = 0;
     $appeals = 0;
     $platform = 0;
+    $market = 0;
     try {
         $queue = (int) $pdo->query("SELECT COUNT(*) FROM campaigns WHERE status = 'pending_approval'")->fetchColumn();
         $platform = (int) $pdo->query("SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id WHERE c.is_platform = 1 AND s.status = 'pending'")->fetchColumn();
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
         $appeals = \YoloTask\Tasks\Appeals::openCount($pdo);
+        $market = \YoloTask\Marketplace\Products::pendingCount($pdo) + (int) $pdo->query("SELECT COUNT(*) FROM mkt_orders WHERE status = 'review'")->fetchColumn();
     } catch (Throwable) {
     }
     $tabs = [
@@ -101,6 +103,7 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
         'appeals' => ['Appeals', 'appeals.php', $appeals],
         'platform' => ['YOLOTASK tasks', 'platform-tasks.php', $platform],
         'activation' => ['Account activation', 'activation.php', 0],
+        'marketplace' => ['Marketplace', 'marketplace.php', $market],
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
         'levels' => ['Earner levels', 'levels.php', 0],

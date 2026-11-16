@@ -13,7 +13,8 @@ use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/money-helpers.php';
 
-if (yolotask_role() !== 'earner') yolotask_error_page(404);
+// Advertisers withdraw marketplace earnings only (migration 0022, see Withdrawals).
+if (!in_array(yolotask_role(), ['earner', 'advertiser'], true)) yolotask_error_page(404);
 yolotask_private_headers();
 try {
     $pdo = Database::connection();
@@ -72,9 +73,11 @@ $limits = Withdrawals::limits($pdo);
 $configured = Gateway::payoutReady($pdo);
 $verified = !empty($user['email_verified_at']);
 $cooldown = BankAccounts::cooldownUntil($pdo, $bank);
-$activationLocked = !\YoloTask\Account\Activation::canWithdraw($pdo, $userId);
-$canRequest = !$activationLocked && $configured && $verified && $bank !== null && $open === null && $cooldown === null && $wallet['available_kobo'] >= $limits['min'];
-$rate = Fees::withdrawalRateFor($pdo, $userId);
+$isAdvertiser = (string) $user['role'] === 'advertiser';
+$activationLocked = !$isAdvertiser && !\YoloTask\Account\Activation::canWithdraw($pdo, $userId);
+$withdrawable = Withdrawals::withdrawable($pdo, $user, $wallet['available_kobo']);
+$canRequest = !$activationLocked && $configured && $verified && $bank !== null && $open === null && $cooldown === null && $withdrawable >= $limits['min'];
+$rate = Withdrawals::rateFor($pdo, $user);
 $csrf = Csrf::token();
 $idem = is_string($_POST['idem'] ?? null) && preg_match('/^[a-f0-9]{32}$/', $_POST['idem']) ? $_POST['idem'] : bin2hex(random_bytes(16));
 $feeLabel = $rate['bps'] > 0 ? Fees::percent($rate['bps']) . ' withdrawal fee' . ($rate['from_level'] ? ' (' . $rate['level_name'] . ' level rate; standard ' . Fees::percent($rate['base_bps']) . ')' : '') : 'No withdrawal fee';
@@ -118,7 +121,8 @@ ob_start();
   <?php endif; ?>
 
   <section class="card" aria-labelledby="wd-title">
-    <div class="card-header"><h2 id="wd-title">Withdraw to your bank</h2><span class="badge badge-info">Available <?= h(yolotask_money($wallet['available_kobo'])) ?></span></div>
+    <div class="card-header"><h2 id="wd-title">Withdraw to your bank</h2><span class="badge badge-info"><?= $isAdvertiser ? 'Withdrawable' : 'Available' ?> <?= h(yolotask_money($withdrawable)) ?></span></div>
+    <?php if ($isAdvertiser): ?><p class="text-sm text-faint" data-marketplace-withdraw>Advertisers can withdraw marketplace sales earnings only. Money you deposited for campaigns stays in your wallet for campaigns.</p><?php endif; ?>
     <?php if ($bank === null): ?>
       <div class="empty-state"><p class="text-faint">Add the bank account you want to be paid into first.</p><a class="btn btn-primary" href="bank-account.php">Add bank account</a></div>
     <?php else: ?>
