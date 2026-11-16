@@ -28,6 +28,12 @@ if [[ ! -d "$RELEASE" ]]; then
   mkdir -p "$RELEASE"
   tar -C "$REPO_ROOT" --exclude='./.git' --exclude='./storage' --exclude='./runtime' -cf - . | tar -C "$RELEASE" -xf -
 fi
+# PHP OPcache keys scripts by the path under the "current" symlink and only
+# recompiles when a file's mtime changes. tar keeps the clone's mtimes, so an
+# unchanged front controller (login.php) kept the previous release's compiled
+# __DIR__ and loaded the OLD shared/bootstrap.php after the switch. Fresh
+# mtimes on every release make each one recompile against its own files.
+find "$RELEASE" -type f -name '*.php' -exec touch {} + 2>/dev/null || true
 # A restrictive hosting umask can create this directory as 0700. The public
 # app document roots live below it, so make the release root traversable by
 # the web server. Private configuration and runtime data remain outside it.
