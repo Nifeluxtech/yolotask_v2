@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) the withdrawal fee / daily check-in (migration 0014) and YOLOTASK tasks / account activation (migration 0019). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) the withdrawal fee / daily check-in (migration 0014) and YOLOTASK tasks / account activation (migration 0019), payment gateways (migration 0021) and maintenance mode (no migration). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -68,6 +68,10 @@ final class Settings
         // Payment gateways (rows seeded by migration 0021): 'afrstar' or 'korapay'.
         'payments.gateway_payin' => 'afrstar',   // new top-ups and activation fees
         'payments.gateway_payout' => 'afrstar',  // new withdrawal payouts
+        // Maintenance mode (no migration: rows are written by Admin → Maintenance; missing = OFF).
+        'maintenance.enabled' => '0',            // 1 = main site, earner, advertiser and reviewer portals show the 503 maintenance page; admin stays open
+        'maintenance.message' => '',             // shown on the maintenance page (max 255 characters); empty = Maintenance::DEFAULT_MESSAGE
+        'maintenance.until' => '',               // optional "back by" time, Africa/Lagos 'Y-m-d H:i'; empty = no time shown
     ];
 
     private static ?array $cache = null;
