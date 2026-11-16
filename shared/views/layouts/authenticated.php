@@ -12,6 +12,8 @@ declare(strict_types=1);
  *   $flash (?string), $flashType ('success'|'error'|'warning'),
  *   Phase 6: $showBell, $unreadCount, $bellActive, $announcementBanners
  *   Maintenance: $maintenanceOn (admin portal banner)
+ *   Marketplace (0022): $marketplaceDock (earner/advertiser: the dock shows a
+ *   Marketplace link instead of Sign out; Sign out stays in the header), $marketplaceActive
  * Uses global helper h(string): string for escaping.
  */
 
@@ -32,6 +34,8 @@ $navItems        = array_values(array_filter(
 $contentHtml     = is_string($contentHtml ?? null) ? $contentHtml : '';
 $logoutCsrf      = is_string($logoutCsrfToken ?? null) ? $logoutCsrfToken : '';
 $flash           = is_string($flash ?? null) && $flash !== '' ? $flash : null;
+$marketplaceDock = !empty($marketplaceDock);
+$marketplaceActive = !empty($marketplaceActive);
 $flashType       = in_array($flashType ?? null, ['success', 'error', 'warning'], true) ? $flashType : 'success';
 
 $flashIcon = [
@@ -104,6 +108,7 @@ $flashIcon = [
       <?php foreach ($navItems as $item): ?>
         <a href="<?= h($item['url']) ?>"<?= !empty($item['active']) ? ' class="active" aria-current="page"' : '' ?>><?= h($item['label']) ?></a>
       <?php endforeach; ?>
+      <?php if ($marketplaceDock): ?><a href="marketplace.php"<?= $marketplaceActive ? ' class="active" aria-current="page"' : '' ?>>Marketplace</a><?php endif; ?>
     </nav>
 
     <div class="header-actions">
@@ -124,7 +129,7 @@ $flashIcon = [
         <span><?= h($userDisplayName) ?></span>
       </span>
 
-      <form method="post" action="logout.php" class="header-signout">
+      <form method="post" action="logout.php" class="header-signout<?= $marketplaceDock ? ' header-signout-keep' : '' ?>">
         <input type="hidden" name="_csrf" value="<?= h($logoutCsrf) ?>">
         <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
       </form>
@@ -185,10 +190,14 @@ $flashIcon = [
       <span><?= h($item['label']) ?></span>
     </a>
   <?php endforeach; ?>
+  <?php if ($marketplaceDock): ?>
+    <a href="marketplace.php" data-dock-marketplace<?= $marketplaceActive ? ' class="active" aria-current="page"' : '' ?>><?= yolotask_nav_icon('bag') ?><span>Marketplace</span></a>
+  <?php else: ?>
   <form method="post" action="logout.php" class="dock-form">
     <input type="hidden" name="_csrf" value="<?= h($logoutCsrf) ?>">
     <button type="submit" class="dock-logout"><?= yolotask_nav_icon('logout') ?><span>Sign out</span></button>
   </form>
+  <?php endif; ?>
 </nav>
 
 </body>
