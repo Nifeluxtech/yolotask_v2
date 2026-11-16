@@ -161,6 +161,8 @@ final class Wallet
             'deposit_cashback' => str_starts_with((string) ($e['description'] ?? ''), 'Deposit cashback ') ? (string) $e['description'] : 'Deposit cashback',
             'deposit_cashback_reversal' => 'Deposit cashback reversed',
             'checkin_reward' => 'Daily check-in reward',
+            // Migration 0022: description is "Marketplace sale: <title>" or "Affiliate commission: <title>".
+            'marketplace_release' => (string) ($e['description'] ?? 'Marketplace earnings'),
             default => 'Wallet update',
         };
     }

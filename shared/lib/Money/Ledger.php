@@ -34,6 +34,10 @@ final class Ledger
     public const ACTIVATION_REVENUE = 'system:activation_revenue';
     /** Migration 0018: YOLOTASK task rewards paid by the platform (debit-normal expense; equals approved YOLOTASK task rewards). */
     public const PLATFORM_TASK_PAYOUTS = 'system:platform_task_payouts';
+    /** Migration 0022: marketplace platform fees (credit-normal revenue; equals fees of paid marketplace orders). */
+    public const MARKETPLACE_REVENUE = 'system:marketplace_revenue';
+    /** Migration 0022: marketplace earnings on hold (credit-normal liability; equals held mkt_earnings). */
+    public const MARKETPLACE_HOLD = 'system:marketplace_hold';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -153,6 +157,7 @@ final class Ledger
         foreach (Fees::reconcileWithdrawals($pdo) as $p) $problems[] = $p; // withdrawal fees (0014)
         foreach (\YoloTask\Growth\Checkin::reconcile($pdo) as $p) $problems[] = $p; // daily check-in (0014)
         foreach (\YoloTask\Account\Activation::reconcile($pdo) as $p) $problems[] = $p; // account activation + YOLOTASK task payouts (0018)
+        foreach (\YoloTask\Marketplace\Marketplace::reconcile($pdo) as $p) $problems[] = $p; // marketplace (0022)
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;
