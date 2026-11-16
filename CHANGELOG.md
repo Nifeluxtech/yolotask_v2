@@ -2,6 +2,8 @@
 
 ## Unreleased — deploy fix: stale OPcache after release switch
 
+- Deploys now clear PHP OPcache on every portal right after the switch: `scripts/deploy/cpanel-release.sh` writes a one-time token to `config-private/opcache-reset.token`, calls `/opcache-reset.php` on yolotask.com.ng and the earner, advertiser, reviewer and admin hosts (`YOLOTASK_OPCACHE_HOSTS`), logs to `runtime/logs/deploy-opcache.log`, then deletes the token. Without the token the endpoint is a 404. The host does not re-check file times, so fresh mtimes alone did not help.
+
 - `scripts/deploy/cpanel-release.sh` now gives every PHP file in a new release a fresh modified time. PHP OPcache caches scripts by their path under `current/` and only recompiles when the mtime changes, so unchanged front controllers (earner `login.php`, `register.php`, the main home page) kept running the previous release's code after a deploy. This is why maintenance mode only covered some pages after it shipped.
 
 ## Maintenance mode (no migration)
