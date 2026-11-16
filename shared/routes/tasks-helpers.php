@@ -104,6 +104,7 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
         'levels' => ['Earner levels', 'levels.php', 0],
+        'maintenance' => ['Maintenance', 'maintenance.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Marketplace sections">';
     foreach ($tabs as $key => [$label, $url, $count]) {
