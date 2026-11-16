@@ -457,6 +457,9 @@ a.task-link { color: var(--primary); text-decoration: underline; text-underline-
 .bell-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: linear-gradient(135deg, #FF4D6D, #F97316); color: #fff; font-size: 10px; font-weight: 800; line-height: 18px; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, .35); }
 .announcement-banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; margin-bottom: 1rem; border-radius: 16px; border: 1px solid rgba(0, 212, 255, .35); background: linear-gradient(90deg, rgba(0, 212, 255, .12), rgba(124, 58, 237, .10)), var(--surface); }
 .announcement-banner[hidden] { display: none; }
+.maintenance-banner { border-color: var(--warning); background: linear-gradient(90deg, var(--warning-soft), transparent), var(--surface); }
+.maintenance-banner .announcement-icon { color: var(--warning); }
+.maintenance-banner a { color: var(--warning); font-weight: 600; text-decoration: underline; }
 .announcement-icon { flex: none; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--grad-brand); color: #fff; }
 .announcement-icon svg { width: 18px; height: 18px; }
 .announcement-body { flex: 1; min-width: 0; }
