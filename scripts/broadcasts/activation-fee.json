@@ -1,0 +1,15 @@
+{
+  "subject": "Activate your YOLOTASK account to keep earning",
+  "heading": "Activate your YOLOTASK account",
+  "lines": [
+    "To keep YOLOTASK safe and running smoothly for everyone, every earner account now needs a one-time activation before taking on tasks.",
+    "The one-time activation, system and security fee is ₦1,000. It covers setting up your earner account, account verification and fraud checks, payout security and the upkeep of the platform.",
+    "You pay it once, and your account stays activated. Every task in your feed opens as soon as your payment is confirmed, and each task is paid to your wallet as soon as it is approved.",
+    "The fee is non-refundable and is not added to your wallet."
+  ],
+  "button": {"label": "Activate my account", "url": "https://earner.yolotask.com.ng/activate.php"},
+  "announcement": {
+    "title": "Activate your account to keep earning",
+    "body": "A one-time ₦1,000 activation, system and security fee opens every task in your feed."
+  }
+}
