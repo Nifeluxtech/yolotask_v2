@@ -130,6 +130,7 @@ function yolotask_nav_icon(string $id): string
         'refund'    => '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v10M9.5 9.5c0-1 1.1-1.5 2.5-1.5s2.5.6 2.5 1.7c0 2.6-5 1.4-5 4 0 1.1 1.1 1.8 2.5 1.8s2.5-.5 2.5-1.5"/>',
         'login'     => '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>',
         'logout'    => '<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3M16 17l5-5-5-5M21 12H9"/>',
+        'bag'       => '<path d="M5 8h14l-1.2 12.1a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9zM9 8V6a3 3 0 0 1 6 0v2"/>',
         'rocket'    => '<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2M14 4c3.5-1 6-.5 6-.5s.5 2.5-.5 6L13 16l-5-5zM9 11H5l3-4h4M13 15v4l4-3v-4"/>',
     ];
 
@@ -243,6 +244,9 @@ function yolotask_render_app(array $user, string $pageTitle, string $contentHtml
     $bellActive = $activeNav === 'notifications';
     // Admin portal: a banner on every page while maintenance mode is ON.
     $maintenanceOn = yolotask_role() === 'admin' && \YoloTask\Core\Maintenance::enabled();
+    // Marketplace (migration 0022): earner and advertiser docks link to the marketplace; Sign out stays in the header.
+    $marketplaceDock = in_array(yolotask_role(), ['earner', 'advertiser'], true);
+    $marketplaceActive = $activeNav === 'marketplace';
     require YOLOTASK_APP_ROOT . '/shared/views/layouts/authenticated.php';
     exit;
 }
