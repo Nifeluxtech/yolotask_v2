@@ -1,5 +1,15 @@
 # Changelog
 
+## Maintenance mode (no migration)
+
+- **Admin → Tasks → Maintenance** (`maintenance.php`, also on the admin dashboard): ON/OFF switch (**default OFF**), message (up to 255 characters; empty = "YOLOTASK is getting an upgrade. We'll be back shortly."), optional "back by" time in Lagos time (future, within 30 days). CSRF, flash, audited `admin.maintenance_enabled` / `admin.maintenance_disabled` / `admin.maintenance_updated` (plus `admin.settings_updated`). A warning banner shows on every admin page while ON.
+- **Gate** `Core\Maintenance::gate()` in `shared/bootstrap.php`, before the session starts: while ON, every request to the main site and the earner, advertiser and reviewer portals (all pages, sign-in, registration, POST actions) gets the maintenance page (`shared/views/errors/maintenance.php`: brand, message, "We expect to be back by …", dark/light theme, no links into the site) with HTTP 503, `Retry-After` (seconds to the "back by" time, else 600) and no-cache headers; fetch/XHR/JSON requests get a 503 JSON body. No session cookie is set.
+- **Exempt:** the whole admin portal, payment callbacks (`hooks/`, role `hook` / `YOLOTASK_NO_SESSION`), cron and CLI, front controllers that define `YOLOTASK_MAINTENANCE_EXEMPT` (for a health check), static files (served by Apache).
+- **Fails open:** if settings cannot be read (database down) the site stays up and `maintenance.lookup_failed` is logged.
+- Settings `maintenance.enabled`, `maintenance.message`, `maintenance.until` (`Y-m-d H:i`, Africa/Lagos) added to `Settings::DEFAULTS`; no migration (rows are written on first save; `scripts/set-setting.php` works for them too). See `docs/cron-and-operations.md`.
+- `shared/assets/js/yolotask.js` now carries the live-form `action` fix that was only in the built `ui.js` files, so `scripts/build-assets.sh` no longer reverts it (the built files are unchanged).
+- Test: `tests/smoke/maintenance-mode.php` (php CLI only: unit checks, then the gate through PHP's built-in server with a stub settings source, incl. fail-open and exemptions).
+
 ## Korapay gateway with an admin switch (migration 0021)
 
 - **Korapay** added beside AfrStar for top-ups, account activation fees and withdrawals (`Payments\KorapayClient`, `Payments\KorapayProcessor`). Pay-ins use Korapay Checkout Redirect (bank transfer + card); payouts use Korapay disburse.
