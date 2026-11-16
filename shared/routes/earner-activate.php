@@ -135,10 +135,11 @@ ob_start();
     <section class="card activation-offer" aria-labelledby="unlock-title" data-activation-offer>
       <div class="card-header"><h2 id="unlock-title">Activate your account</h2><span class="badge badge-info">One-time <?= h(yolotask_money($fee)) ?></span></div>
       <p>Activate your account with <?= h(yolotask_money($fee)) ?> to access tasks.</p>
+      <p class="text-sm">This one-time activation, system and security fee covers setting up your earner account, account verification and fraud checks, payout security and the upkeep of the YOLOTASK platform.</p>
       <ul class="activation-points text-sm">
         <li>Pay once. Every task in your feed opens as soon as the payment is confirmed, and your account stays activated.</li>
         <li>Each task is paid to your wallet as soon as it is approved.</li>
-        <li>The fee is not added to your wallet and cannot be withdrawn.</li>
+        <li>The fee is non-refundable, is not added to your wallet and cannot be withdrawn.</li>
       </ul>
       <p class="text-sm text-faint">You will pay <?= h(yolotask_money($fee)) ?> on <?= h($gatewayLabel) ?>'s secure page<?= $payinGateway === Gateway::KORAPAY ? ' by bank transfer or card' : ' by bank transfer' ?>. Your account is activated automatically as soon as <?= h($gatewayLabel) ?> confirms the payment.</p>
       <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Payments from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>

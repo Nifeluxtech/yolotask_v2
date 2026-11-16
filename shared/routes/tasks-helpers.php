@@ -55,7 +55,7 @@ function yolotask_activation_card(array $offer): string
     return '<section class="card activation-card" aria-labelledby="activation-card-title" data-activation-card>'
         . '<span class="stat-icon">' . yolotask_nav_icon('sparkle') . '</span>'
         . '<div class="activation-text"><h3 id="activation-card-title">Activate your account with ' . h($fee) . ' to access tasks.</h3>'
-        . '<p class="text-sm text-faint">Pay once by bank transfer. Every task in your feed opens as soon as the payment is confirmed.</p></div>'
+        . '<p class="text-sm text-faint">One-time activation, system and security fee. Pay once by bank transfer. Every task in your feed opens as soon as the payment is confirmed.</p></div>'
         . '<a class="btn btn-primary btn-sm" href="activate.php">Activate now</a></section>';
 }
 
