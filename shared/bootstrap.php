@@ -40,6 +40,11 @@ if (is_file($paymentsConfigFile)) {
     }
 }
 
+// Maintenance mode (Admin → Tasks → Maintenance): main, earner, advertiser and
+// reviewer requests get the 503 maintenance page. The admin portal, hooks/, cron,
+// CLI and YOLOTASK_MAINTENANCE_EXEMPT front controllers pass. Fails open.
+\YoloTask\Core\Maintenance::gate(defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main', YOLOTASK_APP_ROOT);
+
 // Provider callbacks (hooks/) and cron define YOLOTASK_NO_SESSION: no cookie, no session.
 if (!defined('YOLOTASK_NO_SESSION') && session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
     $role = defined('YOLOTASK_APP_ROLE') ? (string) YOLOTASK_APP_ROLE : 'main';
@@ -236,6 +241,8 @@ function yolotask_render_app(array $user, string $pageTitle, string $contentHtml
         }
     }
     $bellActive = $activeNav === 'notifications';
+    // Admin portal: a banner on every page while maintenance mode is ON.
+    $maintenanceOn = yolotask_role() === 'admin' && \YoloTask\Core\Maintenance::enabled();
     require YOLOTASK_APP_ROOT . '/shared/views/layouts/authenticated.php';
     exit;
 }
