@@ -228,7 +228,8 @@ body {
 @media (max-width: 720px) {
   .header-nav { display: none; }
   .site-header .brand > span:last-child { font-size: 1.15rem; }
-  .user-chip, .header-signout { display: none !important; }
+  .user-chip, .header-signout:not(.header-signout-keep) { display: none !important; }
+  .header-signout-keep .btn { padding: .35rem .6rem; font-size: .8rem; }
   .container { padding-left: 16px; padding-right: 16px; }
   .hero h1 { font-size: clamp(2rem, 9vw, 2.6rem); max-width: none; }
   .hero-lead { font-size: 1rem; }
@@ -578,3 +579,18 @@ a.level-badge:focus-visible { outline: 2px solid #00D4FF; outline-offset: 2px; }
 .task-bundle .bundle-tasks { margin: 0 0 .5rem 1.25rem; padding-left: .75rem; border-left: 2px solid rgba(0, 212, 255, .25); }
 .platform-import textarea, .mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .platform-task-list .tx-meta details { margin-top: 4px; }
+
+/* Marketplace (migration 0022) */
+.mkt-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.mkt-card { display: flex; flex-direction: column; gap: .6rem; }
+.mkt-cover { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm, 10px); background: var(--primary-soft, rgba(0, 212, 255, .08)); display: block; }
+.mkt-cover-empty { display: grid; place-items: center; color: var(--primary); }
+.mkt-cover-empty svg { width: 42px; height: 42px; }
+.mkt-price { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.mkt-price .price-now { font-size: 1.25rem; font-weight: 800; }
+.mkt-price .price-old { text-decoration: line-through; opacity: .6; font-size: .95rem; }
+.mkt-earn { color: var(--success, #22C55E); font-weight: 700; }
+.mkt-product { display: grid; gap: 1.25rem; grid-template-columns: 1fr; max-width: 960px; margin: 0 auto; }
+.mkt-desc { white-space: pre-line; }
+.mkt-delivery { white-space: pre-wrap; word-break: break-word; }
+@media (min-width: 821px) { .mkt-product { grid-template-columns: 1.1fr 1fr; align-items: start; } }
