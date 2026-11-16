@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — activation fee wording
+
+- Earner activation card and Activate page now describe the fee as a one-time activation, system and security fee (account setup, verification and fraud checks, payout security, platform upkeep) and say it is non-refundable. Fee amount still comes from `activation.fee_kobo` (set to ₦1,000 on live).
+
+## Unreleased — ops: bulk-reject pending withdrawals
+
+- `scripts/reject-pending-withdrawals.php --reason="..." [--dry-run] --config-dir=$HOME/yolotask-v2-live/config-private` rejects every `pending_review` withdrawal through `Withdrawals::reject` (funds back to the wallet, earner notified with the reason). Processing withdrawals are untouched.
+
 ## Unreleased — deploy fix: stale OPcache after release switch
 
 - Deploys now clear PHP OPcache on every portal right after the switch: `scripts/deploy/cpanel-release.sh` writes a one-time token to `config-private/opcache-reset.token`, calls `/opcache-reset.php` on yolotask.com.ng and the earner, advertiser, reviewer and admin hosts (`YOLOTASK_OPCACHE_HOSTS`), logs to `runtime/logs/deploy-opcache.log`, then deletes the token. Without the token the endpoint is a 404. The host does not re-check file times, so fresh mtimes alone did not help.
