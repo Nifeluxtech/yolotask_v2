@@ -155,3 +155,18 @@ auto-approve, referral milestones / leaderboard / levels, repricing,
 activation ON (every task gated, held slots still submittable), the YTA
 payment flow (callback, review, duplicate, manual verify) and reconciliation.
 It ends every YOLOTASK task it created and switches activation back OFF.
+
+## Jobs (migration 0023)
+
+    php tests/smoke/jobs.php
+
+No database: lint, migration shape, pay split and rounding, validation, step
+order, file checks, proof access rules, wiring.
+
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/Jobs/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg php tests/Integration/Jobs/jobs_e2e.php
+
+Needs migrations through 0023 and the four portals on `php -S`. Covers create,
+start, steps, submit, send back, resubmit, approve; reject, appeal, reviewer
+overturn; expiry and auto-approve through the real cron scripts; admin pause,
+settings, remove; close refund; ledger reconciliation after every step.
