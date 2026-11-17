@@ -131,6 +131,7 @@ function yolotask_nav_icon(string $id): string
         'login'     => '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>',
         'logout'    => '<path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3M16 17l5-5-5-5M21 12H9"/>',
         'bag'       => '<path d="M5 8h14l-1.2 12.1a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9zM9 8V6a3 3 0 0 1 6 0v2"/>',
+        'briefcase' => '<path d="M4 8h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
         'rocket'    => '<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2M14 4c3.5-1 6-.5 6-.5s.5 2.5-.5 6L13 16l-5-5zM9 11H5l3-4h4M13 15v4l4-3v-4"/>',
     ];
 
@@ -197,7 +198,43 @@ function yolotask_require_user(PDO $pdo): array
         yolotask_redirect('login.php');
     }
     if ((string) $user['role'] !== yolotask_role()) yolotask_error_page(403);
+    if (yolotask_role() === 'earner') yolotask_activation_gate($pdo, $user);
     return $user;
+}
+
+/**
+ * Earner portal pages an earner who has not activated may still open while
+ * activation.required = 1 (script basenames). Login, register, password reset,
+ * the public pages, proof.php/job-proof.php and the payment callbacks (main
+ * portal hooks) never call yolotask_require_user, so they are not gated anyway.
+ */
+const YOLOTASK_ACTIVATION_GATE_ALLOWLIST = ['activate.php', 'logout.php', 'account.php', 'verify.php', 'notifications.php', 'error.php'];
+
+/**
+ * Activation gate (earner portal only): while activation.required = 1, an
+ * earner who has not activated is sent (302) to activate.php from every page
+ * except YOLOTASK_ACTIVATION_GATE_ALLOWLIST and the pages that finish work
+ * they already started (Activation::startedWorkAllows). JSON/XHR requests get
+ * a 403 JSON instead. With activation.required = 0 this returns at once.
+ * The per-feature checks (Tasks::start, Attempts::start, canWithdraw, the
+ * activation cards) stay in place behind it.
+ */
+function yolotask_activation_gate(PDO $pdo, array $user): void
+{
+    if (yolotask_role() !== 'earner' || (string) ($user['role'] ?? '') !== 'earner') return;
+    $page = basename((string) ($_SERVER['SCRIPT_NAME'] ?? $_SERVER['SCRIPT_FILENAME'] ?? ''));
+    if (in_array($page, YOLOTASK_ACTIVATION_GATE_ALLOWLIST, true)) return;
+    if (\YoloTask\Account\Activation::canWork($pdo, (int) $user['id'])) return; // required = 0, or activated
+    $id = (int) ($_GET['id'] ?? $_POST['campaign_id'] ?? $_POST['job_id'] ?? $_POST['submission_id'] ?? 0);
+    if (\YoloTask\Account\Activation::startedWorkAllows($pdo, (int) $user['id'], $page, $id)) return;
+    if (\YoloTask\Core\Maintenance::wantsJson()) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, private');
+        exit((string) json_encode(['error' => 'activation_required', 'message' => 'Activate your account to continue.', 'redirect' => 'activate.php']));
+    }
+    header('Location: activate.php', true, 302);
+    exit;
 }
 
 /** Bottom-dock / header navigation for signed-in portals. */
@@ -209,8 +246,10 @@ function yolotask_portal_nav(string $active): array
     if ($role === 'admin') $items[] = ['key' => 'market', 'label' => 'Tasks', 'url' => 'campaigns.php', 'icon' => 'megaphone'];
     if ($role === 'admin') $items[] = ['key' => 'money', 'label' => 'Money', 'url' => 'wallets.php', 'icon' => 'wallet'];
     if ($role === 'earner') $items[] = ['key' => 'tasks', 'label' => 'Tasks', 'url' => 'tasks.php', 'icon' => 'tasks'];
+    if ($role === 'earner') $items[] = ['key' => 'jobs', 'label' => 'Jobs', 'url' => 'jobs.php', 'icon' => 'briefcase']; // migration 0023
     if ($role === 'earner') $items[] = ['key' => 'submissions', 'label' => 'My work', 'url' => 'submissions.php', 'icon' => 'inbox'];
     if ($role === 'advertiser') $items[] = ['key' => 'campaigns', 'label' => 'Campaigns', 'url' => 'campaigns.php', 'icon' => 'megaphone'];
+    if ($role === 'advertiser') $items[] = ['key' => 'jobs', 'label' => 'Jobs', 'url' => 'jobs.php', 'icon' => 'briefcase']; // migration 0023
     if (in_array($role, ['earner', 'advertiser'], true)) $items[] = ['key' => 'wallet', 'label' => 'Wallet', 'url' => 'wallet.php', 'icon' => 'wallet'];
     if ($role === 'reviewer') $items[] = ['key' => 'appeals', 'label' => 'Appeals', 'url' => 'appeals.php', 'icon' => 'shield'];
     if ($role === 'reviewer') $items[] = ['key' => 'stale', 'label' => 'Stale', 'url' => 'stale.php', 'icon' => 'inbox'];
