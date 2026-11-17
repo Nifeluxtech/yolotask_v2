@@ -26,6 +26,7 @@ final class Notifications
         'appeals' => ['Appeal decisions', 'When an appeal you filed, or one on your campaign, is decided.', ['earner', 'advertiser'], true],
         'payments' => ['Top-ups and withdrawals', 'Wallet top-ups credited, withdrawals paid, failed or declined.', ['earner', 'advertiser'], true],
         'campaigns' => ['Campaign reviews', 'When your campaign is approved or not approved.', ['advertiser'], true],
+        'jobs' => ['Jobs', 'New job submissions to review, and job results: approved, sent back for a fix, rejected.', ['earner', 'advertiser'], true],
         'marketplace' => ['Marketplace', 'Product reviews, sales, affiliate commissions and earnings reaching your wallet.', ['earner', 'advertiser'], true],
         'rewards' => ['Referral earnings and bonuses', 'Referral milestone bonuses, deposit commissions and bonuses from YOLOTASK.', ['earner', 'advertiser'], true],
         'announcements' => ['Announcements', 'News from YOLOTASK. Shown in your inbox and as a banner; never emailed.', ['earner', 'advertiser'], false],
