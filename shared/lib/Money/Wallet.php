@@ -163,6 +163,12 @@ final class Wallet
             'checkin_reward' => 'Daily check-in reward',
             // Migration 0022: description is "Marketplace sale: <title>" or "Affiliate commission: <title>".
             'marketplace_release' => (string) ($e['description'] ?? 'Marketplace earnings'),
+            // Migration 0023: jobs.
+            'job_fund' => 'Job funded',
+            'job_refund' => 'Job refund',
+            'job_reward' => 'Job reward',
+            'job_reward_release' => 'Job reward released',
+            'job_appeal_funding' => 'Job paid on appeal',
             default => 'Wallet update',
         };
     }

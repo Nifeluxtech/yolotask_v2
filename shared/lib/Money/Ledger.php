@@ -38,6 +38,12 @@ final class Ledger
     public const MARKETPLACE_REVENUE = 'system:marketplace_revenue';
     /** Migration 0022: marketplace earnings on hold (credit-normal liability; equals held mkt_earnings). */
     public const MARKETPLACE_HOLD = 'system:marketplace_hold';
+    /** Migration 0023: locked job budgets (credit-normal liability; equals every job's funded - spent - refunded). */
+    public const JOBS_ESCROW = 'system:jobs_escrow';
+    /** Migration 0023: platform share of approved jobs (credit-normal revenue). */
+    public const JOBS_REVENUE = 'system:jobs_revenue';
+    /** Migration 0023: job appeal payouts the platform covered (debit-normal expense). */
+    public const JOBS_APPEAL_PAYOUTS = 'system:jobs_appeal_payouts';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -158,6 +164,7 @@ final class Ledger
         foreach (\YoloTask\Growth\Checkin::reconcile($pdo) as $p) $problems[] = $p; // daily check-in (0014)
         foreach (\YoloTask\Account\Activation::reconcile($pdo) as $p) $problems[] = $p; // account activation + YOLOTASK task payouts (0018)
         foreach (\YoloTask\Marketplace\Marketplace::reconcile($pdo) as $p) $problems[] = $p; // marketplace (0022)
+        foreach (\YoloTask\Jobs\Jobs::reconcile($pdo) as $p) $problems[] = $p; // jobs (0023)
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;
@@ -213,6 +220,8 @@ final class Ledger
         $margin = (int) $pdo->query("SELECT COALESCE(SUM(unit_price_kobo - unit_reward_kobo), 0) FROM submissions WHERE status = 'approved'")->fetchColumn();
         if (($sys[self::REVENUE] ?? 0) !== $margin) $problems[] = 'Revenue ' . ($sys[self::REVENUE] ?? 0) . " != margins of approved tasks {$margin}";
         $held = (int) $pdo->query("SELECT COALESCE(SUM(unit_reward_kobo), 0) FROM submissions WHERE reward_status = 'held'")->fetchColumn();
+        // Jobs (migration 0023) share the reward hold: approved job rewards waiting for release.
+        if ((bool) $pdo->query("SHOW TABLES LIKE 'job_attempts'")->fetchColumn()) $held += (int) $pdo->query("SELECT COALESCE(SUM(earner_kobo), 0) FROM job_attempts WHERE reward_status = 'held'")->fetchColumn();
         if (($sys[self::REWARD_HOLD] ?? 0) !== $held) $problems[] = 'Reward hold ' . ($sys[self::REWARD_HOLD] ?? 0) . " != rewards waiting for release {$held}";
         return $problems;
     }
