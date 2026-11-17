@@ -3,10 +3,11 @@ declare(strict_types=1);
 
 /**
  * Every fifteen minutes: expire task reservations, auto-approve pending
- * submissions whose advertiser did not decide within the auto-approve
- * window, close campaigns whose end date passed (refunding unused escrow),
- * and report the stale-submission and open-appeal counts (both are worked
- * by reviewers in the reviewer portal). Safe to run twice: every money
+ * submissions (and, migration 0023, job submissions) whose advertiser did
+ * not decide within the auto-approve / review window, close campaigns
+ * whose end date passed (refunding unused escrow), and report the
+ * stale-submission and open-appeal counts (both are worked by reviewers in
+ * the reviewer portal). Safe to run twice: every money
  * movement is idempotent and re-checks state under row locks. cPanel cron:
  *   0,15,30,45 * * * * /opt/cpanel/ea-php84/root/usr/bin/php $HOME/yolotask-v2-live/current/cron/every-fifteen-minutes.php >> $HOME/yolotask-v2-live/runtime/logs/cron-15min.log 2>&1
  */
@@ -23,6 +24,7 @@ try {
     $t = gmdate('Y-m-d H:i:s') . 'Z';
     fwrite(STDOUT, "{$t} tasks: reservations expired: " . \YoloTask\Tasks\Tasks::expireReservations($pdo) . "\n");
     fwrite(STDOUT, "{$t} tasks: submissions auto-approved: " . \YoloTask\Tasks\Approvals::autoApproveDue($pdo) . "\n");
+    fwrite(STDOUT, "{$t} jobs: submissions auto-approved: " . \YoloTask\Jobs\Reviews::autoApproveDue($pdo) . "\n"); // migration 0023
     fwrite(STDOUT, "{$t} campaigns: ended (end date reached): " . \YoloTask\Campaigns\Campaigns::endExpired($pdo) . "\n");
     fwrite(STDOUT, "{$t} tasks: stale pending submissions: " . \YoloTask\Tasks\StaleQueue::count($pdo) . "\n");
     fwrite(STDOUT, "{$t} appeals: open: " . \YoloTask\Tasks\Appeals::openCount($pdo) . "\n");

@@ -12,6 +12,7 @@ declare(strict_types=1);
  *  - (Phase 5) deletes expired reviewer claims so appeals and stale proofs
  *    return to the queue (decisions already ignore expired claims),
  *  - (Phase 6) delivers scheduled announcements to inboxes once they start.
+ *  - (migration 0023) expires job attempts past their time limit or fix deadline.
  *  - (migration 0021) asks Korapay for the status of Korapay pay-ins still
  *    waiting and payouts still processing, so a lost webhook never strands money.
  * AfrStar has no status-query API, so its callbacks stay the source of truth.
@@ -38,6 +39,8 @@ try {
     fwrite(STDOUT, "{$t} payments: stale marketplace orders expired: " . \YoloTask\Marketplace\Orders::expireStale($pdo) . "\n");
     fwrite(STDOUT, "{$t} payments: stuck payouts flagged for review: " . \YoloTask\Payments\CallbackProcessor::flagStuckPayouts($pdo) . "\n");
     fwrite(STDOUT, "{$t} reviews: expired claims released: " . \YoloTask\Tasks\ReviewClaims::expire($pdo) . "\n");
+    // Jobs (migration 0023): attempts past their time limit or fix deadline end without pay; the slot goes back.
+    fwrite(STDOUT, "{$t} jobs: attempts expired: " . \YoloTask\Jobs\Attempts::expireDue($pdo) . "\n");
     fwrite(STDOUT, "{$t} announcements: inbox items delivered: " . \YoloTask\Messaging\Announcements::deliverDue($pdo) . "\n");
 } catch (Throwable $e) {
     \YoloTask\Core\Logger::error('cron.five_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);

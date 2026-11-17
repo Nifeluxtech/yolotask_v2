@@ -25,7 +25,9 @@ try {
     fwrite(STDOUT, "{$t} cashback: catch-up paid " . \YoloTask\Growth\DepositCashback::sweep($pdo) . "\n");
     // Marketplace (migration 0022): seller shares and affiliate commissions whose hold has passed reach wallets.
     fwrite(STDOUT, "{$t} marketplace: earnings released: " . \YoloTask\Marketplace\Marketplace::releaseDue($pdo) . "\n");
-    $problems = \YoloTask\Money\Ledger::reconcileCampaigns($pdo);
+    // Jobs (migration 0023): held job rewards past tasks.reward_hold_hours reach wallets.
+    fwrite(STDOUT, "{$t} jobs: rewards released: " . \YoloTask\Jobs\Reviews::releaseDue($pdo) . "\n");
+    $problems = array_merge(\YoloTask\Money\Ledger::reconcileCampaigns($pdo), \YoloTask\Jobs\Jobs::reconcile($pdo)); // jobs escrow check (0023)
     if ($problems === []) {
         fwrite(STDOUT, "{$t} campaigns: escrow reconciliation OK\n");
     } else {
