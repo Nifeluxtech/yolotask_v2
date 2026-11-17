@@ -16,7 +16,7 @@ use YoloTask\Security\Audit;
  */
 final class ReviewClaims
 {
-    public const TYPES = ['appeal', 'submission'];
+    public const TYPES = ['appeal', 'submission', 'job_appeal']; // job_appeal: migration 0023
 
     public static function minutes(PDO $pdo): int
     {

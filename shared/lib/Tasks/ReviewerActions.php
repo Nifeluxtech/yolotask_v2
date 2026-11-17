@@ -19,9 +19,21 @@ final class ReviewerActions
             ->execute(['u' => $userId, 'r' => $role === 'admin' ? 'admin' : 'reviewer', 'a' => $action, 't' => $itemType, 'i' => $itemId, 's' => $submissionId, 'n' => $note === null ? null : mb_substr($note, 0, 500)]);
     }
 
+    /** A decision on a job appeal (migration 0023): no submission, the job attempt instead. Inside the caller's transaction. */
+    public static function recordJob(PDO $pdo, int $userId, string $role, string $action, int $appealId, int $attemptId, ?string $note = null): void
+    {
+        $pdo->prepare('INSERT INTO reviewer_actions (reviewer_user_id, reviewer_role, action, item_type, item_id, submission_id, job_attempt_id, note, decided_at) VALUES (:u, :r, :a, \'job_appeal\', :i, NULL, :j, :n, UTC_TIMESTAMP())')
+            ->execute(['u' => $userId, 'r' => $role === 'admin' ? 'admin' : 'reviewer', 'a' => $action, 'i' => $appealId, 'j' => $attemptId, 'n' => $note === null ? null : mb_substr($note, 0, 500)]);
+    }
+
     public static function forReviewer(PDO $pdo, int $userId, int $page): array
     {
-        $sql = 'SELECT ra.*, c.title campaign_title FROM reviewer_actions ra JOIN submissions s ON s.id = ra.submission_id JOIN campaigns c ON c.id = s.campaign_id WHERE ra.reviewer_user_id = :u ORDER BY ra.id DESC';
+        // Job appeal decisions (migration 0023) have no submission; their title comes from the job.
+        $hasJobs = (bool) $pdo->query("SHOW COLUMNS FROM reviewer_actions LIKE 'job_attempt_id'")->fetchColumn();
+        $sql = $hasJobs
+            ? 'SELECT ra.*, COALESCE(c.title, j.title) campaign_title FROM reviewer_actions ra LEFT JOIN submissions s ON s.id = ra.submission_id LEFT JOIN campaigns c ON c.id = s.campaign_id
+               LEFT JOIN job_attempts ja ON ja.id = ra.job_attempt_id LEFT JOIN jobs j ON j.id = ja.job_id WHERE ra.reviewer_user_id = :u ORDER BY ra.id DESC'
+            : 'SELECT ra.*, c.title campaign_title FROM reviewer_actions ra JOIN submissions s ON s.id = ra.submission_id JOIN campaigns c ON c.id = s.campaign_id WHERE ra.reviewer_user_id = :u ORDER BY ra.id DESC';
         return Pagination::query($pdo, 'SELECT COUNT(*) FROM reviewer_actions WHERE reviewer_user_id = :u', $sql, ['u' => $userId], $page, 25);
     }
 
@@ -44,6 +56,8 @@ final class ReviewerActions
             'appeal_override_overturned' => 'Admin override: overturned',
             'submission_approved' => 'Stale proof approved',
             'submission_rejected' => 'Stale proof rejected',
+            'job_appeal_upheld' => 'Job appeal: rejection upheld',
+            'job_appeal_overturned' => 'Job appeal: overturned, earner paid',
             default => ucfirst(str_replace('_', ' ', $action)),
         };
     }
