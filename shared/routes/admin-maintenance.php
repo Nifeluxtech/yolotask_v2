@@ -31,6 +31,28 @@ $lagos = new DateTimeZone('Africa/Lagos');
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     yolotask_admin_csrf_or_back('maintenance.php');
+    $action = yolotask_post_str('action');
+    if ($action === 'tester_create' || $action === 'tester_revoke') {
+        // Tester link: only the sha256 of the token and its expiry are stored; the link is shown once.
+        try {
+            if ($action === 'tester_create') {
+                $token = Maintenance::newTesterToken();
+                $expires = Clock::now()->modify('+' . Maintenance::TESTER_DEFAULT_DAYS . ' days')->getTimestamp();
+                Settings::save($pdo, $adminId, ['maintenance.preview_hash' => Maintenance::testerHash($token), 'maintenance.preview_expires_at' => (string) $expires]);
+                Audit::record($pdo, $adminId, 'admin.maintenance_tester_created', 'settings', null);
+                $_SESSION['_maintenance_tester_link'] = $token;
+                yolotask_flash('Tester link created. Copy it now: it is shown only once. Any earlier tester link no longer works.', 'success');
+            } else {
+                Settings::save($pdo, $adminId, ['maintenance.preview_hash' => '', 'maintenance.preview_expires_at' => '0']);
+                Audit::record($pdo, $adminId, 'admin.maintenance_tester_revoked', 'settings', null);
+                yolotask_flash('Tester link revoked. Anyone using it now sees the maintenance page.', 'success');
+            }
+        } catch (Throwable $e) {
+            Logger::error('admin.maintenance_tester_failed', ['exception' => get_class($e), 'message' => $e->getMessage()]);
+            yolotask_flash('Something went wrong. Please try again.', 'error');
+        }
+        yolotask_redirect('maintenance.php#tester');
+    }
     try {
         $on = !empty($_POST['enabled']);
         $message = trim(str_replace("\r\n", "\n", yolotask_post_str('message')));
@@ -73,6 +95,11 @@ $untilValue = $state['until'] instanceof DateTimeImmutable ? $state['until']->se
 $untilPast = $state['until'] instanceof DateTimeImmutable && $state['until'] <= Clock::now();
 $minValue = Clock::now()->setTimezone($lagos)->format('Y-m-d\TH:i');
 $csrf = Csrf::token();
+$testerToken = isset($_SESSION['_maintenance_tester_link']) && is_string($_SESSION['_maintenance_tester_link']) ? $_SESSION['_maintenance_tester_link'] : null;
+unset($_SESSION['_maintenance_tester_link']);
+$testerActive = $state['preview_hash'] !== '' && $state['preview_expires_at'] > time();
+$testerExpired = $state['preview_hash'] !== '' && !$testerActive;
+$testerExpires = $state['preview_expires_at'] > 0 ? (new DateTimeImmutable('@' . $state['preview_expires_at']))->setTimezone($lagos) : null;
 $portals = [yolotask_portal_url('main'), yolotask_portal_url('earner'), yolotask_portal_url('advertiser'), yolotask_portal_url('reviewer')];
 ob_start();
 ?>
@@ -100,6 +127,30 @@ ob_start();
         <p class="input-hint">Shown as “We expect to be back by …” and sent to browsers as Retry-After. Leave empty to show no time. Within the next 30 days.</p></div>
       <button class="btn <?= $on ? 'btn-primary' : 'btn-secondary' ?>" type="submit" data-confirm="Save maintenance settings? If the switch is ON, users will see the maintenance page right away.">Save maintenance settings</button>
     </form>
+  </section>
+
+  <section class="card" id="tester" aria-labelledby="tt-title">
+    <div class="card-header"><h2 id="tt-title">Tester link</h2><span class="badge <?= $testerActive ? 'badge-warning' : 'badge-info' ?>" data-tester-link="<?= $testerActive ? 'active' : 'none' ?>"><?= $testerActive ? 'Active' : ($testerExpired ? 'Expired' : 'None') ?></span></div>
+    <p class="text-sm text-faint">A secret link that lets you (or anyone you give it to) use the live site while maintenance mode is ON; everyone else still sees the maintenance page. Opening the link once sets a cookie that works on the main site and the earner, advertiser and reviewer portals until the link expires (<?= Maintenance::TESTER_DEFAULT_DAYS ?> days). Sign in normally after opening it. When maintenance is OFF the link does nothing. Creating a new link replaces the old one.</p>
+    <?php if ($testerToken !== null): $testerUrl = yolotask_portal_url('main') . '/?' . Maintenance::TESTER_PARAM . '=' . $testerToken; ?>
+      <div class="field"><label class="label" for="tester-url">Your tester link (shown only once — copy it now)</label>
+        <input class="input" id="tester-url" type="text" readonly value="<?= h($testerUrl) ?>" onclick="this.select()" data-tester-url>
+        <p class="input-hint">The same <code>?<?= h(Maintenance::TESTER_PARAM) ?>=…</code> works on any portal, e.g. <?= h(yolotask_portal_url('earner')) ?>/?<?= h(Maintenance::TESTER_PARAM) ?>=…</p></div>
+    <?php endif; ?>
+    <?php if ($testerActive && $testerExpires): ?><p class="text-sm">Active until <?= h($testerExpires->format('g:i A, D j M')) ?> (Lagos time).<?= $on ? '' : ' Maintenance is OFF, so the link has no effect right now.' ?></p>
+    <?php elseif ($testerExpired): ?><p class="text-sm text-faint">The last tester link has expired.</p><?php endif; ?>
+    <div class="flex flex-wrap" style="gap:.5rem">
+      <form method="post" action="maintenance.php">
+        <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="tester_create">
+        <button class="btn btn-secondary" type="submit"<?= $testerActive ? ' data-confirm="Create a new tester link? The current one stops working."' : '' ?>>Create tester link</button>
+      </form>
+      <?php if ($state['preview_hash'] !== ''): ?>
+      <form method="post" action="maintenance.php">
+        <input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="tester_revoke">
+        <button class="btn btn-ghost" type="submit" data-confirm="Revoke the tester link? Anyone using it will see the maintenance page.">Revoke tester link</button>
+      </form>
+      <?php endif; ?>
+    </div>
   </section>
 
   <section class="card" aria-labelledby="mp-title">
