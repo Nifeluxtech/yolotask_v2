@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Activation gate (no migration)
+
+- **Earners**: while `activation.required = 1`, an earner who has not activated is redirected (302) to `activate.php` from every earner portal page except a small allowlist (`YOLOTASK_ACTIVATION_GATE_ALLOWLIST` in `shared/bootstrap.php`: activate, logout, account, verify, notifications, error). JSON/XHR requests get a 403 JSON instead. One central check in `yolotask_require_user()`, earner portal only; advertisers, reviewers and admins are never gated. With `activation.required = 0` nothing changes.
+- **Started work is not stranded**: `Activation::startedWorkAllows` keeps `task.php` (held slot, pending or still-fixable rejected submission), `submission.php`, `job.php` (attempt in progress / submitted / sent back) open for that item only, plus the *My work* list. The existing per-feature activation checks stay. Details: `docs/platform-tasks.md`.
+- Tests: `tests/smoke/activation-gate.php` (no database) and `tests/Integration/Activation/activation_gate_e2e.php` (MariaDB + earner/advertiser portals).
+
+## Unreleased — Jobs (migration 0023_jobs.sql)
+
+- **Jobs**: multi-step tasks written entirely by the advertiser (no preset types or platforms), online or offline (offline jobs show a location). Full description: `docs/jobs.md`.
+- **Earners**: Jobs tab (open jobs + My jobs), job page: Start, proof for each step in order (text, link, image or file up to 10 MB from a whitelist), one final submit, fix a sent-back step and resubmit, give up, appeal a rejection. One attempt per earner per job; `jobs.max_active_per_earner` (default 1) at a time; per-job time limit.
+- **Advertisers**: post a job (steps, pay per slot, slots, time limit, review window), manage (pause/resume, add slots, close with refund), review every step on one page: approve, send one step back (up to `jobs.send_back_max_rounds`, earner has `jobs.send_back_fix_hours` to fix, else expired unpaid), or reject (slot returns at once). Jobs go live without admin approval.
+- **Reviewers**: Job appeals queue (claim, uphold, overturn). **Admin → Tasks → Jobs**: list, attempts, proofs, pause/unpause, remove with refund (cancels in-progress attempts only), appeals, settings.
+- **Money**: pay × slots escrowed in `system:jobs_escrow` on publish; on approve the earner gets `jobs.earner_percent` (default 90) and the rest goes to `system:jobs_revenue`; rewards respect `tasks.reward_hold_hours` via `system:reward_hold` (hourly release). Overturn pays from a free slot, else adds a slot funded by the advertiser with any shortfall from `system:jobs_appeal_payouts`. Included in `Ledger::reconcile`.
+- Cron: `every-five-minutes.php` expires attempts, `every-fifteen-minutes.php` auto-approves after the review window, `hourly.php` releases held job rewards and reconciles.
+- Migration notes: new tables, three system ledger accounts, settings rows, new ENUM values on `review_claims` / `reviewer_actions`; `reviewer_actions.submission_id` becomes nullable and gains a nullable `job_attempt_id` (not strictly additive, but the previous release keeps working).
+- Tests: `tests/smoke/jobs.php` (no database) and `tests/Integration/Jobs/jobs_e2e.php` (MariaDB + four portals).
+- Deploy: run `php scripts/migrate.php` (applies `0023_jobs.sql`) before switching the release.
+
 ## Unreleased — Marketplace (migration 0022_marketplace.sql)
 
 - **Digital-product marketplace** (Selar-style). Full description: `docs/marketplace.md`.
