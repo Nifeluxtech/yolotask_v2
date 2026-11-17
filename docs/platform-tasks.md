@@ -90,6 +90,22 @@ its name and status.
   starting a task is refused. **In-flight work is not stranded**: a slot held
   before the switch can still be submitted (it stays under *In progress*),
   proofs, resubmissions and appeals carry on.
+- **Activation gate (earner portal)**: while ON, `yolotask_require_user()`
+  (`shared/bootstrap.php`, `yolotask_activation_gate`) sends an earner who has
+  not activated to `activate.php` (302; JSON/XHR requests get a 403 JSON) from
+  every earner page except `YOLOTASK_ACTIVATION_GATE_ALLOWLIST`:
+  `activate.php` (also the payment return `?o=`), `logout.php`, `account.php`
+  (profile, password, security), `verify.php`, `notifications.php`,
+  `error.php`. Login, register, password reset, `index.php`, `proof.php`,
+  `job-proof.php` and the payment hooks never call `yolotask_require_user`.
+  Started work stays reachable (`Activation::startedWorkAllows`): `task.php`
+  for a campaign with a held slot or a pending / still-fixable rejected
+  submission, `submission.php` for that submission, `job.php` for a job with an
+  attempt in `in_progress`, `submitted` or `sent_back` (step proof uploads post
+  there), and the *My work* list (`submissions.php`) when any of these exist.
+  OFF = the gate returns at once. Advertiser, reviewer and admin portals are
+  never gated. The per-feature checks above stay in place behind it.
+  End to end: `tests/Integration/Activation/activation_gate_e2e.php`.
 - Activated earners stay activated (switching OFF and ON again keeps them).
 - Payment: bank transfer through an AfrStar collection order, reference
   `YTA…` (never forwarded by the callback hub). Exact amount → Dr
