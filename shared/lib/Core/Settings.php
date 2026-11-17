@@ -12,7 +12,7 @@ use YoloTask\Security\Audit;
  */
 final class Settings
 {
-    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) the withdrawal fee / daily check-in (migration 0014) and YOLOTASK tasks / account activation (migration 0019), payment gateways (migration 0021), the marketplace (migration 0022) and maintenance mode (no migration). */
+    /** Money rules (kobo, migration 0003), task/campaign rules (migration 0005), appeal/review rules (migration 0008) and referral/level/notification rules (migration 0009) deposit cashback (migration 0013) the withdrawal fee / daily check-in (migration 0014) and YOLOTASK tasks / account activation (migration 0019), payment gateways (migration 0021), the marketplace (migration 0022), jobs (migration 0023) and maintenance mode (no migration). */
     public const DEFAULTS = [
         'money.topup_min_kobo' => '10000',        // ₦100
         'money.topup_max_kobo' => '50000000',     // ₦500,000
@@ -71,6 +71,16 @@ final class Settings
         // Marketplace (rows seeded by migration 0022).
         'marketplace.fee_bps' => '500',          // platform fee per sale, 5% (0-2000 bps); the product decides whether the buyer or the seller bears it
         'marketplace.hold_hours' => '72',        // seller share and affiliate commission are held this long before they reach the wallet (0-720)
+        // Jobs: multi-step tasks (rows seeded by migration 0023).
+        'jobs.enabled' => '1',                   // 1 = advertisers can publish jobs and earners see the Jobs tab; 0 = hidden (work already started still finishes)
+        'jobs.min_pay_kobo' => '20000',          // lowest pay per earner, ₦200
+        'jobs.earner_percent' => '90',           // earner share of the pay (50-100), rounded down to the kobo; the rest is platform revenue
+        'jobs.max_steps' => '20',                // steps per job (2-50)
+        'jobs.time_limit_min_hours' => '1',      // shortest time limit an advertiser may set (hours)
+        'jobs.time_limit_max_hours' => '336',    // longest time limit (hours, 14 days)
+        'jobs.send_back_max_rounds' => '2',      // times an advertiser may send a step back on one attempt (0-5)
+        'jobs.send_back_fix_hours' => '48',      // earner's deadline to fix a sent-back step and resubmit (1-336)
+        'jobs.max_active_per_earner' => '1',     // jobs an earner may have in progress (or sent back) at once (1-10)
         // Maintenance mode (no migration: rows are written by Admin → Maintenance; missing = OFF).
         'maintenance.enabled' => '0',            // 1 = main site, earner, advertiser and reviewer portals show the 503 maintenance page; admin stays open
         'maintenance.message' => '',             // shown on the maintenance page (max 255 characters); empty = Maintenance::DEFAULT_MESSAGE
