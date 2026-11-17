@@ -8,13 +8,16 @@ function yolotask_reviewer_tabs(PDO $pdo, string $active): string
 {
     $appeals = 0;
     $stale = 0;
+    $jobAppeals = 0;
     try {
+        $jobAppeals = \YoloTask\Jobs\JobAppeals::openCount($pdo); // migration 0023
         $appeals = \YoloTask\Tasks\Appeals::openCount($pdo);
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
     } catch (Throwable) {
     }
     $tabs = [
         'appeals' => ['Appeals', 'appeals.php', $appeals],
+        'job_appeals' => ['Job appeals', 'job-appeals.php', $jobAppeals],
         'stale' => ['Stale & YOLOTASK proofs', 'stale.php', $stale],
         'history' => ['My decisions', 'history.php', 0],
     ];

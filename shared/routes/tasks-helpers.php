@@ -89,7 +89,9 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
     $appeals = 0;
     $platform = 0;
     $market = 0;
+    $jobs = 0;
     try {
+        $jobs = \YoloTask\Jobs\JobAppeals::openCount($pdo); // migration 0023: open job appeals
         $queue = (int) $pdo->query("SELECT COUNT(*) FROM campaigns WHERE status = 'pending_approval'")->fetchColumn();
         $platform = (int) $pdo->query("SELECT COUNT(*) FROM submissions s JOIN campaigns c ON c.id = s.campaign_id WHERE c.is_platform = 1 AND s.status = 'pending'")->fetchColumn();
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
@@ -104,6 +106,7 @@ function yolotask_admin_market_tabs(PDO $pdo, string $active): string
         'platform' => ['YOLOTASK tasks', 'platform-tasks.php', $platform],
         'activation' => ['Account activation', 'activation.php', 0],
         'marketplace' => ['Marketplace', 'marketplace.php', $market],
+        'jobs' => ['Jobs', 'jobs.php', $jobs],
         'catalog' => ['Platforms & prices', 'catalog.php', 0],
         'settings' => ['Task settings', 'task-settings.php', 0],
         'levels' => ['Earner levels', 'levels.php', 0],
