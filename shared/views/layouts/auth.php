@@ -104,6 +104,7 @@ $botFields = $formStamp === '' ? '' :
   <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body class="auth-page">
+<?= \YoloTask\Core\Maintenance::testerBanner() ?>
   <a class="skip-link" href="#auth-form">Skip to form</a>
   <header class="site-header">
     <div class="container header-inner">

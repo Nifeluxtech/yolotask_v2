@@ -94,6 +94,7 @@ $flashIcon = [
 </style>
 </head>
 <body>
+<?= \YoloTask\Core\Maintenance::testerBanner() ?>
 
 <a class="skip-link" href="#main">Skip to content</a>
 

@@ -27,6 +27,7 @@ $legalLinks = ['terms.php' => 'Terms', 'privacy.php' => 'Privacy', 'refunds.php'
   <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body>
+<?= \YoloTask\Core\Maintenance::testerBanner() ?>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="container header-inner">
