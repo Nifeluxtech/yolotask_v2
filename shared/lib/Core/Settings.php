@@ -85,6 +85,8 @@ final class Settings
         'maintenance.enabled' => '0',            // 1 = main site, earner, advertiser and reviewer portals show the 503 maintenance page; admin stays open
         'maintenance.message' => '',             // shown on the maintenance page (max 255 characters); empty = Maintenance::DEFAULT_MESSAGE
         'maintenance.until' => '',               // optional "back by" time, Africa/Lagos 'Y-m-d H:i'; empty = no time shown
+        'maintenance.preview_hash' => '',        // sha256 of the tester-link token (the token itself is never stored); empty = no tester link
+        'maintenance.preview_expires_at' => '0', // tester link expiry, Unix seconds (UTC)
     ];
 
     private static ?array $cache = null;
