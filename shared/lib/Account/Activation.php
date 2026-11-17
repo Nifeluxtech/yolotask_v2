@@ -82,6 +82,51 @@ final class Activation
     }
 
     /**
+     * Activation gate (yolotask_activation_gate): may an earner who has not
+     * activated open this earner page because it finishes work they already
+     * started? Started work = a task slot still held (reservation active and
+     * not expired), a task submission pending review or rejected with a
+     * resubmission/appeal still possible (no appeal, or an open one), or a job
+     * attempt in Attempts::ACTIVE (in_progress, submitted, sent_back).
+     *  - task.php: only for that campaign (?id= / campaign_id)
+     *  - submission.php: only for that submission (?id= / submission_id)
+     *  - job.php: only for that job (?id= / job_id); step proof uploads post here
+     *  - submissions.php (the "My work" list): when the earner has any started work
+     */
+    public static function startedWorkAllows(PDO $pdo, int $userId, string $page, int $id): bool
+    {
+        $taskWork = "EXISTS (SELECT 1 FROM task_reservations r WHERE r.earner_user_id = :u1 AND r.campaign_id = c.cid AND r.status = 'active' AND r.expires_at > UTC_TIMESTAMP())
+            OR EXISTS (SELECT 1 FROM submissions s WHERE s.earner_user_id = :u2 AND s.campaign_id = c.cid AND (s.status = 'pending'
+                OR (s.status = 'rejected' AND NOT EXISTS (SELECT 1 FROM submission_appeals a WHERE a.submission_id = s.id AND a.status <> 'open'))))";
+        $jobStatuses = "'" . implode("','", \YoloTask\Jobs\Attempts::ACTIVE) . "'";
+        switch ($page) {
+            case 'task.php':
+                if ($id <= 0) return false;
+                $stmt = $pdo->prepare("SELECT 1 FROM (SELECT :c AS cid) c WHERE {$taskWork}");
+                $stmt->execute(['c' => $id, 'u1' => $userId, 'u2' => $userId]);
+                return $stmt->fetchColumn() !== false;
+            case 'submission.php':
+                if ($id <= 0) return false;
+                $stmt = $pdo->prepare("SELECT 1 FROM submissions s WHERE s.id = :id AND s.earner_user_id = :u AND (s.status = 'pending'
+                    OR (s.status = 'rejected' AND NOT EXISTS (SELECT 1 FROM submission_appeals a WHERE a.submission_id = s.id AND a.status <> 'open')))");
+                $stmt->execute(['id' => $id, 'u' => $userId]);
+                return $stmt->fetchColumn() !== false;
+            case 'job.php':
+                if ($id <= 0) return false;
+                $stmt = $pdo->prepare("SELECT 1 FROM job_attempts WHERE job_id = :j AND earner_user_id = :u AND status IN ({$jobStatuses})");
+                $stmt->execute(['j' => $id, 'u' => $userId]);
+                return $stmt->fetchColumn() !== false;
+            case 'submissions.php':
+                $stmt = $pdo->prepare("SELECT 1 FROM (SELECT campaign_id AS cid FROM task_reservations WHERE earner_user_id = :u0 UNION SELECT campaign_id FROM submissions WHERE earner_user_id = :u3) c WHERE {$taskWork}
+                    UNION SELECT 1 FROM job_attempts WHERE earner_user_id = :u4 AND status IN ({$jobStatuses}) LIMIT 1");
+                $stmt->execute(['u0' => $userId, 'u1' => $userId, 'u2' => $userId, 'u3' => $userId, 'u4' => $userId]);
+                return $stmt->fetchColumn() !== false;
+            default:
+                return false;
+        }
+    }
+
+    /**
      * May this earner withdraw? Same rule as canWork: while activation is
      * required, an earner who has not activated cannot request a withdrawal
      * (their balance stays in the wallet until they activate). Requests made
