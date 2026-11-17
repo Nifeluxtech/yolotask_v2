@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Maintenance tester link (no migration)
+
+- **Admin → Maintenance → Tester link** (`maintenance.php#tester`): *Create tester link* generates a secret link `https://yolotask.com.ng/?tester=<64-hex token>` (shown once; `?tester=` works on every portal) valid for 7 days; *Revoke tester link* disables it; a new link replaces the old one. Only the token's sha256 and expiry are stored (settings `maintenance.preview_hash`, `maintenance.preview_expires_at`; no migration). Audited (`admin.maintenance_tester_created` / `_revoked`).
+- **Gate**: while maintenance is ON, a valid token (`hash_equals` against the stored hash, not expired) lets the request through and sets the `yt_tester` cookie (HttpOnly, Secure, SameSite=Lax, `Domain=.yolotask.com.ng`, expires with the link) so later requests on any portal pass without the query. Wrong / expired / revoked tokens get the normal 503; with maintenance OFF the token does nothing. Pages on the pass send `X-Robots-Tag: noindex` and show a small "Tester mode — site is under maintenance for everyone else" pill (shared layouts). Sign-in works normally.
+- Tests: `tests/smoke/maintenance-tester.php` (no database) and `tests/Integration/Maintenance/maintenance_tester_e2e.php` (MariaDB + main/earner/admin portals). Details: `docs/cron-and-operations.md` → Maintenance mode.
+
 ## Unreleased — Activation gate (no migration)
 
 - **Earners**: while `activation.required = 1`, an earner who has not activated is redirected (302) to `activate.php` from every earner portal page except a small allowlist (`YOLOTASK_ACTIVATION_GATE_ALLOWLIST` in `shared/bootstrap.php`: activate, logout, account, verify, notifications, error). JSON/XHR requests get a 403 JSON instead. One central check in `yolotask_require_user()`, earner portal only; advertisers, reviewers and admins are never gated. With `activation.required = 0` nothing changes.
