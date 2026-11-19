@@ -17,6 +17,11 @@ Sign out; Sign out stays in the header (also on phones). Reviewer and admin
 docks are unchanged. Inside the portals: Browse (`marketplace.php`), My Products
 (`my-products.php`, `product-edit.php`), My Sales (`my-sales.php`).
 
+All marketplace pages load the dedicated `.mk-` stylesheet (`assets/css/market.css`,
+source `shared/assets/css/market.css`; see `docs/ui-system.md`). Card chips come
+only from existing columns (delivery type, resale listing, resell rights,
+affiliate %); there is no category or rating data yet.
+
 ## Products
 
 - Title (3–120), cover image (JPEG/PNG/WebP ≤ 3 MB, re-encoded like proof
