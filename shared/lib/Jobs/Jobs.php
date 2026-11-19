@@ -28,6 +28,15 @@ use YoloTask\Support\Pagination;
  * each active attempt that later ends without approval refunds its slot.
  *
  * Money invariant per job: funded - spent - refunded = pay x (slots - approved).
+ *
+ * YOLOTASK jobs (migration 0024, is_system = 1): posted by an admin, owned by
+ * the closed system account "YOLOTASK" (platform_tasks.owner_user_id), like
+ * YOLOTASK tasks. No wallet and no escrow: publishing moves no money,
+ * funded / spent / refunded stay 0, slots is only a cap and closing refunds
+ * nothing. The earner gets the full pay (earner_percent 100, fee 0), paid by
+ * the platform from system:platform_job_payouts on approval (Reviews). Pay may
+ * be as low as ₦1 (jobs.min_pay_kobo does not apply). Admins review them in
+ * Admin -> Jobs and reviewers in their "YOLOTASK jobs" queue (SystemReviews).
  */
 final class Jobs
 {
@@ -37,6 +46,7 @@ final class Jobs
     public const OPEN = ['live', 'paused'];
     public const CLOSED = ['closed', 'completed', 'removed'];
     public const PROOF_KINDS = ['image' => 'Screenshot / image', 'text' => 'Text answer', 'link' => 'Link', 'file' => 'File'];
+    public const SYSTEM_MIN_PAY_KOBO = 100;     // YOLOTASK jobs: at least ₦1
 
     // ---------------------------------------------------------------- settings
 
@@ -83,6 +93,24 @@ final class Jobs
         return max(1, min(10, Settings::int($pdo, 'jobs.max_active_per_earner')));
     }
 
+    /** Is this a YOLOTASK job (migration 0024)? */
+    public static function isSystem(array $job): bool
+    {
+        return (int) ($job['is_system'] ?? 0) === 1;
+    }
+
+    /** The closed system account "YOLOTASK" that owns YOLOTASK tasks and jobs. */
+    public static function systemOwnerId(PDO $pdo): int
+    {
+        return \YoloTask\PlatformTasks\PlatformTasks::ownerUserId($pdo);
+    }
+
+    /** "YOLOTASK" for a YOLOTASK job, "the advertiser" otherwise (for messages to earners). */
+    public static function reviewerLabel(array $job): string
+    {
+        return self::isSystem($job) ? 'YOLOTASK' : 'the advertiser';
+    }
+
     /** Earner share (rounded down to the kobo) and platform share of a pay. */
     public static function split(int $payKobo, int $earnerPercent): array
     {
@@ -103,8 +131,9 @@ final class Jobs
      * $in: title, instructions, link_url, mode, location, pay (naira), slots,
      * time_limit (number), time_unit (hours|days), review_hours,
      * steps: list of [title, instructions, kinds: list<string>].
+     * $system: a YOLOTASK job (minimum pay ₦1 instead of jobs.min_pay_kobo).
      */
-    public static function validate(PDO $pdo, array $in): array
+    public static function validate(PDO $pdo, array $in, bool $system = false): array
     {
         $title = trim((string) ($in['title'] ?? ''));
         if (mb_strlen($title) < 3 || mb_strlen($title) > 120) throw new RuntimeException('Give the job a name of 3 to 120 characters.');
@@ -129,7 +158,7 @@ final class Jobs
         } catch (\InvalidArgumentException) {
             throw new RuntimeException('Enter the pay per earner in naira, for example 500.');
         }
-        $min = self::minPay($pdo);
+        $min = $system ? self::SYSTEM_MIN_PAY_KOBO : self::minPay($pdo);
         if ($pay < $min) throw new RuntimeException('Pay per earner must be at least ' . Money::format($min) . '.');
         if ($pay > self::MAX_PAY_KOBO) throw new RuntimeException('Pay per earner can be at most ' . Money::format(self::MAX_PAY_KOBO) . '.');
         $slots = self::wholeNumber($in['slots'] ?? '', 'Enter how many earners (slots) you need.');
@@ -199,6 +228,65 @@ final class Jobs
             throw $e;
         }
         return $id;
+    }
+
+    /**
+     * Publish a YOLOTASK job (admin or script): owned by the system account,
+     * earner gets the full pay, slots is a cap, no money moves. Returns the job id.
+     */
+    public static function publishSystem(PDO $pdo, ?int $adminId, array $in): int
+    {
+        $f = self::validate($pdo, $in, true);
+        $owner = self::systemOwnerId($pdo);
+        Wallet::forUser($pdo, $owner); // decisions lock the owner's wallet row like any job's
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT INTO jobs (advertiser_user_id, is_system, title, instructions, link_url, mode, location, step_count, pay_kobo, earner_percent, earner_kobo, fee_kobo, slots, time_limit_hours, review_hours, status, published_at)
+                VALUES (:a, 1, :t, :i, :l, :m, :loc, :sc, :p, 100, :ek, 0, :s, :tl, :rh, 'live', UTC_TIMESTAMP())")
+                ->execute(['a' => $owner, 't' => $f['title'], 'i' => $f['instructions'], 'l' => $f['link_url'], 'm' => $f['mode'], 'loc' => $f['location'], 'sc' => count($f['steps']),
+                    'p' => $f['pay'], 'ek' => $f['pay'], 's' => $f['slots'], 'tl' => $f['time_limit_hours'], 'rh' => $f['review_hours']]);
+            $id = (int) $pdo->lastInsertId();
+            $ins = $pdo->prepare('INSERT INTO job_steps (job_id, position, title, instructions, proof_kinds) VALUES (:j, :p, :t, :i, :k)');
+            foreach ($f['steps'] as $n => $s) $ins->execute(['j' => $id, 'p' => $n + 1, 't' => $s['title'], 'i' => $s['instructions'], 'k' => implode(',', $s['kinds'])]);
+            Audit::record($pdo, $adminId, 'admin.system_job_published', 'job', $id);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+        return $id;
+    }
+
+    /** A YOLOTASK job by id (refuses advertisers' jobs). */
+    public static function systemJob(PDO $pdo, int $id): array
+    {
+        $job = self::find($pdo, $id);
+        if ($job === null || !self::isSystem($job)) throw new RuntimeException('YOLOTASK job not found.');
+        return $job;
+    }
+
+    /** Admin pauses or resumes a YOLOTASK job (no reason needed: there is no advertiser to tell). */
+    public static function systemSetPaused(PDO $pdo, int $adminId, int $id, bool $pause): void
+    {
+        self::systemJob($pdo, $id);
+        $pdo->beginTransaction();
+        try {
+            $job = self::lockRow($pdo, $id);
+            if ((string) $job['status'] !== ($pause ? 'live' : 'paused')) throw new RuntimeException($pause ? 'Only live jobs can be paused.' : 'Only paused jobs can be resumed.');
+            $pdo->prepare('UPDATE jobs SET status = :s, admin_paused = 0, status_reason = NULL WHERE id = :id')->execute(['s' => $pause ? 'paused' : 'live', 'id' => $id]);
+            Audit::record($pdo, $adminId, $pause ? 'admin.system_job_paused' : 'admin.system_job_resumed', 'job', $id);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /** Admin closes a YOLOTASK job: no new starts; work already started can still be submitted and decided. Nothing is refunded. */
+    public static function systemClose(PDO $pdo, int $adminId, int $id): void
+    {
+        self::systemJob($pdo, $id);
+        self::closeWith($pdo, $adminId, $id, 'closed', 'Closed by YOLOTASK', 'admin.system_job_closed');
     }
 
     /** Lock more pay into escrow (inside the caller's transaction; wallet and job locked). */
@@ -360,7 +448,8 @@ final class Jobs
     /**
      * Refund every slot a closed job no longer needs (neither approved nor
      * active). Caller holds the advertiser wallet lock and the job row lock
-     * ($job is that row). Returns the amount refunded.
+     * ($job is that row). Returns the amount refunded. A YOLOTASK job has no
+     * escrow: its cap just shrinks to what approved and active work holds.
      */
     public static function settle(PDO $pdo, array $job, string $note, ?int $actorId = null): int
     {
@@ -369,6 +458,10 @@ final class Jobs
         $keep = (int) $job['approved_count'] + (int) $job['active_count'];
         $excess = (int) $job['slots'] - $keep;
         if ($excess <= 0) return 0;
+        if (self::isSystem($job)) {
+            $pdo->prepare('UPDATE jobs SET slots = :k WHERE id = :id')->execute(['k' => $keep, 'id' => $id]);
+            return 0;
+        }
         $refund = $excess * (int) $job['pay_kobo'];
         $wallet = Wallet::find($pdo, (int) $job['advertiser_user_id']);
         if ($wallet === null) throw new RuntimeException('Advertiser wallet missing.');
@@ -461,10 +554,12 @@ final class Jobs
         return Pagination::query($pdo, "SELECT COUNT(*) FROM jobs j {$where}", $sql, $args, $page, self::PAGE_SIZE);
     }
 
-    public static function listForAdmin(PDO $pdo, string $status, string $q, int $page): array
+    /** $kind: '' every job, 'system' YOLOTASK jobs only (migration 0024). */
+    public static function listForAdmin(PDO $pdo, string $status, string $q, int $page, string $kind = ''): array
     {
         $where = 'WHERE 1 = 1';
         $args = [];
+        if ($kind === 'system') $where .= ' AND j.is_system = 1';
         if (in_array($status, ['live', 'paused', 'closed', 'completed', 'removed'], true)) { $where .= ' AND j.status = :s'; $args['s'] = $status; }
         if ($q !== '') {
             $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -498,7 +593,9 @@ final class Jobs
         return [
             'jobs' => (int) ($r['n'] ?? 0), 'live' => (int) ($r['live'] ?? 0),
             'escrow' => $bal(Ledger::JOBS_ESCROW), 'revenue' => $bal(Ledger::JOBS_REVENUE), 'platform_appeals' => $bal(Ledger::JOBS_APPEAL_PAYOUTS),
-            'to_review' => (int) $pdo->query("SELECT COUNT(*) FROM job_attempts WHERE status = 'submitted'")->fetchColumn(),
+            'to_review' => (int) $pdo->query("SELECT COUNT(*) FROM job_attempts a JOIN jobs j ON j.id = a.job_id WHERE a.status = 'submitted' AND j.is_system = 0")->fetchColumn(),
+            'system_to_review' => SystemReviews::count($pdo),
+            'system_paid' => $bal(Ledger::PLATFORM_JOB_PAYOUTS),
             'appeals' => JobAppeals::openCount($pdo),
         ];
     }
@@ -544,20 +641,25 @@ final class Jobs
      *  - system:jobs_escrow = total unspent job budgets (escrow == locked unpaid);
      *  - system:jobs_revenue = fees of approved attempts;
      *  - system:jobs_appeal_payouts = platform share of overturned appeals;
-     *  - every approved attempt has its approval posting; released rewards have their release posting.
+     *  - every approved attempt has its approval posting; released rewards have their release posting;
+     *  - YOLOTASK jobs (migration 0024) skip the escrow checks, never hold money
+     *    (funded = spent = refunded = fee = 0) and system:platform_job_payouts =
+     *    pay of approved attempts on YOLOTASK jobs.
      * @return list<string>
      */
     public static function reconcile(PDO $pdo): array
     {
         if (!(bool) $pdo->query("SHOW TABLES LIKE 'job_attempts'")->fetchColumn()) return [];
         $problems = [];
+        $hasSystem = (bool) $pdo->query("SHOW COLUMNS FROM jobs LIKE 'is_system'")->fetchColumn();
+        $adv = $hasSystem ? 'is_system = 0' : '1 = 1';
         $bal = static function (string $code) use ($pdo): int {
             $s = $pdo->prepare('SELECT COALESCE((SELECT balance_kobo FROM ledger_accounts WHERE code = :c), 0)');
             $s->execute(['c' => $code]);
             return (int) $s->fetchColumn();
         };
-        foreach ($pdo->query('SELECT id, funded_kobo - spent_kobo - refunded_kobo unspent, pay_kobo * (CAST(slots AS SIGNED) - CAST(approved_count AS SIGNED)) needed, spent_kobo, pay_kobo * approved_count approved_value
-                FROM jobs WHERE funded_kobo - spent_kobo - refunded_kobo <> pay_kobo * (CAST(slots AS SIGNED) - CAST(approved_count AS SIGNED)) OR spent_kobo <> pay_kobo * approved_count LIMIT 50') as $r) {
+        foreach ($pdo->query("SELECT id, funded_kobo - spent_kobo - refunded_kobo unspent, pay_kobo * (CAST(slots AS SIGNED) - CAST(approved_count AS SIGNED)) needed, spent_kobo, pay_kobo * approved_count approved_value
+                FROM jobs WHERE {$adv} AND (funded_kobo - spent_kobo - refunded_kobo <> pay_kobo * (CAST(slots AS SIGNED) - CAST(approved_count AS SIGNED)) OR spent_kobo <> pay_kobo * approved_count) LIMIT 50") as $r) {
             $problems[] = "Job #{$r['id']} escrow {$r['unspent']} != locked unpaid slots {$r['needed']} (spent {$r['spent_kobo']}, approved value {$r['approved_value']})";
         }
         foreach ($pdo->query("SELECT j.id, j.approved_count, j.active_count, COALESCE(SUM(a.status = 'approved'), 0) ap, COALESCE(SUM(a.status IN ('in_progress', 'submitted', 'sent_back')), 0) ac
@@ -568,8 +670,19 @@ final class Jobs
             $problems[] = "Closed job #{$r['id']} still holds {$r['slots']} slots (approved {$r['approved_count']} + active {$r['active_count']})";
         }
         $escrow = $bal(Ledger::JOBS_ESCROW);
-        $unspent = (int) $pdo->query('SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) FROM jobs')->fetchColumn();
+        $unspent = (int) $pdo->query("SELECT COALESCE(SUM(funded_kobo - spent_kobo - refunded_kobo), 0) FROM jobs WHERE {$adv}")->fetchColumn();
         if ($escrow !== $unspent) $problems[] = "Jobs escrow {$escrow} != total locked unpaid job budgets {$unspent}";
+        if ($hasSystem) {
+            foreach ($pdo->query('SELECT id FROM jobs WHERE is_system = 1 AND (funded_kobo <> 0 OR spent_kobo <> 0 OR refunded_kobo <> 0 OR fee_kobo <> 0 OR earner_kobo <> pay_kobo) LIMIT 50') as $r) {
+                $problems[] = "YOLOTASK job #{$r['id']} holds money columns (it must have no escrow and pay the earner in full)";
+            }
+            foreach ($pdo->query('SELECT a.id FROM job_attempts a JOIN jobs j ON j.id = a.job_id WHERE j.is_system = 1 AND (a.fee_kobo <> 0 OR a.earner_kobo <> a.pay_kobo) LIMIT 50') as $r) {
+                $problems[] = "YOLOTASK job attempt #{$r['id']} does not pay the earner in full";
+            }
+            $paid = $bal(Ledger::PLATFORM_JOB_PAYOUTS);
+            $owed = (int) $pdo->query("SELECT COALESCE(SUM(a.pay_kobo), 0) FROM job_attempts a JOIN jobs j ON j.id = a.job_id WHERE j.is_system = 1 AND a.status = 'approved'")->fetchColumn();
+            if ($paid !== $owed) $problems[] = "YOLOTASK job payouts {$paid} != pay of approved YOLOTASK job attempts {$owed}";
+        }
         $rev = $bal(Ledger::JOBS_REVENUE);
         $fees = (int) $pdo->query("SELECT COALESCE(SUM(fee_kobo), 0) FROM job_attempts WHERE status = 'approved'")->fetchColumn();
         if ($rev !== $fees) $problems[] = "Jobs revenue {$rev} != platform share of approved jobs {$fees}";

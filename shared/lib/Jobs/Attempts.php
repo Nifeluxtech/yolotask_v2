@@ -284,7 +284,7 @@ final class Attempts
 
     // ---------------------------------------------------------------- reads
 
-    private const SELECT = 'SELECT a.*, j.title job_title, j.status job_status, j.step_count, j.review_hours, j.mode, j.location, j.link_url, j.instructions job_instructions,
+    private const SELECT = 'SELECT a.*, j.title job_title, j.status job_status, j.is_system, j.step_count, j.review_hours, j.mode, j.location, j.link_url, j.instructions job_instructions,
         eu.display_name earner_name, eu.email earner_email, au.display_name advertiser_name, au.email advertiser_email,
         st.position sent_back_position, st.title sent_back_title,
         (SELECT ap.id FROM job_appeals ap WHERE ap.attempt_id = a.id) appeal_id
@@ -407,6 +407,7 @@ final class Attempts
 
     private static function tellAdvertiser(PDO $pdo, array $a, bool $again): void
     {
+        if (Jobs::isSystem($a)) return; // YOLOTASK job (migration 0024): no advertiser; it waits in the admin and reviewer queues
         try {
             $job = Jobs::find($pdo, (int) $a['job_id']);
             $title = mb_substr((string) $a['job_title'], 0, 90);

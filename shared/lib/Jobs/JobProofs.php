@@ -114,8 +114,8 @@ final class JobProofs
     /** File row with the owners needed for the access check. */
     public static function find(PDO $pdo, int $id): ?array
     {
-        $stmt = $pdo->prepare('SELECT f.*, a.earner_user_id, a.advertiser_user_id, a.status attempt_status, (SELECT COUNT(*) FROM job_appeals ap WHERE ap.attempt_id = a.id) appeal_count
-            FROM job_files f JOIN job_attempts a ON a.id = f.attempt_id WHERE f.id = :id');
+        $stmt = $pdo->prepare('SELECT f.*, a.earner_user_id, a.advertiser_user_id, a.status attempt_status, j.is_system, (SELECT COUNT(*) FROM job_appeals ap WHERE ap.attempt_id = a.id) appeal_count
+            FROM job_files f JOIN job_attempts a ON a.id = f.attempt_id JOIN jobs j ON j.id = a.job_id WHERE f.id = :id');
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return is_array($row) ? $row : null;
@@ -127,7 +127,8 @@ final class JobProofs
             'admin' => true,
             'earner' => (int) $file['earner_user_id'] === (int) $user['id'],
             'advertiser' => (int) $file['advertiser_user_id'] === (int) $user['id'],
-            'reviewer' => (int) ($file['appeal_count'] ?? 0) > 0, // reviewers see job proofs only for appealed attempts
+            // reviewers see job proofs for appealed attempts, and for YOLOTASK jobs they review themselves (migration 0024)
+            'reviewer' => (int) ($file['appeal_count'] ?? 0) > 0 || (int) ($file['is_system'] ?? 0) === 1,
             default => false,
         };
     }

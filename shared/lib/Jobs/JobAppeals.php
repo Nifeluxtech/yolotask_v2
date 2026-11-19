@@ -34,6 +34,10 @@ use YoloTask\Tasks\ReviewerActions;
  * (key job-appeal-fund:<id>) from the advertiser's wallet, and anything the
  * wallet cannot cover is paid by YOLOTASK (system:jobs_appeal_payouts),
  * recorded on the appeal and shown to admins.
+ * YOLOTASK jobs (migration 0024): the platform pays the overturn as on
+ * approval (Dr system:platform_job_payouts, key job-appeal-approve:<id>); no
+ * funding step. With no free slot the job's cap grows by one; escrow / wallet /
+ * platform_kobo stay 0 on the appeal.
  */
 final class JobAppeals
 {
@@ -83,7 +87,7 @@ final class JobAppeals
     }
 
     private const SELECT = "SELECT ap.*, a.status attempt_status, a.pay_kobo, a.earner_kobo, a.reward_status, a.send_back_count, a.submitted_at,
-        j.title job_title, j.status job_status, j.mode, j.location, j.link_url, j.instructions job_instructions,
+        j.title job_title, j.status job_status, j.is_system, j.mode, j.location, j.link_url, j.instructions job_instructions,
         eu.display_name earner_name, eu.email earner_email, au.display_name advertiser_name, au.email advertiser_email,
         rv.display_name resolver_name, rj.display_name rejecter_name,
         rc.reviewer_user_id claim_user_id, rc.expires_at claim_expires_at, cu.display_name claim_reviewer_name
@@ -211,11 +215,16 @@ final class JobAppeals
         $appealId = (int) $ap['id'];
         $jobId = (int) $job['id'];
         $price = (int) $row['pay_kobo'];
+        $system = Jobs::isSystem($job);
         $fromEscrow = Jobs::freeSlots($job) > 0 ? $price : 0;
         $fromWallet = 0;
         $fromPlatform = 0;
         $fundTx = null;
-        if ($fromEscrow === 0) {
+        if ($system) {
+            // YOLOTASK job: nothing to fund; with no free slot the cap grows by one so the counters stay consistent.
+            if ($fromEscrow === 0) $pdo->prepare('UPDATE jobs SET slots = slots + 1 WHERE id = :id')->execute(['id' => $jobId]);
+            $fromEscrow = 0;
+        } elseif ($fromEscrow === 0) {
             // No free slot: add one slot and fund it (advertiser wallet first, YOLOTASK covers the rest).
             $adv = Wallet::find($pdo, (int) $job['advertiser_user_id']);
             if ($adv === null) throw new RuntimeException('Advertiser wallet missing.');
@@ -235,7 +244,7 @@ final class JobAppeals
         }
         $pay = Reviews::postApproval($pdo, $job, $row, 'job-appeal-approve:' . $appealId, $actorId);
         Reviews::markApproved($pdo, (int) $row['id'], 'appeal', $actorId, $pay);
-        $pdo->prepare('UPDATE jobs SET approved_count = approved_count + 1, rejected_count = GREATEST(rejected_count, 1) - 1, spent_kobo = spent_kobo + :p WHERE id = :id')->execute(['p' => $price, 'id' => $jobId]);
+        $pdo->prepare('UPDATE jobs SET approved_count = approved_count + 1, rejected_count = GREATEST(rejected_count, 1) - 1, spent_kobo = spent_kobo + :p WHERE id = :id')->execute(['p' => $system ? 0 : $price, 'id' => $jobId]);
         $job = Jobs::completeIfFull($pdo, $jobId);
         Jobs::settle($pdo, $job, 'job appeal settled', $actorId);
         return [['escrow' => $fromEscrow, 'wallet' => $fromWallet, 'platform' => $fromPlatform, 'fund_tx' => $fundTx, 'approve_tx' => $pay['tx_id']], $pay];
@@ -258,6 +267,7 @@ final class JobAppeals
                             !empty($pay['held']) ? "Your {$amount} reward is on a short hold and then reaches your wallet." : "Your {$amount} reward is in your wallet."],
                         'button' => ['label' => 'Open the job', 'url' => yolotask_portal_url('earner') . '/' . $url],
                     ]);
+                if ((int) $ap['is_system'] === 1) return; // YOLOTASK job: no advertiser to tell
                 $lines = ['A YOLOTASK reviewer overturned your rejection on "' . $ap['job_title'] . '" after the earner appealed.', 'Your rejection reason: ' . (string) $ap['rejection_reason'], 'Reviewer note: ' . $ap['resolution_note']];
                 if ((int) $ap['wallet_kobo'] > 0) $lines[] = 'The job had no free slot, so ' . Money::format((int) $ap['wallet_kobo']) . ' was charged from your wallet for this payout.';
                 Notifications::notify($pdo, (int) $ap['advertiser_user_id'], 'appeals', 'Job rejection overturned: ' . $title, 'A reviewer overturned your rejection after the earner appealed.',

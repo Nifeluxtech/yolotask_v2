@@ -12,6 +12,7 @@ use YoloTask\Money\Money;
 use YoloTask\Money\Wallet;
 use YoloTask\Security\Audit;
 use YoloTask\Tasks\Approvals;
+use YoloTask\Tasks\ReviewClaims;
 
 /**
  * Advertiser decisions on a submitted job attempt (migration 0023) and the
@@ -27,11 +28,18 @@ use YoloTask\Tasks\Approvals;
  * Reject: with a reason; the slot returns to the job (refunded at once when
  * the job is closed); the earner may appeal (JobAppeals).
  * Auto-approve: submitted attempts past review_due_at (cron).
+ * YOLOTASK jobs (migration 0024): no advertiser and no escrow. Admins and
+ * reviewers (SystemReviews) decide them with the same rules; approve pays the
+ * full pay from the platform: Dr system:platform_job_payouts / Cr earner
+ * available or system:reward_hold, same key. Nothing is spent from the job.
  */
 final class Reviews
 {
-    /** @param 'advertiser'|'auto'|'admin' $source */
-    public static function approve(PDO $pdo, int $attemptId, string $source, ?int $actorId, ?int $advertiserId = null): void
+    /**
+     * @param 'advertiser'|'auto'|'admin'|'reviewer' $source
+     * @param ?callable $guard runs inside the transaction with the attempt row locked (reviewer claim checks, SystemReviews)
+     */
+    public static function approve(PDO $pdo, int $attemptId, string $source, ?int $actorId, ?int $advertiserId = null, ?callable $guard = null): void
     {
         $a = Attempts::find($pdo, $attemptId);
         if ($a === null || ($advertiserId !== null && (int) $a['advertiser_user_id'] !== $advertiserId)) throw new RuntimeException('Job submission not found.');
@@ -43,12 +51,15 @@ final class Reviews
             $row = Attempts::lockAttempt($pdo, $attemptId);
             if ((string) $row['status'] !== 'submitted') throw new RuntimeException('This job submission has already been decided or is waiting for a fix.');
             if ($source === 'auto' && strtotime((string) $row['review_due_at'] . ' UTC') > time()) throw new RuntimeException('Not due for auto-approval yet.');
+            if ($guard !== null) $guard($pdo, $row);
             $pay = self::postApproval($pdo, $job, $row, 'job-approve:' . $attemptId, $actorId);
             self::markApproved($pdo, $attemptId, $source, $actorId, $pay);
-            $pdo->prepare('UPDATE jobs SET approved_count = approved_count + 1, active_count = active_count - 1, spent_kobo = spent_kobo + :p WHERE id = :id')->execute(['p' => (int) $row['pay_kobo'], 'id' => $job['id']]);
+            // A YOLOTASK job spends nothing from the job: the platform pays (system:platform_job_payouts).
+            $pdo->prepare('UPDATE jobs SET approved_count = approved_count + 1, active_count = active_count - 1, spent_kobo = spent_kobo + :p WHERE id = :id')->execute(['p' => Jobs::isSystem($job) ? 0 : (int) $row['pay_kobo'], 'id' => $job['id']]);
+            if (Jobs::isSystem($job)) ReviewClaims::clear($pdo, 'job_attempt', $attemptId);
             $job = Jobs::completeIfFull($pdo, (int) $job['id']);
             Jobs::settle($pdo, $job, 'job settled after an approval', $actorId);
-            Audit::record($pdo, $actorId, match ($source) { 'auto' => 'job.auto_approved', 'admin' => 'admin.job_approved', default => 'job.approved' }, 'job_attempt', $attemptId);
+            Audit::record($pdo, $actorId, match ($source) { 'auto' => 'job.auto_approved', 'admin' => 'admin.job_approved', 'reviewer' => 'reviewer.job_approved', default => 'job.approved' }, 'job_attempt', $attemptId);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -72,6 +83,15 @@ final class Reviews
         $earner = Wallet::find($pdo, (int) $row['earner_user_id']);
         if ($earner === null) throw new RuntimeException('Earner wallet missing.');
         $to = $holdHours > 0 ? Ledger::systemAccountId($pdo, Ledger::REWARD_HOLD) : (int) $earner['available_account_id'];
+        if (Jobs::isSystem($job)) {
+            // YOLOTASK job (migration 0024): no escrow; the platform pays the full pay (Dr system:platform_job_payouts).
+            if ($fee !== 0 || $earnerShare !== $pay) throw new RuntimeException('YOLOTASK job pay must go to the earner in full.');
+            $tx = Ledger::post($pdo, $key, 'job_reward', 'YOLOTASK job reward: ' . mb_substr((string) $job['title'], 0, 110), [
+                [Ledger::systemAccountId($pdo, Ledger::PLATFORM_JOB_PAYOUTS), 'debit', $pay], [$to, 'credit', $pay],
+            ], 'job_attempt', (int) $row['id'], $actorId);
+            $held = $holdHours > 0;
+            return ['tx_id' => $tx['id'], 'held' => $held, 'release_at' => $held ? gmdate('Y-m-d H:i:s', time() + $holdHours * 3600) : null];
+        }
         $legs = [[Ledger::systemAccountId($pdo, Ledger::JOBS_ESCROW), 'debit', $pay]];
         if ($earnerShare > 0) $legs[] = [$to, 'credit', $earnerShare];
         if ($fee > 0) $legs[] = [Ledger::systemAccountId($pdo, Ledger::JOBS_REVENUE), 'credit', $fee];
@@ -88,8 +108,11 @@ final class Reviews
                 'rrd' => $pay['held'] ? null : gmdate('Y-m-d H:i:s'), 't' => $pay['tx_id'], 'id' => $attemptId]);
     }
 
-    /** Send one step back for a fix (advertiser, or admin when $advertiserId is null). */
-    public static function sendBack(PDO $pdo, int $attemptId, int $actorId, int $stepId, string $note, ?int $advertiserId = null): void
+    /**
+     * Send one step back for a fix (advertiser, or admin / reviewer when $advertiserId is null).
+     * @param 'admin'|'reviewer' $staffRole who decides when $advertiserId is null
+     */
+    public static function sendBack(PDO $pdo, int $attemptId, int $actorId, int $stepId, string $note, ?int $advertiserId = null, ?callable $guard = null, string $staffRole = 'admin'): void
     {
         $note = trim(str_replace(["\r\n", "\r"], "\n", $note));
         if (mb_strlen($note) < 3 || mb_strlen($note) > 500) throw new RuntimeException('Tell the earner what to fix (3 to 500 characters).');
@@ -102,6 +125,7 @@ final class Reviews
             Jobs::lockRow($pdo, (int) $a['job_id']);
             $row = Attempts::lockAttempt($pdo, $attemptId);
             if ((string) $row['status'] !== 'submitted') throw new RuntimeException('Only a submission waiting for review can be sent back.');
+            if ($guard !== null) $guard($pdo, $row);
             if ((int) $row['send_back_count'] >= $max) throw new RuntimeException($max === 0 ? 'Sending steps back is switched off. Approve or reject this submission.' : "This submission was already sent back {$max} time" . ($max === 1 ? '' : 's') . '. Approve or reject it now.');
             $st = $pdo->prepare('SELECT id, position FROM job_steps WHERE id = :s AND job_id = :j');
             $st->execute(['s' => $stepId, 'j' => $row['job_id']]);
@@ -113,24 +137,26 @@ final class Reviews
                 ->execute(['r' => $round, 's' => $stepId, 'n' => $note, 'h' => $hours, 'id' => $attemptId]);
             $pdo->prepare('INSERT INTO job_send_backs (attempt_id, step_id, round, note, sent_by_user_id, fix_deadline_at) VALUES (:a, :s, :r, :n, :u, DATE_ADD(UTC_TIMESTAMP(), INTERVAL :h HOUR))')
                 ->execute(['a' => $attemptId, 's' => $stepId, 'r' => $round, 'n' => $note, 'u' => $actorId, 'h' => $hours]);
-            Audit::record($pdo, $actorId, $advertiserId === null ? 'admin.job_sent_back' : 'job.sent_back', 'job_attempt', $attemptId);
+            ReviewClaims::clear($pdo, 'job_attempt', $attemptId);
+            Audit::record($pdo, $actorId, $advertiserId === null ? ($staffRole === 'reviewer' ? 'reviewer.job_sent_back' : 'admin.job_sent_back') : 'job.sent_back', 'job_attempt', $attemptId);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
         $title = mb_substr((string) $a['job_title'], 0, 90);
+        $by = Jobs::isSystem($a) ? 'YOLOTASK' : 'The advertiser';
         Notifications::notify($pdo, (int) $a['earner_user_id'], 'jobs', 'Step ' . (int) $step['position'] . ' sent back: ' . $title, 'Fix it within ' . Jobs::hoursLabel($hours) . ' and resubmit. Note: ' . $note,
             'job.php?id=' . (int) $a['job_id'], 'job-sendback:' . $attemptId . ':' . $round, [
                 'subject' => 'Please fix a step of your job: ' . $title, 'heading' => 'Step sent back for a fix',
-                'lines' => ['The advertiser reviewed your work on "' . $a['job_title'] . '" and sent step ' . (int) $step['position'] . ' back.', 'Their note: ' . $note,
+                'lines' => [$by . ' reviewed your work on "' . $a['job_title'] . '" and sent step ' . (int) $step['position'] . ' back.', 'Their note: ' . $note,
                     'Fix that step and resubmit within ' . Jobs::hoursLabel($hours) . '. If you do not, the job ends without pay.'],
                 'button' => ['label' => 'Fix the step', 'url' => yolotask_portal_url('earner') . '/job.php?id=' . (int) $a['job_id']],
             ]);
     }
 
-    /** @param 'advertiser'|'admin' $source */
-    public static function reject(PDO $pdo, int $attemptId, string $source, int $actorId, string $reason, ?int $advertiserId = null): void
+    /** @param 'advertiser'|'admin'|'reviewer' $source */
+    public static function reject(PDO $pdo, int $attemptId, string $source, int $actorId, string $reason, ?int $advertiserId = null, ?callable $guard = null): void
     {
         $reason = trim($reason);
         if (mb_strlen($reason) < 3 || mb_strlen($reason) > 255) throw new RuntimeException('Tell the earner why (3 to 255 characters).');
@@ -142,11 +168,13 @@ final class Reviews
             $job = Jobs::lockRow($pdo, (int) $a['job_id']);
             $row = Attempts::lockAttempt($pdo, $attemptId);
             if ((string) $row['status'] !== 'submitted') throw new RuntimeException('Only a submission waiting for review can be rejected.');
+            if ($guard !== null) $guard($pdo, $row);
             $pdo->prepare("UPDATE job_attempts SET status = 'rejected', decision_source = :src, decided_by_user_id = :a, decided_at = UTC_TIMESTAMP(), reject_reason = :r, review_due_at = NULL WHERE id = :id")
                 ->execute(['src' => $source, 'a' => $actorId, 'r' => $reason, 'id' => $attemptId]);
             $pdo->prepare('UPDATE jobs SET active_count = active_count - 1, rejected_count = rejected_count + 1 WHERE id = :id')->execute(['id' => $job['id']]);
             Jobs::settle($pdo, Jobs::lockRow($pdo, (int) $job['id']), 'unused slot after a rejection', $actorId);
-            Audit::record($pdo, $actorId, $source === 'admin' ? 'admin.job_rejected' : 'job.rejected', 'job_attempt', $attemptId);
+            ReviewClaims::clear($pdo, 'job_attempt', $attemptId);
+            Audit::record($pdo, $actorId, match ($source) { 'admin' => 'admin.job_rejected', 'reviewer' => 'reviewer.job_rejected', default => 'job.rejected' }, 'job_attempt', $attemptId);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -212,7 +240,7 @@ final class Reviews
         $amount = Money::format((int) $a['earner_kobo']);
         $title = mb_substr((string) $a['job_title'], 0, 90);
         $head = $onAppeal ? 'Job approved on appeal: ' : ($auto ? 'Job auto-approved: ' : 'Job approved: ');
-        $body = ($auto ? 'The advertiser did not review in time, so your job was approved automatically. ' : '')
+        $body = ($auto ? (Jobs::isSystem($a) ? 'Your job was approved automatically. ' : 'The advertiser did not review in time, so your job was approved automatically. ') : '')
             . (!empty($pay['held']) ? "Your {$amount} reward is on a short hold and then reaches your wallet." : "{$amount} was added to your wallet.");
         Notifications::notify($pdo, (int) $a['earner_user_id'], $onAppeal ? 'appeals' : 'jobs', $head . $title, $body, 'job.php?id=' . (int) $a['job_id'], 'job-approve:' . (int) $a['id']);
     }
