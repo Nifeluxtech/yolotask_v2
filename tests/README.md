@@ -170,3 +170,20 @@ Needs migrations through 0023 and the four portals on `php -S`. Covers create,
 start, steps, submit, send back, resubmit, approve; reject, appeal, reviewer
 overturn; expiry and auto-approve through the real cron scripts; admin pause,
 settings, remove; close refund; ledger reconciliation after every step.
+
+## YOLOTASK jobs (migration 0024)
+
+    php tests/smoke/system-jobs.php
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg bash tests/Integration/Jobs/run-servers.sh
+    YOLOTASK_CONFIG_DIR=/tmp/ytcfg php tests/Integration/Jobs/system_jobs_e2e.php
+
+Smoke: no database (lint, migration shape, ₦1 minimum, 100 % split, proof
+access, wiring, the BetFugu script). E2E: needs migrations through 0024 and the
+same four portals. Covers admin publish (no ledger posting), earner feed and
+activation gate, reviewer queue (claim, send back, approve with reward hold,
+reject), admin approve, appeal overturn by a second reviewer (platform-paid),
+auto-approve and expiry through the real cron scripts, pause / resume / close
+(nothing refunded), admin decisions refused on advertisers' jobs,
+`scripts/create-betfugu-jobs.php` (dry run, create, idempotent re-run) and
+ledger reconciliation after every step. Run `jobs_e2e.php` too: the advertiser
+flow must be unchanged.
