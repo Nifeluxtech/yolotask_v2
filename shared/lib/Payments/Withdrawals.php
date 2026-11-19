@@ -22,6 +22,14 @@ use YoloTask\Security\Crypto;
  * fee to system:withdrawal_fees. Lock order everywhere: wallet
  * row first, then the withdrawal row.
  *
+ * Straight withdrawals (setting withdrawals.auto_payout, Admin -> Money
+ * settings): while ON and Korapay is connected, a new request is approved
+ * by the system right after it is created and sent to Korapay (whatever the
+ * payout gateway setting says), with no admin review. If Korapay refuses it
+ * definitively, it falls back to pending_review for an admin, exactly like a
+ * refused manual approval; an unclear answer stays in processing until the
+ * Korapay webhook or sweep settles it.
+ *
  * Advertisers (migration 0022, marketplace sellers) may also withdraw, but
  * only their marketplace earnings: Marketplace::withdrawableEarnings =
  * released marketplace earnings minus their withdrawals that were not
@@ -33,6 +41,30 @@ use YoloTask\Security\Crypto;
 final class Withdrawals
 {
     public const OPEN = ['pending_review', 'processing'];
+
+    /** Are straight withdrawals (auto payout to Korapay) switched on and usable? */
+    public static function autoPayoutOn(PDO $pdo): bool
+    {
+        return Settings::get($pdo, 'withdrawals.auto_payout', '0') === '1' && KorapayClient::isConfigured();
+    }
+
+    /**
+     * Straight withdrawals: send a just-requested withdrawal to Korapay with no
+     * admin review. Returns null when the switch is off; otherwise true when it
+     * was sent (or is waiting on Korapay's answer) and false when it fell back
+     * to the admin review list. Never throws.
+     */
+    public static function autoSend(PDO $pdo, int $withdrawalId): ?bool
+    {
+        if (!self::autoPayoutOn($pdo)) return null;
+        try {
+            self::approve($pdo, null, $withdrawalId, Gateway::KORAPAY);
+            return true;
+        } catch (\Throwable $e) {
+            Logger::error('payments.auto_payout_failed', ['withdrawal_id' => $withdrawalId, 'exception' => get_class($e), 'message' => mb_substr($e->getMessage(), 0, 200)]);
+            return false;
+        }
+    }
 
     public static function limits(PDO $pdo): array
     {
@@ -153,7 +185,7 @@ final class Withdrawals
     {
         self::assertCanWithdraw($pdo, $user);
         if (empty($user['email_verified_at'])) throw new RuntimeException('Confirm your email before withdrawing.');
-        if (!Gateway::payoutReady($pdo)) throw new RuntimeException('Payments are not available yet.');
+        if (!Gateway::payoutReady($pdo) && !self::autoPayoutOn($pdo)) throw new RuntimeException('Payments are not available yet.');
         if (!preg_match('/^[a-f0-9]{32}$/', $idemKey)) throw new RuntimeException('Your form expired. Please try again.');
         $userId = (int) $user['id'];
         $limits = self::limits($pdo);
@@ -204,10 +236,14 @@ final class Withdrawals
         return $id;
     }
 
-    /** Approve and send to the active payout gateway (AfrStar or Korapay). Returns a message for the admin. */
-    public static function approve(PDO $pdo, int $adminId, int $withdrawalId): string
+    /**
+     * Approve and send to the active payout gateway (AfrStar or Korapay), or to
+     * $gateway when given. $adminId null = approved by the system (straight
+     * withdrawals). Returns a message for the admin.
+     */
+    public static function approve(PDO $pdo, ?int $adminId, int $withdrawalId, ?string $gateway = null): string
     {
-        $gateway = Gateway::payout($pdo);
+        $gateway = $gateway !== null ? Gateway::clean($gateway) : Gateway::payout($pdo);
         if (!Gateway::isConfigured($gateway)) throw new RuntimeException('Payments are not available yet.');
         $label = Gateway::label($gateway);
         $userId = self::ownerOf($pdo, $withdrawalId);
@@ -229,7 +265,7 @@ final class Withdrawals
             $orderSn = 'YTW' . str_pad((string) $withdrawalId, 8, '0', STR_PAD_LEFT) . 'A' . $attempt;
             $pdo->prepare("UPDATE withdrawals SET status = 'processing', attempts = :a, order_sn = :sn, gateway = :g, reviewed_by_user_id = :r, reviewed_at = UTC_TIMESTAMP(), provider_message = NULL WHERE id = :id")
                 ->execute(['a' => $attempt, 'sn' => $orderSn, 'g' => $gateway, 'r' => $adminId, 'id' => $withdrawalId]);
-            Audit::record($pdo, $adminId, 'admin.withdrawal_approved', 'withdrawal', $withdrawalId);
+            Audit::record($pdo, $adminId, $adminId === null ? 'wallet.withdrawal_auto_approved' : 'admin.withdrawal_approved', 'withdrawal', $withdrawalId);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
