@@ -26,6 +26,13 @@ final class ReviewerActions
             ->execute(['u' => $userId, 'r' => $role === 'admin' ? 'admin' : 'reviewer', 'a' => $action, 'i' => $appealId, 'j' => $attemptId, 'n' => $note === null ? null : mb_substr($note, 0, 500)]);
     }
 
+    /** A decision on a YOLOTASK job submission (migration 0024): item = the job attempt. Inside the caller's transaction. */
+    public static function recordJobAttempt(PDO $pdo, int $userId, string $role, string $action, int $attemptId, ?string $note = null): void
+    {
+        $pdo->prepare('INSERT INTO reviewer_actions (reviewer_user_id, reviewer_role, action, item_type, item_id, submission_id, job_attempt_id, note, decided_at) VALUES (:u, :r, :a, \'job_attempt\', :i, NULL, :j, :n, UTC_TIMESTAMP())')
+            ->execute(['u' => $userId, 'r' => $role === 'admin' ? 'admin' : 'reviewer', 'a' => $action, 'i' => $attemptId, 'j' => $attemptId, 'n' => $note === null || $note === '' ? null : mb_substr($note, 0, 500)]);
+    }
+
     public static function forReviewer(PDO $pdo, int $userId, int $page): array
     {
         // Job appeal decisions (migration 0023) have no submission; their title comes from the job.
@@ -58,6 +65,9 @@ final class ReviewerActions
             'submission_rejected' => 'Stale proof rejected',
             'job_appeal_upheld' => 'Job appeal: rejection upheld',
             'job_appeal_overturned' => 'Job appeal: overturned, earner paid',
+            'job_approved' => 'YOLOTASK job approved',
+            'job_sent_back' => 'YOLOTASK job: step sent back',
+            'job_rejected' => 'YOLOTASK job rejected',
             default => ucfirst(str_replace('_', ' ', $action)),
         };
     }
