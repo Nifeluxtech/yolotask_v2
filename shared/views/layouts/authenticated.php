@@ -64,6 +64,7 @@ $flashIcon = [
 })();
 </script>
 <link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
+<?php foreach (yolotask_page_css() as $pageCss): ?><link rel="stylesheet" href="<?= h(yolotask_asset($pageCss)) ?>"><?php endforeach; ?>
 <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 <style>
   .skip-link {

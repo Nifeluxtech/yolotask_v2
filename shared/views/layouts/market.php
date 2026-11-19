@@ -29,6 +29,7 @@ $earnerUrl = yolotask_portal_url('earner');
   <?php if ($mktImage !== ''): ?><meta property="og:image" content="<?= h($mktImage) ?>"><?php endif; ?>
   <script>(function(){try{var t=localStorage.getItem('yolo_theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
   <link rel="stylesheet" href="<?= h(yolotask_asset('assets/css/app.css')) ?>">
+  <?php foreach (yolotask_page_css() as $pageCss): ?><link rel="stylesheet" href="<?= h(yolotask_asset($pageCss)) ?>"><?php endforeach; ?>
   <script src="<?= h(yolotask_asset('assets/js/ui.js')) ?>" defer></script>
 </head>
 <body>
