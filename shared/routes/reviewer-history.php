@@ -33,7 +33,7 @@ ob_start();
       <?php foreach ($list['rows'] as $r): ?>
         <li class="tx-row" data-action="<?= h((string) $r['action']) ?>"><span class="tx-icon"><?= yolotask_nav_icon('shield') ?></span>
           <div class="tx-meta"><strong><?= h(ReviewerActions::label((string) $r['action'])) ?></strong>
-            <span class="text-xs text-faint text-break"><?= $r['item_type'] === 'appeal' ? 'Appeal #' . (int) $r['item_id'] : ($r['item_type'] === 'job_appeal' ? 'Job appeal #' . (int) $r['item_id'] : 'Submission #' . (int) $r['item_id']) ?> · <?= h((string) $r['campaign_title']) ?> · <?= h(yolotask_wat((string) $r['decided_at'])) ?></span>
+            <span class="text-xs text-faint text-break"><?= $r['item_type'] === 'appeal' ? 'Appeal #' . (int) $r['item_id'] : ($r['item_type'] === 'job_appeal' ? 'Job appeal #' . (int) $r['item_id'] : ($r['item_type'] === 'job_attempt' ? 'YOLOTASK job submission #' . (int) $r['item_id'] : 'Submission #' . (int) $r['item_id'])) ?> · <?= h((string) $r['campaign_title']) ?> · <?= h(yolotask_wat((string) $r['decided_at'])) ?></span>
             <?php if ($r['note']): ?><span class="text-xs text-break">“<?= h((string) $r['note']) ?>”</span><?php endif; ?></div></li>
       <?php endforeach; ?>
     </ul>

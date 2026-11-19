@@ -1,12 +1,16 @@
 <?php
 declare(strict_types=1);
 
+use YoloTask\Campaigns\Campaigns;
 use YoloTask\Core\Database;
 use YoloTask\Core\Logger;
 use YoloTask\Core\Settings;
 use YoloTask\Jobs\Attempts;
 use YoloTask\Jobs\JobAppeals;
 use YoloTask\Jobs\Jobs;
+use YoloTask\Jobs\Reviews;
+use YoloTask\Jobs\SystemReviews;
+use YoloTask\Money\Money;
 use YoloTask\Security\Csrf;
 
 require_once __DIR__ . '/jobs-helpers.php';
@@ -18,6 +22,9 @@ require_once __DIR__ . '/jobs-helpers.php';
  *   ?attempt=<id>   every step's proof of one attempt
  *   ?tab=appeals    job appeals; ?appeal=<id> to decide one (admin decision, no claim needed)
  *   ?tab=settings   jobs.* settings
+ *   ?tab=system     YOLOTASK jobs (migration 0024) and their submissions waiting for a decision
+ *   ?tab=new        post a YOLOTASK job (owned by the system account, no wallet or escrow, earner gets the full pay)
+ * Submissions on YOLOTASK jobs have no advertiser: admins approve / send back / reject them on ?attempt=<id>.
  */
 if (yolotask_role() !== 'admin') yolotask_error_page(404);
 yolotask_private_headers();
@@ -29,7 +36,8 @@ try {
     yolotask_error_page(500);
 }
 $adminId = (int) $admin['id'];
-$tab = in_array($_GET['tab'] ?? '', ['jobs', 'appeals', 'settings'], true) ? (string) $_GET['tab'] : 'jobs';
+$tab = in_array($_GET['tab'] ?? '', ['jobs', 'system', 'new', 'appeals', 'settings'], true) ? (string) $_GET['tab'] : 'jobs';
+$formFields = ['title', 'instructions', 'link_url', 'mode', 'location', 'pay', 'slots', 'time_limit', 'time_unit', 'review_hours'];
 $jobId = (int) ($_GET['id'] ?? 0);
 $attemptId = (int) ($_GET['attempt'] ?? 0);
 $appealId = (int) ($_GET['appeal'] ?? 0);
@@ -46,6 +54,47 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             case 'unpause':
                 Jobs::adminPause($pdo, $adminId, $pid, $action === 'pause', yolotask_post_str('reason'));
                 yolotask_flash($action === 'pause' ? 'Job paused. The advertiser cannot resume it until you unpause it.' : 'Job is live again.');
+                break;
+            case 'system_new':
+                $in = [];
+                foreach ($formFields as $f) $in[$f] = yolotask_post_str($f);
+                $in['steps'] = [];
+                foreach (is_array($_POST['steps'] ?? null) ? $_POST['steps'] : [] as $st) {
+                    if (!is_array($st)) continue;
+                    $in['steps'][] = ['title' => is_string($st['title'] ?? null) ? $st['title'] : '', 'instructions' => is_string($st['instructions'] ?? null) ? $st['instructions'] : '',
+                        'kinds' => is_array($st['kinds'] ?? null) ? array_values(array_filter($st['kinds'], 'is_string')) : []];
+                }
+                $_SESSION['_admin_job_form'] = $in;
+                $newId = Jobs::publishSystem($pdo, $adminId, $in);
+                unset($_SESSION['_admin_job_form']);
+                yolotask_flash('YOLOTASK job published and live. Earners can start it now; YOLOTASK pays each approved earner in full.');
+                $back = 'jobs.php?id=' . $newId;
+                break;
+            case 'system_pause':
+            case 'system_resume':
+                Jobs::systemSetPaused($pdo, $adminId, $pid, $action === 'system_pause');
+                yolotask_flash($action === 'system_pause' ? 'YOLOTASK job paused: no new starts.' : 'YOLOTASK job is live again.');
+                break;
+            case 'system_close':
+                Jobs::systemClose($pdo, $adminId, $pid);
+                yolotask_flash('YOLOTASK job closed. Work already started can still be submitted and decided.');
+                break;
+            case 'approve':
+            case 'send_back':
+            case 'reject':
+                // Admin decisions are for YOLOTASK jobs only: an advertiser reviews their own jobs.
+                $aid = (int) yolotask_post_str('attempt_id');
+                if (SystemReviews::find($pdo, $aid) === null) throw new RuntimeException('Only submissions on YOLOTASK jobs are decided here.');
+                if ($action === 'approve') {
+                    Reviews::approve($pdo, $aid, 'admin', $adminId);
+                    yolotask_flash('Approved. YOLOTASK paid the earner.');
+                } elseif ($action === 'send_back') {
+                    Reviews::sendBack($pdo, $aid, $adminId, (int) yolotask_post_str('step_id'), yolotask_post_str('note'));
+                    yolotask_flash('Step sent back. The earner has ' . Jobs::hoursLabel(Jobs::fixHours($pdo)) . ' to fix it and resubmit.');
+                } else {
+                    Reviews::reject($pdo, $aid, 'admin', $adminId, yolotask_post_str('reason'));
+                    yolotask_flash('Rejected. The earner was told the reason and may appeal.');
+                }
                 break;
             case 'remove':
                 $refund = Jobs::adminRemove($pdo, $adminId, $pid, yolotask_post_str('reason'));
@@ -106,13 +155,13 @@ ob_start();
 <?= yolotask_admin_market_tabs($pdo, 'jobs') ?>
 <section class="grid grid-4 dash-stats money-stats" aria-label="Jobs overview">
   <article class="stat-card"><span class="stat-label">Live jobs</span><span class="stat-value"><?= number_format($stats['live']) ?></span><span class="text-xs text-faint"><?= number_format($stats['jobs']) ?> in total</span></article>
-  <article class="stat-card stat-warning"><span class="stat-label">Waiting for advertisers</span><span class="stat-value"><?= number_format($stats['to_review']) ?></span><span class="text-xs text-faint"><?= number_format($stats['appeals']) ?> open appeal<?= $stats['appeals'] === 1 ? '' : 's' ?></span></article>
+  <article class="stat-card stat-warning"><span class="stat-label">Waiting for advertisers</span><span class="stat-value"><?= number_format($stats['to_review']) ?></span><span class="text-xs text-faint"><?= number_format($stats['appeals']) ?> open appeal<?= $stats['appeals'] === 1 ? '' : 's' ?> · <a href="jobs.php?tab=system"><?= number_format($stats['system_to_review']) ?> YOLOTASK job submission<?= $stats['system_to_review'] === 1 ? '' : 's' ?></a></span></article>
   <article class="stat-card"><span class="stat-label">Jobs escrow</span><span class="stat-value"><?= h(yolotask_money($stats['escrow'])) ?></span></article>
-  <article class="stat-card stat-success"><span class="stat-label">Platform share</span><span class="stat-value"><?= h(yolotask_money($stats['revenue'])) ?></span><?php if ($stats['platform_appeals'] > 0): ?><span class="text-xs text-faint"><?= h(yolotask_money($stats['platform_appeals'])) ?> appeal payouts covered</span><?php endif; ?></article>
+  <article class="stat-card stat-success"><span class="stat-label">Platform share</span><span class="stat-value"><?= h(yolotask_money($stats['revenue'])) ?></span><?php if ($stats['platform_appeals'] > 0): ?><span class="text-xs text-faint"><?= h(yolotask_money($stats['platform_appeals'])) ?> appeal payouts covered</span><?php endif; ?><?php if ($stats['system_paid'] > 0): ?><span class="text-xs text-faint"><?= h(yolotask_money($stats['system_paid'])) ?> paid on YOLOTASK jobs</span><?php endif; ?></article>
 </section>
 <nav class="card money-tabs" aria-label="Jobs admin">
-  <?php foreach (['jobs' => 'Jobs', 'appeals' => 'Appeals', 'settings' => 'Settings'] as $k => $label): ?>
-    <a href="jobs.php?tab=<?= h($k) ?>"<?= $k === $tab && $jobId === 0 && $attemptId === 0 && $appealId === 0 ? ' class="active" aria-current="page"' : '' ?>><?= h($label) ?><?= $k === 'appeals' && $stats['appeals'] > 0 ? ' <span class="badge badge-warning">' . $stats['appeals'] . '</span>' : '' ?></a>
+  <?php foreach (['jobs' => 'Jobs', 'system' => 'YOLOTASK jobs', 'appeals' => 'Appeals', 'settings' => 'Settings'] as $k => $label): ?>
+    <a href="jobs.php?tab=<?= h($k) ?>"<?= ($k === $tab || ($k === 'system' && $tab === 'new')) && $jobId === 0 && $attemptId === 0 && $appealId === 0 ? ' class="active" aria-current="page"' : '' ?>><?= h($label) ?><?= $k === 'appeals' && $stats['appeals'] > 0 ? ' <span class="badge badge-warning">' . $stats['appeals'] . '</span>' : '' ?><?= $k === 'system' && $stats['system_to_review'] > 0 ? ' <span class="badge badge-warning">' . $stats['system_to_review'] . '</span>' : '' ?></a>
   <?php endforeach; ?>
 </nav>
 <?php
@@ -135,12 +184,20 @@ if ($attemptId > 0 || $appealId > 0):
   </section>
   <?= yolotask_job_review_steps($steps, $proofs, $a) ?>
   <?php if ($backs !== []): ?><section class="card"><div class="card-header"><h2>Sent back</h2></div><?= yolotask_job_send_backs($backs) ?></section><?php endif; ?>
+  <?php if (Jobs::isSystem($a) && $a['status'] === 'submitted'):
+      $sys = SystemReviews::find($pdo, (int) $a['id']); ?>
+    <section class="card" id="decide" data-admin-system-decide="<?= (int) $a['id'] ?>"><div class="card-header"><h2>Decide (YOLOTASK job)</h2>
+      <?php if ($sys !== null && $sys['claim_user_id'] !== null): ?><span class="badge badge-warning">Reviewer <?= h((string) $sys['claim_reviewer_name']) ?> is on it until <?= h(yolotask_wat((string) $sys['claim_expires_at'], 'g:i A')) ?></span><?php endif; ?></div>
+      <p class="text-sm text-faint">There is no advertiser: decide it as they would. Approving pays the earner <?= h(yolotask_money($a['earner_kobo'])) ?> from YOLOTASK. Auto-approves in <?= h(yolotask_until((string) $a['review_due_at'])) ?>.</p>
+      <?= yolotask_job_decision_forms('jobs.php?attempt=' . (int) $a['id'], $hidden . '<input type="hidden" name="attempt_id" value="' . (int) $a['id'] . '">', $a, $steps, Jobs::sendBackMaxRounds($pdo), Jobs::fixHours($pdo)) ?>
+    </section>
+  <?php endif; ?>
   <?php if ($ap !== null): ?>
     <section class="card" id="appeal"><div class="card-header"><h2>Appeal #<?= (int) $ap['id'] ?></h2><?= yolotask_job_appeal_badge($ap) ?></div>
       <p class="text-sm text-break"><strong>Earner's appeal:</strong> “<?= h((string) $ap['message']) ?>”</p>
       <?php if ($ap['status'] !== 'open'): ?>
         <p class="text-sm text-break"><strong>Decision</strong> (<?= h((string) $ap['decided_by_role']) ?>) by <?= h((string) $ap['resolver_name']) ?> <?= h(yolotask_wat((string) $ap['resolved_at'])) ?>: <?= h((string) $ap['resolution_note']) ?></p>
-        <?php if ($ap['status'] === 'overturned'): ?><p class="text-xs text-faint">Paid <?= (int) $ap['escrow_kobo'] > 0 ? 'from a free slot of the job' : 'with a top-up: ' . h(yolotask_money($ap['wallet_kobo'])) . ' from the advertiser wallet, ' . h(yolotask_money($ap['platform_kobo'])) . ' by YOLOTASK' ?>.</p><?php endif; ?>
+        <?php if ($ap['status'] === 'overturned'): ?><p class="text-xs text-faint">Paid <?= (int) $ap['is_system'] === 1 ? 'by YOLOTASK (YOLOTASK job)' : ((int) $ap['escrow_kobo'] > 0 ? 'from a free slot of the job' : 'with a top-up: ' . h(yolotask_money($ap['wallet_kobo'])) . ' from the advertiser wallet, ' . h(yolotask_money($ap['platform_kobo'])) . ' by YOLOTASK') ?>.</p><?php endif; ?>
       <?php else: ?>
         <form method="post" action="jobs.php?appeal=<?= (int) $ap['id'] ?>" class="stack"><?= $hidden ?><input type="hidden" name="appeal_id" value="<?= (int) $ap['id'] ?>">
           <div class="field"><label class="label" for="note">Decision note (the earner sees this; your decision is final)</label><textarea class="input" id="note" name="note" rows="3" minlength="5" maxlength="500" required></textarea></div>
@@ -163,6 +220,18 @@ if ($attemptId > 0 || $appealId > 0):
   <section class="card card-glow dash-hero" data-admin-job="<?= $jobId ?>">
     <p class="text-xs fw-bold text-primary">JOB #<?= $jobId ?> · <?= (int) $job['step_count'] ?> STEPS</p>
     <h2 class="text-break"><?= h((string) $job['title']) ?></h2>
+    <?php if (Jobs::isSystem($job)): ?>
+    <div class="wallet-sub"><?= yolotask_job_badge($job) ?> <?= yolotask_job_mode($job) ?> <?= yolotask_job_system_badge($job) ?><span>Posted by YOLOTASK: no escrow, YOLOTASK pays each approved earner in full</span></div>
+    <p class="text-sm">Pay <?= h(yolotask_money($job['pay_kobo'])) ?> (earner gets all of it) · slot cap <?= number_format((int) $job['slots']) ?> · approved <?= number_format((int) $job['approved_count']) ?> · working <?= number_format((int) $job['active_count']) ?> · rejected <?= number_format((int) $job['rejected_count']) ?> · expired <?= number_format((int) $job['expired_count']) ?> · paid <?= h(yolotask_money((int) $job['pay_kobo'] * (int) $job['approved_count'])) ?> · <?= h(Jobs::hoursLabel((int) $job['time_limit_hours'])) ?> to finish · review window <?= h(Jobs::hoursLabel((int) $job['review_hours'])) ?></p>
+    <?php if ($job['status_reason']): ?><p class="text-sm text-faint">Note: <?= h((string) $job['status_reason']) ?></p><?php endif; ?>
+    <?php if (in_array((string) $job['status'], Jobs::OPEN, true)): ?>
+      <form method="post" action="jobs.php?id=<?= $jobId ?>" class="hero-actions" style="margin-top:.75rem"><?= $hidden ?><input type="hidden" name="job_id" value="<?= $jobId ?>">
+        <?php if ((string) $job['status'] === 'live'): ?><button class="btn btn-secondary btn-sm" type="submit" name="action" value="system_pause">Pause</button>
+        <?php else: ?><button class="btn btn-secondary btn-sm" type="submit" name="action" value="system_resume">Resume</button><?php endif; ?>
+        <button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="system_close" data-confirm="Close this YOLOTASK job? No new earners can start it; work already started can still be submitted and decided.">Close</button>
+      </form>
+    <?php endif; ?>
+    <?php else: ?>
     <div class="wallet-sub"><?= yolotask_job_badge($job) ?> <?= yolotask_job_mode($job) ?><span>Advertiser <?= h((string) $job['advertiser_name']) ?> (<?= h((string) $job['advertiser_email']) ?>)</span></div>
     <p class="text-sm">Pay <?= h(yolotask_money($job['pay_kobo'])) ?> (earner <?= h(yolotask_money($job['earner_kobo'])) ?>, <?= (int) $job['earner_percent'] ?>%) · slots <?= number_format((int) $job['slots']) ?> · approved <?= number_format((int) $job['approved_count']) ?> · working <?= number_format((int) $job['active_count']) ?> · rejected <?= number_format((int) $job['rejected_count']) ?> · expired <?= number_format((int) $job['expired_count']) ?> · escrow <?= h(yolotask_money($escrow)) ?></p>
     <?php if ($job['status_reason']): ?><p class="text-sm text-faint">Note: <?= h((string) $job['status_reason']) ?></p><?php endif; ?>
@@ -175,6 +244,7 @@ if ($attemptId > 0 || $appealId > 0):
           <button class="btn btn-danger-outline btn-sm" type="submit" name="action" value="remove" data-confirm="Remove this job? In-progress attempts are cancelled and unused escrow goes back to the advertiser.">Remove and refund</button>
         </div></form>
     <?php endif; ?>
+    <?php endif; ?>
   </section>
   <section class="card"><div class="card-header"><h2>Instructions and steps</h2></div>
     <div class="instructions text-break"><?= nl2br(h((string) $job['instructions'])) ?></div>
@@ -185,8 +255,8 @@ if ($attemptId > 0 || $appealId > 0):
     <nav class="money-tabs"><?php foreach (['all' => 'All', 'review' => 'Waiting for review', 'active' => 'Working', 'approved' => 'Approved', 'rejected' => 'Rejected', 'ended' => 'Ended'] as $k => $label): ?><a href="jobs.php?id=<?= $jobId ?>&status=<?= h($k) ?>"<?= $k === $st ? ' class="active"' : '' ?>><?= h($label) ?></a><?php endforeach; ?></nav>
     <?php if ($list['rows'] === []): ?><div class="empty-state"><p class="text-faint">None.</p></div><?php else: ?>
       <ul class="tx-list"><?php foreach ($list['rows'] as $a): ?>
-        <li class="tx-row"><div class="tx-meta"><strong><a href="jobs.php?attempt=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['earner_name']) ?></a></strong><span class="text-xs text-faint"><?= h((string) $a['earner_email']) ?> · started <?= h(yolotask_wat((string) $a['started_at'])) ?></span><span><?= yolotask_attempt_badge($a) ?></span></div>
-          <div class="tx-amount"><a class="btn btn-secondary btn-sm" href="jobs.php?attempt=<?= (int) $a['id'] ?>">Proofs</a></div></li>
+        <li class="tx-row" data-admin-attempt-row="<?= (int) $a['id'] ?>"><div class="tx-meta"><strong><a href="jobs.php?attempt=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['earner_name']) ?></a></strong><span class="text-xs text-faint"><?= h((string) $a['earner_email']) ?> · started <?= h(yolotask_wat((string) $a['started_at'])) ?></span><span><?= yolotask_attempt_badge($a) ?></span></div>
+          <div class="tx-amount"><a class="btn btn-secondary btn-sm" href="jobs.php?attempt=<?= (int) $a['id'] ?>"><?= Jobs::isSystem($job) && $a['status'] === 'submitted' ? 'Review' : 'Proofs' ?></a></div></li>
       <?php endforeach; ?></ul>
       <?= yolotask_pager($list, static fn (int $p): string => 'jobs.php?id=' . $jobId . '&status=' . $st . '&page=' . $p) ?>
     <?php endif; ?>
@@ -194,6 +264,122 @@ if ($attemptId > 0 || $appealId > 0):
   <?php if ($events !== []): ?><section class="card"><div class="card-header"><h2>Escrow events</h2></div><ul class="tx-list"><?php foreach ($events as $e): ?>
     <li class="tx-row"><div class="tx-meta"><strong><?= h((string) $e['event']) ?> (<?= (int) $e['slots'] ?> slot<?= abs((int) $e['slots']) === 1 ? '' : 's' ?>)</strong><span class="text-xs text-faint"><?= h((string) $e['note']) ?> · <?= h(yolotask_wat((string) $e['created_at'])) ?> · ledger tx #<?= (int) $e['ledger_transaction_id'] ?></span></div><div class="tx-amount"><?= h(yolotask_money($e['amount_kobo'])) ?></div></li>
   <?php endforeach; ?></ul></section><?php endif; ?>
+
+<?php elseif ($tab === 'system'):
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $queue = SystemReviews::queue($pdo, $page);
+    $list = Jobs::listForAdmin($pdo, '', '', 1, 'system');
+?>
+  <section class="card" aria-labelledby="sq-title">
+    <div class="card-header"><h2 id="sq-title">YOLOTASK job submissions waiting</h2><span class="badge badge-info"><?= number_format($queue['total']) ?></span></div>
+    <p class="text-sm text-faint">Jobs YOLOTASK posts itself have no advertiser. Reviewers decide these in their YOLOTASK jobs queue; you can decide any of them here (no claim needed). Undecided submissions are approved automatically when the review window ends.</p>
+    <?php if ($queue['rows'] === []): ?><div class="empty-state"><p class="text-faint">Nothing waiting.</p></div><?php else: ?>
+      <ul class="tx-list"><?php foreach ($queue['rows'] as $a): ?>
+        <li class="tx-row" data-admin-system-attempt="<?= (int) $a['id'] ?>"><div class="tx-meta"><strong><a href="jobs.php?attempt=<?= (int) $a['id'] ?>">#<?= (int) $a['id'] ?> · <?= h((string) $a['job_title']) ?></a></strong>
+          <span class="text-xs text-faint">Earner <?= h((string) $a['earner_name']) ?> · submitted <?= h(yolotask_wat((string) $a['submitted_at'])) ?> · auto-approves in <?= h(yolotask_until((string) $a['review_due_at'])) ?> · pay <?= h(yolotask_money($a['earner_kobo'])) ?></span>
+          <span><?= $a['claim_user_id'] !== null ? '<span class="badge badge-warning">Claimed by ' . h((string) $a['claim_reviewer_name']) . '</span>' : '<span class="badge badge-info">Available</span>' ?></span></div>
+          <div class="tx-amount"><a class="btn btn-secondary btn-sm" href="jobs.php?attempt=<?= (int) $a['id'] ?>">Review</a></div></li>
+      <?php endforeach; ?></ul>
+      <?= yolotask_pager($queue, static fn (int $p): string => 'jobs.php?tab=system&page=' . $p) ?>
+    <?php endif; ?>
+  </section>
+  <section class="card" aria-labelledby="sj-title">
+    <div class="card-header"><h2 id="sj-title">YOLOTASK jobs</h2><a class="btn btn-primary btn-sm" href="jobs.php?tab=new">New YOLOTASK job</a></div>
+    <?php if ($list['rows'] === []): ?><div class="empty-state"><p class="text-faint">No YOLOTASK jobs yet.</p></div><?php else: ?>
+      <ul class="tx-list"><?php foreach ($list['rows'] as $j): ?>
+        <li class="tx-row" data-admin-system-job="<?= (int) $j['id'] ?>"><div class="tx-meta"><strong><a href="jobs.php?id=<?= (int) $j['id'] ?>">#<?= (int) $j['id'] ?> · <?= h((string) $j['title']) ?></a></strong>
+          <span class="text-xs text-faint"><?= (int) $j['step_count'] ?> steps · <?= number_format((int) $j['approved_count']) ?>/<?= number_format((int) $j['slots']) ?> approved · <?= h(yolotask_money($j['pay_kobo'])) ?> each · <?= h(yolotask_wat((string) $j['created_at'])) ?></span>
+          <span><?= yolotask_job_badge($j) ?> <?= yolotask_job_mode($j) ?><?= (int) $j['to_review'] > 0 ? ' <span class="badge badge-warning">' . (int) $j['to_review'] . ' waiting</span>' : '' ?></span></div>
+          <div class="tx-amount"><a class="btn btn-secondary btn-sm" href="jobs.php?id=<?= (int) $j['id'] ?>">View</a></div></li>
+      <?php endforeach; ?></ul>
+      <?php if ($list['total'] > count($list['rows'])): ?><p class="text-sm text-faint">Showing the newest <?= count($list['rows']) ?> of <?= number_format($list['total']) ?>; find older ones under <a href="jobs.php">Jobs</a>.</p><?php endif; ?>
+    <?php endif; ?>
+  </section>
+
+<?php elseif ($tab === 'new'):
+    $old = is_array($_SESSION['_admin_job_form'] ?? null) ? $_SESSION['_admin_job_form'] : null;
+    unset($_SESSION['_admin_job_form']);
+    $val = static fn (string $k, string $default = ''): string => $old !== null ? (string) ($old[$k] ?? $default) : $default;
+    $oldSteps = $old !== null && is_array($old['steps'] ?? null) ? array_values($old['steps']) : [];
+    $maxSteps = Jobs::maxSteps($pdo);
+    $tl = Jobs::timeLimitBounds($pdo);
+    $rb = Campaigns::autoApproveBounds($pdo);
+    $shown = max(2, count($oldSteps));
+?>
+  <form method="post" action="jobs.php?tab=new" class="stack" data-job-form data-system-job-form><?= $hidden ?><input type="hidden" name="action" value="system_new">
+    <section class="card" aria-labelledby="nj-title">
+      <div class="card-header"><h2 id="nj-title">New YOLOTASK job</h2><span class="badge badge-info">Posted by YOLOTASK</span></div>
+      <p class="text-sm text-faint">Earners see it in the normal jobs list with YOLOTASK as the owner. No wallet or escrow: nothing is charged now, and YOLOTASK pays each approved earner the full pay. Submissions are decided by reviewers (YOLOTASK jobs queue) or here.</p>
+      <div class="field"><label class="label" for="title">Job name</label>
+        <input class="input" id="title" name="title" required minlength="3" maxlength="120" value="<?= h($val('title')) ?>"></div>
+      <div class="field"><label class="label" for="instructions">Overall instructions</label>
+        <textarea class="input" id="instructions" name="instructions" rows="4" required minlength="10" maxlength="5000"><?= h($val('instructions')) ?></textarea></div>
+      <div class="field"><label class="label" for="link_url">Link (optional)</label>
+        <input class="input" id="link_url" name="link_url" type="url" maxlength="500" inputmode="url" value="<?= h($val('link_url')) ?>" placeholder="https://"></div>
+      <div class="grid grid-2 form-pair">
+        <div class="field"><label class="label" for="mode">Where is the work done?</label>
+          <select class="input" id="mode" name="mode"><option value="online"<?= $val('mode') !== 'offline' ? ' selected' : '' ?>>Online</option><option value="offline"<?= $val('mode') === 'offline' ? ' selected' : '' ?>>Offline (in person)</option></select></div>
+        <div class="field" data-job-location><label class="label" for="location">Location (offline jobs)</label>
+          <input class="input" id="location" name="location" maxlength="160" value="<?= h($val('location')) ?>" placeholder="State, city or area, e.g. Ikeja, Lagos"></div>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="ns-title">
+      <div class="card-header"><h2 id="ns-title">Steps</h2><span class="badge badge-info" data-step-count><?= $shown ?> of <?= $maxSteps ?></span></div>
+      <p class="text-sm text-faint">Between 2 and <?= $maxSteps ?> steps, done in order. Every proof kind you tick is required.</p>
+      <?php for ($i = 0; $i < $maxSteps; $i++): $st = $oldSteps[$i] ?? ['title' => '', 'instructions' => '', 'kinds' => []]; $kinds = is_array($st['kinds'] ?? null) ? $st['kinds'] : []; ?>
+        <fieldset class="card job-step-field stack" data-step="<?= $i + 1 ?>">
+          <legend class="fw-bold">Step <?= $i + 1 ?><?= $i < 2 ? '' : ' (optional)' ?></legend>
+          <div class="field"><label class="label" for="st<?= $i ?>">Step title</label>
+            <input class="input" id="st<?= $i ?>" name="steps[<?= $i ?>][title]" maxlength="120" value="<?= h((string) ($st['title'] ?? '')) ?>"<?= $i < 2 ? ' required' : '' ?>></div>
+          <div class="field"><label class="label" for="si<?= $i ?>">What to do</label>
+            <textarea class="input" id="si<?= $i ?>" name="steps[<?= $i ?>][instructions]" rows="3" maxlength="3000"<?= $i < 2 ? ' required' : '' ?>><?= h((string) ($st['instructions'] ?? '')) ?></textarea></div>
+          <div class="field"><span class="label">Proof needed</span>
+            <div class="chip-row"><?php foreach (Jobs::PROOF_KINDS as $k => $label): ?><label class="check-chip"><input type="checkbox" name="steps[<?= $i ?>][kinds][]" value="<?= h($k) ?>"<?= in_array($k, $kinds, true) ? ' checked' : '' ?>> <?= h($label) ?></label><?php endforeach; ?></div></div>
+        </fieldset>
+      <?php endfor; ?>
+      <div class="hero-actions"><button class="btn btn-secondary btn-sm" type="button" data-add-step>Add a step</button><button class="btn btn-ghost btn-sm" type="button" data-remove-step>Remove last step</button></div>
+    </section>
+    <section class="card" aria-labelledby="np-title">
+      <div class="card-header"><h2 id="np-title">Pay and timing</h2></div>
+      <div class="grid grid-2 form-pair">
+        <div class="field"><label class="label" for="pay">Pay per earner (₦)</label>
+          <input class="input" id="pay" name="pay" type="number" min="1" step="1" inputmode="numeric" required value="<?= h($val('pay')) ?>" placeholder="50">
+          <p class="input-hint">At least <?= h(Money::format(Jobs::SYSTEM_MIN_PAY_KOBO)) ?>. The earner receives all of it, paid by YOLOTASK.</p></div>
+        <div class="field"><label class="label" for="slots">Slots (most earners who can do it)</label>
+          <input class="input" id="slots" name="slots" type="number" min="1" max="<?= Jobs::MAX_SLOTS ?>" required value="<?= h($val('slots', '100')) ?>">
+          <p class="input-hint">A cap only, up to <?= number_format(Jobs::MAX_SLOTS) ?>; nothing is reserved.</p></div>
+      </div>
+      <div class="grid grid-2 form-pair">
+        <div class="field"><label class="label" for="time_limit">Time to finish once started</label>
+          <div class="copy-field"><input class="input" id="time_limit" name="time_limit" type="number" min="1" required value="<?= h($val('time_limit', '24')) ?>">
+            <select class="input" name="time_unit" aria-label="Unit"><option value="hours"<?= $val('time_unit', 'hours') !== 'days' ? ' selected' : '' ?>>hours</option><option value="days"<?= $val('time_unit') === 'days' ? ' selected' : '' ?>>days</option></select></div>
+          <p class="input-hint">Between <?= h(Jobs::hoursLabel($tl['min'])) ?> and <?= h(Jobs::hoursLabel($tl['max'])) ?>.</p></div>
+        <div class="field"><label class="label" for="review_hours">Review window (hours)</label>
+          <input class="input" id="review_hours" name="review_hours" type="number" min="<?= $rb['min'] ?>" max="<?= $rb['max'] ?>" required value="<?= h($val('review_hours', '48')) ?>">
+          <p class="input-hint"><?= $rb['min'] ?> to <?= $rb['max'] ?> hours. Submissions not decided in time are approved automatically.</p></div>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Publish YOLOTASK job</button>
+    </section>
+  </form>
+  <style>.job-step-field[hidden],[data-job-location][hidden]{display:none}.chip-row{display:flex;flex-wrap:wrap;gap:.5rem}.check-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:999px;font-size:.85rem}</style>
+  <script>
+  (function () {
+    var f = document.querySelector('[data-system-job-form]'); if (!f) return;
+    var steps = Array.prototype.slice.call(f.querySelectorAll('[data-step]')), max = steps.length;
+    var shown = <?= (int) $shown ?>, count = f.querySelector('[data-step-count]');
+    function render() { steps.forEach(function (el, i) { el.hidden = i >= shown; }); count.textContent = shown + ' of ' + max; }
+    f.querySelector('[data-add-step]').addEventListener('click', function () { if (shown < max) { shown++; render(); steps[shown - 1].querySelector('input').focus(); } });
+    f.querySelector('[data-remove-step]').addEventListener('click', function () {
+      if (shown <= 2) return;
+      var el = steps[shown - 1]; el.querySelectorAll('input[type=text],input:not([type]),textarea').forEach(function (x) { x.value = ''; });
+      el.querySelectorAll('input[type=checkbox]').forEach(function (x) { x.checked = false; }); shown--; render();
+    });
+    var loc = f.querySelector('[data-job-location]');
+    function mode() { var off = f.mode.value === 'offline'; loc.hidden = !off; f.location.required = off; }
+    f.addEventListener('change', mode);
+    render(); mode();
+  })();
+  </script>
 
 <?php elseif ($tab === 'appeals'):
     $st = in_array($_GET['status'] ?? '', ['upheld', 'overturned', 'all'], true) ? (string) $_GET['status'] : 'open';
@@ -222,7 +408,7 @@ if ($attemptId > 0 || $appealId > 0):
       <div class="field"><label class="label" for="enabled">Jobs</label>
         <select class="input" id="enabled" name="enabled"><option value="1"<?= Jobs::enabled($pdo) ? ' selected' : '' ?>>On: advertisers can publish, earners see the Jobs tab</option><option value="0"<?= Jobs::enabled($pdo) ? '' : ' selected' ?>>Off: no new jobs or starts (work already started still finishes)</option></select></div>
       <div class="grid grid-2 form-pair">
-        <div class="field"><label class="label" for="min_pay">Minimum pay per earner (₦)</label><input class="input" id="min_pay" name="min_pay" inputmode="numeric" required value="<?= intdiv(Jobs::minPay($pdo), 100) ?>"><p class="input-hint">Default ₦200.</p></div>
+        <div class="field"><label class="label" for="min_pay">Minimum pay per earner (₦)</label><input class="input" id="min_pay" name="min_pay" inputmode="numeric" required value="<?= intdiv(Jobs::minPay($pdo), 100) ?>"><p class="input-hint">Default ₦200. YOLOTASK jobs can pay from ₦1.</p></div>
         <div class="field"><label class="label" for="earner_percent">Earner share (%)</label><input class="input" id="earner_percent" name="earner_percent" inputmode="numeric" required value="<?= Jobs::earnerPercent($pdo) ?>"><p class="input-hint">50 to 100, rounded down to the kobo; the rest is platform revenue. Default 90.</p></div>
       </div>
       <div class="grid grid-2 form-pair">
@@ -257,7 +443,7 @@ if ($attemptId > 0 || $appealId > 0):
       <ul class="tx-list"><?php foreach ($list['rows'] as $j): ?>
         <li class="tx-row" data-admin-job="<?= (int) $j['id'] ?>"><div class="tx-meta"><strong><a href="jobs.php?id=<?= (int) $j['id'] ?>">#<?= (int) $j['id'] ?> · <?= h((string) $j['title']) ?></a></strong>
           <span class="text-xs text-faint"><?= h((string) $j['advertiser_name']) ?> (<?= h((string) $j['advertiser_email']) ?>) · <?= (int) $j['step_count'] ?> steps · <?= number_format((int) $j['approved_count']) ?>/<?= number_format((int) $j['slots']) ?> approved · <?= h(yolotask_money($j['pay_kobo'])) ?> each · <?= h(yolotask_wat((string) $j['created_at'])) ?></span>
-          <span><?= yolotask_job_badge($j) ?> <?= yolotask_job_mode($j) ?><?= (int) $j['to_review'] > 0 ? ' <span class="badge badge-warning">' . (int) $j['to_review'] . ' waiting</span>' : '' ?></span></div>
+          <span><?= yolotask_job_badge($j) ?> <?= yolotask_job_mode($j) ?> <?= yolotask_job_system_badge($j) ?><?= (int) $j['to_review'] > 0 ? ' <span class="badge badge-warning">' . (int) $j['to_review'] . ' waiting</span>' : '' ?></span></div>
           <div class="tx-amount"><a class="btn btn-secondary btn-sm" href="jobs.php?id=<?= (int) $j['id'] ?>">View</a></div></li>
       <?php endforeach; ?></ul>
       <?= yolotask_pager($list, static fn (int $p): string => 'jobs.php?status=' . rawurlencode($st) . '&q=' . rawurlencode($q) . '&page=' . $p) ?>

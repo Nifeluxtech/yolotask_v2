@@ -11,7 +11,7 @@ use YoloTask\Security\Auth;
  * the Jobs twin of proof.php. Files live in runtime/job-proofs outside every
  * document root; this is the only way to read one. Access: the earner who
  * uploaded it, the advertiser who owns the job, any admin, and reviewers once
- * the attempt is appealed. Everyone else gets the same 404, so ids reveal nothing.
+ * the attempt is appealed or when it is on a YOLOTASK job (migration 0024). Everyone else gets the same 404, so ids reveal nothing.
  * Images are shown inline; every other file is a sandboxed download.
  */
 if (!in_array(yolotask_role(), ['earner', 'advertiser', 'reviewer', 'admin'], true)) yolotask_error_page(404);

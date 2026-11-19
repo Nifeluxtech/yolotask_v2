@@ -58,7 +58,7 @@ ob_start();
             <li class="tx-row task-row" data-job="<?= (int) $j['id'] ?>">
               <span class="tx-icon"><?= yolotask_nav_icon('briefcase') ?></span>
               <div class="tx-meta"><strong><a href="job.php?id=<?= (int) $j['id'] ?>"><?= h((string) $j['title']) ?></a></strong>
-                <span><?= yolotask_job_mode($j) ?></span>
+                <span><?= yolotask_job_mode($j) ?> <?= yolotask_job_system_badge($j) ?></span>
                 <span class="text-xs text-faint"><?= (int) $j['step_count'] ?> steps · <?= h(Jobs::hoursLabel((int) $j['time_limit_hours'])) ?> to finish · <?= number_format($free) ?> slot<?= $free === 1 ? '' : 's' ?> left</span></div>
               <div class="tx-amount"><span class="tx-in">+<?= h(yolotask_money($j['earner_kobo'])) ?></span><a class="btn btn-secondary btn-sm" href="job.php?id=<?= (int) $j['id'] ?>">View</a></div>
             </li>

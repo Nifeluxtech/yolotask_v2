@@ -9,7 +9,9 @@ function yolotask_reviewer_tabs(PDO $pdo, string $active): string
     $appeals = 0;
     $stale = 0;
     $jobAppeals = 0;
+    $jobReviews = 0;
     try {
+        $jobReviews = \YoloTask\Jobs\SystemReviews::count($pdo); // migration 0024
         $jobAppeals = \YoloTask\Jobs\JobAppeals::openCount($pdo); // migration 0023
         $appeals = \YoloTask\Tasks\Appeals::openCount($pdo);
         $stale = \YoloTask\Tasks\StaleQueue::count($pdo);
@@ -19,6 +21,7 @@ function yolotask_reviewer_tabs(PDO $pdo, string $active): string
         'appeals' => ['Appeals', 'appeals.php', $appeals],
         'job_appeals' => ['Job appeals', 'job-appeals.php', $jobAppeals],
         'stale' => ['Stale & YOLOTASK proofs', 'stale.php', $stale],
+        'job_reviews' => ['YOLOTASK jobs', 'job-reviews.php', $jobReviews],
         'history' => ['My decisions', 'history.php', 0],
     ];
     $html = '<nav class="card money-tabs" aria-label="Review queues">';

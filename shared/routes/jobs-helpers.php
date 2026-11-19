@@ -92,3 +92,36 @@ function yolotask_job_send_backs(array $backs): string
     }
     return $html . '</ul>';
 }
+
+/** "YOLOTASK" badge for a job YOLOTASK posts itself (migration 0024). */
+function yolotask_job_system_badge(array $job): string
+{
+    return Jobs::isSystem($job) ? '<span class="badge badge-info" data-job-system>YOLOTASK</span>' : '';
+}
+
+/**
+ * Approve / send back / reject forms for a submitted attempt, posted to
+ * $action with $hidden fields (CSRF + attempt id): staff deciding a YOLOTASK
+ * job (admin, reviewer), same rules as the advertiser's review page.
+ */
+function yolotask_job_decision_forms(string $action, string $hidden, array $a, array $steps, int $maxRounds, int $fixHours): string
+{
+    $act = h($action);
+    $html = '<form method="post" action="' . $act . '" class="stack">' . $hidden
+        . '<button class="btn btn-primary btn-block" type="submit" name="action" value="approve" data-confirm="Approve and pay the earner ' . h(yolotask_money($a['earner_kobo'])) . '?">Approve and pay</button></form>';
+    if ((int) $a['send_back_count'] < $maxRounds) {
+        $opts = '';
+        foreach ($steps as $s) $opts .= '<option value="' . (int) $s['id'] . '">Step ' . (int) $s['position'] . ' · ' . h((string) $s['title']) . '</option>';
+        $html .= '<details style="margin-top:1rem"><summary class="fw-bold">Send a step back for a fix (' . (int) $a['send_back_count'] . ' of ' . $maxRounds . ' used)</summary>'
+            . '<form method="post" action="' . $act . '" class="stack">' . $hidden . '<input type="hidden" name="action" value="send_back">'
+            . '<div class="field"><label class="label" for="step_id">Step</label><select class="input" id="step_id" name="step_id" required>' . $opts . '</select></div>'
+            . '<div class="field"><label class="label" for="note">What should they fix?</label><textarea class="input" id="note" name="note" rows="3" minlength="3" maxlength="500" required></textarea></div>'
+            . '<button class="btn btn-secondary" type="submit">Send back</button><p class="input-hint">The earner gets ' . h(Jobs::hoursLabel($fixHours)) . ' to fix that step and resubmit.</p></form></details>';
+    } else {
+        $html .= '<p class="text-sm text-faint" style="margin-top:1rem">Every send-back round (' . $maxRounds . ') is used. Approve or reject now.</p>';
+    }
+    return $html . '<details style="margin-top:1rem"><summary class="fw-bold">Reject</summary>'
+        . '<form method="post" action="' . $act . '" class="stack">' . $hidden . '<input type="hidden" name="action" value="reject">'
+        . '<div class="field"><label class="label" for="reason">Reason (the earner sees it)</label><input class="input" id="reason" name="reason" minlength="3" maxlength="255" required></div>'
+        . '<button class="btn btn-danger-outline" type="submit" data-confirm="Reject this submission? The earner is not paid and may appeal to a YOLOTASK reviewer.">Reject</button></form></details>';
+}

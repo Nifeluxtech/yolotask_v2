@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'submit':
                 if ($attempt === null) throw new RuntimeException('Start the job first.');
                 Attempts::submit($pdo, $user, (int) $attempt['id']);
-                yolotask_flash('Submitted for review. You are paid as soon as the advertiser approves (or automatically if they do not review in time).');
+                yolotask_flash('Submitted for review. You are paid as soon as ' . Jobs::reviewerLabel($job) . ' approves (or automatically if ' . (Jobs::isSystem($job) ? 'it is' : 'they are') . ' not reviewed in time).');
                 break;
             case 'resubmit':
                 if ($attempt === null) throw new RuntimeException('Start the job first.');
@@ -123,7 +123,7 @@ ob_start();
 ?>
 <div class="wallet-grid">
   <section class="card card-glow dash-hero" aria-labelledby="job-title">
-    <p class="text-xs fw-bold text-primary">JOB · <?= (int) $job['step_count'] ?> STEPS</p>
+    <p class="text-xs fw-bold text-primary">JOB · <?= (int) $job['step_count'] ?> STEPS<?= Jobs::isSystem($job) ? ' · BY YOLOTASK' : '' ?></p>
     <h2 id="job-title" class="text-break"><?= h((string) $job['title']) ?></h2>
     <div class="wallet-balance"><span class="amount">+<?= h(yolotask_money($attempt !== null ? $attempt['earner_kobo'] : $job['earner_kobo'])) ?></span></div>
     <div class="wallet-sub"><?= yolotask_job_mode($job) ?><span><?= h(Jobs::hoursLabel((int) $job['time_limit_hours'])) ?> to finish once started</span><?php if ($attempt === null): ?><span>Slots left <strong><?= number_format($free) ?></strong></span><?php endif; ?></div>
@@ -134,10 +134,10 @@ ob_start();
   </section>
 
   <?php if ($fixing): ?>
-    <section class="card notice-card" role="alert"><div><strong>Step <?= (int) $attempt['sent_back_position'] ?> was sent back</strong><p class="text-sm text-break">Advertiser's note: “<?= h((string) $attempt['send_back_note']) ?>”</p>
+    <section class="card notice-card" role="alert"><div><strong>Step <?= (int) $attempt['sent_back_position'] ?> was sent back</strong><p class="text-sm text-break"><?= Jobs::isSystem($job) ? 'YOLOTASK' : 'Advertiser' ?>'s note: “<?= h((string) $attempt['send_back_note']) ?>”</p>
       <p class="text-xs text-faint">Fix that step below, then resubmit. If you do not resubmit by <?= h(yolotask_wat((string) $attempt['fix_deadline_at'])) ?>, the job ends without pay.</p></div></section>
   <?php elseif ($status === 'submitted'): ?>
-    <section class="card notice-card" role="status"><div><strong>Waiting for review</strong><p class="text-sm text-faint">Submitted <?= h(yolotask_wat((string) $attempt['submitted_at'])) ?>. If the advertiser does not decide by <?= h(yolotask_wat((string) $attempt['review_due_at'])) ?>, it is approved automatically.</p></div></section>
+    <section class="card notice-card" role="status"><div><strong>Waiting for review</strong><p class="text-sm text-faint">Submitted <?= h(yolotask_wat((string) $attempt['submitted_at'])) ?>. If <?= h(Jobs::reviewerLabel($job)) ?> does not decide by <?= h(yolotask_wat((string) $attempt['review_due_at'])) ?>, it is approved automatically.</p></div></section>
   <?php elseif ($status === 'approved'): ?>
     <section class="card notice-card" role="status"><div><strong>Approved</strong><p class="text-sm text-faint"><?= $attempt['reward_status'] === 'held' ? 'Your reward is on a short hold and reaches your wallet ' . h(yolotask_wat((string) $attempt['reward_release_at'])) . '.' : h(yolotask_money($attempt['earner_kobo'])) . ' was added to your wallet.' ?></p></div></section>
   <?php elseif ($status === 'rejected'): ?>
@@ -178,7 +178,7 @@ ob_start();
             <?php if (in_array('link', $kinds, true)): ?><div class="field"><label class="label" for="ln<?= $sid ?>">Link</label><input class="input" id="ln<?= $sid ?>" name="link" type="url" maxlength="500" inputmode="url" value="<?= h((string) ($proof['link_url'] ?? '')) ?>" placeholder="https://"<?= $proof === null || trim((string) $proof['link_url']) === '' ? ' required' : '' ?>></div><?php endif; ?>
             <?php if (in_array('file', $kinds, true)): ?><div class="field"><label class="label" for="fl<?= $sid ?>">File</label><input class="input" id="fl<?= $sid ?>" name="file" type="file" accept=".<?= h(implode(',.', JobProofs::FILE_EXTENSIONS)) ?>"<?= $proof === null || $proof['file_file_id'] === null ? ' required' : '' ?>><p class="input-hint"><?= h(strtoupper(implode(', ', JobProofs::FILE_EXTENSIONS))) ?>, up to <?= $fileMb ?> MB.<?= $proof !== null && $proof['file_file_id'] !== null ? ' Leave empty to keep the saved one.' : '' ?></p></div><?php endif; ?>
             <button class="btn btn-primary" type="submit"><?= $isDone ? 'Save changes' : 'Save step ' . (int) $s['position'] ?></button>
-            <p class="input-hint">Only you, the advertiser and YOLOTASK staff can see your proof.</p>
+            <p class="input-hint"><?= Jobs::isSystem($job) ? 'Only you and YOLOTASK staff can see your proof.' : 'Only you, the advertiser and YOLOTASK staff can see your proof.' ?></p>
           </form></details>
       <?php endif; ?>
     </section>
@@ -188,7 +188,7 @@ ob_start();
 
   <?php if ($working): ?>
     <section class="card" aria-labelledby="sb-title"><div class="card-header"><h2 id="sb-title">Submit for review</h2><span class="badge badge-info"><?= $done ?> of <?= count($steps) ?> steps done</span></div>
-      <form method="post" action="<?= h($back) ?>"><?= $hidden ?><button class="btn btn-primary btn-block" type="submit" name="action" value="submit"<?= $done < count($steps) ? ' disabled' : '' ?> data-confirm="Submit every step for review? You cannot change them after this unless the advertiser sends a step back.">Submit for review</button></form>
+      <form method="post" action="<?= h($back) ?>"><?= $hidden ?><button class="btn btn-primary btn-block" type="submit" name="action" value="submit"<?= $done < count($steps) ? ' disabled' : '' ?> data-confirm="Submit every step for review? You cannot change them after this unless <?= h(Jobs::reviewerLabel($job)) ?> sends a step back.">Submit for review</button></form>
       <form method="post" action="<?= h($back) ?>" style="margin-top:.75rem"><?= $hidden ?><button class="btn btn-ghost btn-sm btn-block" type="submit" name="action" value="abandon" data-confirm="Give up this job? The slot goes to someone else and you cannot take this job again.">Give up this job</button></form>
     </section>
   <?php elseif ($fixing): ?>
