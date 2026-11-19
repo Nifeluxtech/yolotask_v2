@@ -7,17 +7,81 @@ use YoloTask\Marketplace\Pricing;
 
 require_once __DIR__ . '/money-helpers.php';
 
+// Every marketplace page links the dedicated .mk- stylesheet (shared/assets/css/market.css).
+yolotask_page_css('assets/css/market.css');
+
 /** Public cover image URL (served by the main site's cover.php). */
 function yolotask_mkt_cover_url(int $productId): string
 {
     return yolotask_portal_url('main') . '/cover.php?id=' . $productId;
 }
 
-/** Cover <img>, or a placeholder when the product has no cover. */
-function yolotask_mkt_cover(array $p, bool $hasCover, string $alt = ''): string
+/** Cover <img>, or a branded placeholder (tinted panel with the title's initial) when the product has no cover. */
+function yolotask_mkt_cover(array $p, bool $hasCover, string $alt = '', bool $decorative = false): string
 {
-    if (!$hasCover) return '<div class="mkt-cover mkt-cover-empty" aria-hidden="true">' . yolotask_nav_icon('bag') . '</div>';
-    return '<img class="mkt-cover" loading="lazy" src="' . h(yolotask_mkt_cover_url((int) $p['id'])) . '" alt="' . h($alt !== '' ? $alt : (string) $p['title']) . '">';
+    if (!$hasCover) {
+        $title = trim((string) ($p['title'] ?? ''));
+        $initial = $title !== '' ? mb_strtoupper(mb_substr($title, 0, 1)) : '';
+        return '<div class="mkt-cover mkt-cover-empty mk-cover mk-cover-empty mk-tone-' . ((int) ($p['id'] ?? 0) % 6) . '" aria-hidden="true">'
+            . ($initial !== '' ? '<span class="mk-cover-initial">' . h($initial) . '</span>' : '')
+            . '<span class="mk-cover-icon">' . yolotask_nav_icon('bag') . '</span></div>';
+    }
+    return '<img class="mkt-cover mk-cover" loading="lazy" decoding="async" src="' . h(yolotask_mkt_cover_url((int) $p['id'])) . '" alt="' . ($decorative ? '' : h($alt !== '' ? $alt : (string) $p['title'])) . '">';
+}
+
+/** Whole-number percent saved when a bonus price applies (0 when none). */
+function yolotask_mkt_discount_percent(array $p): int
+{
+    $normal = (int) $p['price_kobo'];
+    $list = Pricing::listPrice($normal, isset($p['bonus_price_kobo']) ? (int) $p['bonus_price_kobo'] : null);
+    return $normal > 0 && $list < $normal ? (int) floor(($normal - $list) * 100 / $normal) : 0;
+}
+
+/**
+ * Card / hero media frame: the cover in a fixed aspect-ratio frame with an
+ * optional sale ribbon. $href makes the frame a (duplicate, unfocusable) link to
+ * the product so the whole image is a tap target; the title link stays the
+ * accessible one.
+ */
+function yolotask_mkt_media(array $p, bool $hasCover, string $href = '', string $extraClass = ''): string
+{
+    $off = yolotask_mkt_discount_percent($p);
+    $inner = yolotask_mkt_cover($p, $hasCover, '', $href !== '');
+    if ($off > 0) $inner .= '<span class="mk-ribbon">−' . $off . '%</span>';
+    $class = 'mk-media' . ($extraClass !== '' ? ' ' . $extraClass : '');
+    if ($href !== '') return '<a class="' . h($class) . '" href="' . h($href) . '" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">' . $inner . '</a>';
+    return '<div class="' . h($class) . '">' . $inner . '</div>';
+}
+
+/**
+ * Small descriptive chips derived from columns the product already has
+ * (delivery type, resale listing, resell rights, affiliate commission).
+ * @return list<array{0:string,1:string}> [label, tone]
+ */
+function yolotask_mkt_chips(array $p, bool $showAffiliate = false): array
+{
+    $chips = [[($p['delivery_type'] ?? 'link') === 'file' ? 'Download' : 'Instant access', 'info']];
+    if (($p['parent_product_id'] ?? null) !== null) $chips[] = ['Resale', 'muted'];
+    elseif (!empty($p['resell_allowed']) && ($p['resell_price_kobo'] ?? null) !== null) $chips[] = ['Resell rights', 'violet'];
+    if ($showAffiliate && (int) ($p['affiliate_percent'] ?? 0) > 0) $chips[] = [(int) $p['affiliate_percent'] . '% commission', 'success'];
+    return $chips;
+}
+
+function yolotask_mkt_chips_html(array $p, bool $showAffiliate = false): string
+{
+    $html = '<ul class="mk-chips" aria-label="Product details">';
+    foreach (yolotask_mkt_chips($p, $showAffiliate) as [$label, $tone]) $html .= '<li class="mk-chip mk-chip-' . h($tone) . '">' . h($label) . '</li>';
+    return $html . '</ul>';
+}
+
+/** Seller line: avatar initial, name and sales count. */
+function yolotask_mkt_seller(array $p): string
+{
+    $name = (string) ($p['owner_name'] ?? '');
+    $initial = $name !== '' ? mb_strtoupper(mb_substr($name, 0, 1)) : '?';
+    $sold = (int) ($p['sales_count'] ?? 0);
+    return '<p class="mk-seller"><span class="mk-avatar" aria-hidden="true">' . h($initial) . '</span><span class="mk-seller-name">By ' . h($name) . '</span>'
+        . ($sold > 0 ? '<span class="mk-sold">' . number_format($sold) . ' sold</span>' : '') . '</p>';
 }
 
 /** Has this product (or, for a resale listing, its original) a cover? */
@@ -30,7 +94,7 @@ function yolotask_mkt_has_cover(array $p): bool
 function yolotask_mkt_price(array $p): string
 {
     $list = Pricing::listPrice((int) $p['price_kobo'], isset($p['bonus_price_kobo']) ? (int) $p['bonus_price_kobo'] : null);
-    $html = '<div class="mkt-price"><span class="price-now">' . h(yolotask_money($list)) . '</span>';
+    $html = '<div class="mkt-price mk-price"><span class="price-now">' . h(yolotask_money($list)) . '</span>';
     if ($list < (int) $p['price_kobo']) $html .= '<s class="price-old" aria-label="Normal price">' . h(yolotask_money($p['price_kobo'])) . '</s>';
     return $html . '</div>';
 }
@@ -51,7 +115,7 @@ function yolotask_mkt_status_badge(string $status): string
 function yolotask_mkt_tabs(string $active): string
 {
     $tabs = ['browse' => ['Browse', 'marketplace.php'], 'products' => ['My Products', 'my-products.php'], 'sales' => ['My Sales', 'my-sales.php']];
-    $html = '<nav class="card money-tabs" aria-label="Marketplace sections">';
+    $html = '<nav class="card money-tabs mk-tabs" aria-label="Marketplace sections">';
     foreach ($tabs as $key => [$label, $url]) {
         $html .= '<a href="' . h($url) . '"' . ($key === $active ? ' class="active" aria-current="page"' : '') . '>' . h($label) . '</a>';
     }

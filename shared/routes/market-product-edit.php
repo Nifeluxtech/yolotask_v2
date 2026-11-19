@@ -106,7 +106,7 @@ $pageTitle = $parent !== null ? 'Create your listing' : ($product === null ? 'Ne
 ob_start();
 ?>
 <?= yolotask_mkt_tabs('products') ?>
-<div class="wallet-grid">
+<div class="wallet-grid mk-form-wrap">
 <?php if ($product !== null): ?>
   <section class="card notice-card" role="status"><span class="verify-icon"><?= yolotask_nav_icon('bag') ?></span>
     <div><strong><?= h((string) $product['title']) ?></strong> <?= yolotask_mkt_status_badge((string) $product['status']) ?>
@@ -118,12 +118,12 @@ ob_start();
       <p class="text-sm text-faint">Buyers of your listing get the same product content. Set your own price; your own title, description and cover are optional (leave them empty to use the original's). You keep each sale minus the platform fee and any affiliate commission you offer.</p></div></section>
 <?php endif; ?>
 
-<form method="post" action="<?= h($self) ?>" enctype="multipart/form-data" class="card stack" data-product-form>
+<form method="post" action="<?= h($self) ?>" enctype="multipart/form-data" class="card stack mk-form" data-product-form>
   <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
   <div class="field"><label class="label" for="title">Title<?= $parent !== null ? ' (optional)' : '' ?></label>
     <input class="input" id="title" name="title" maxlength="120"<?= $parent !== null ? '' : ' required minlength="3"' ?> value="<?= h($title) ?>" placeholder="<?= $parent !== null ? h((string) $parent['title']) : 'e.g. Instagram Growth Playbook (PDF)' ?>"></div>
   <div class="field"><label class="label" for="cover">Cover image<?= $parent !== null || $product !== null ? ' (optional)' : '' ?></label>
-    <?php if ($product !== null && yolotask_mkt_has_cover($product)): ?><?= yolotask_mkt_cover($product, true) ?><?php endif; ?>
+    <?php if ($product !== null && yolotask_mkt_has_cover($product)): ?><div class="mk-media mk-media-preview"><?= yolotask_mkt_cover($product, true) ?></div><?php endif; ?>
     <input class="input" id="cover" name="cover" type="file" accept="image/jpeg,image/png,image/webp">
     <p class="input-hint">JPEG, PNG or WebP up to 3 MB. A 4:3 image looks best.</p></div>
   <div class="field"><label class="label" for="description">Description<?= $parent !== null ? ' (optional)' : '' ?></label>

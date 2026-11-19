@@ -85,15 +85,16 @@ ob_start();
     <div><strong>Your marketplace selling is on hold</strong><p class="text-sm text-faint">Your products are hidden and sales earnings are paused while our team checks your account. Contact support.</p></div></section>
 <?php endif; ?>
 
-<section class="card" aria-labelledby="prod-title">
+<section class="card mk-panel" aria-labelledby="prod-title">
   <div class="card-header"><h2 id="prod-title">My Products</h2><?php if ($canCreate && !$frozen): ?><a class="btn btn-primary btn-sm" href="product-edit.php">New product</a><?php endif; ?></div>
   <?php if (!$canCreate): ?><p class="text-sm text-faint">Buy resell rights from the marketplace to list a product as your own. Your listings show here.</p><?php endif; ?>
   <?php if ($products === []): ?>
     <div class="empty-state"><p class="text-faint"><?= $canCreate ? 'No products yet. Create one: it goes live after a quick review.' : 'No listings yet.' ?></p></div>
   <?php else: ?>
-    <ul class="tx-list">
+    <ul class="tx-list mk-rows">
       <?php foreach ($products as $p): $pid = (int) $p['id']; ?>
-        <li class="tx-row" data-product="<?= $pid ?>">
+        <li class="tx-row mk-row" data-product="<?= $pid ?>">
+          <span class="mk-thumb"><?= yolotask_mkt_cover($p, yolotask_mkt_has_cover($p), '', true) ?></span>
           <div class="tx-meta">
             <strong class="text-break"><?= h((string) $p['title']) ?></strong>
             <span class="text-xs text-faint"><?= $p['parent_product_id'] !== null ? 'Resale listing · ' : '' ?><?= (int) $p['paid_orders'] ?> sold · you earned <?= h(yolotask_money($p['seller_total'])) ?> · affiliates <?= (int) $p['affiliate_percent'] ?>% · fee paid by <?= $p['fee_bearer'] === 'seller' ? 'you' : 'buyer' ?></span>
@@ -102,9 +103,9 @@ ob_start();
               <div class="copy-field" style="margin-top:6px"><input class="input" id="plink-<?= $pid ?>" type="text" readonly value="<?= h(Marketplace::productUrl($pid)) ?>" aria-label="Product link"><button type="button" class="btn btn-secondary btn-sm" data-copy="#plink-<?= $pid ?>">Copy</button></div>
             <?php endif; ?>
           </div>
-          <div class="tx-amount">
+          <div class="tx-amount mk-row-side">
             <?= yolotask_mkt_price($p) ?> <?= yolotask_mkt_status_badge((string) $p['status']) ?>
-            <div class="hero-actions">
+            <div class="hero-actions mk-row-actions">
               <a class="btn btn-ghost btn-sm" href="product-edit.php?id=<?= $pid ?>">Edit</a>
               <?php if (in_array($p['status'], ['live', 'paused'], true)): ?>
                 <form method="post" action="my-products.php"><input type="hidden" name="_csrf" value="<?= h($csrf) ?>"><input type="hidden" name="product_id" value="<?= $pid ?>">
@@ -118,7 +119,7 @@ ob_start();
   <?php endif; ?>
 </section>
 
-<section class="card" id="rights" aria-labelledby="rights-title">
+<section class="card mk-panel" id="rights" aria-labelledby="rights-title">
   <div class="card-header"><h2 id="rights-title">Resell rights</h2><span class="badge badge-info"><?= count($rights) ?></span></div>
   <?php if ($rights === []): ?>
     <p class="text-sm text-faint">When a seller allows it, you can buy a product's resell rights from the <a href="marketplace.php">marketplace</a> and sell it as your own.</p>
@@ -132,7 +133,7 @@ ob_start();
   <?php endif; ?>
 </section>
 
-<section class="card" id="coupons" aria-labelledby="coupon-title">
+<section class="card mk-panel" id="coupons" aria-labelledby="coupon-title">
   <div class="card-header"><h2 id="coupon-title">Coupons</h2><span class="badge badge-info"><?= count($coupons) ?></span></div>
   <?php if ($products === []): ?>
     <p class="text-sm text-faint">Coupons give buyers a discount on your products. Create a product or listing first.</p>

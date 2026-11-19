@@ -134,7 +134,7 @@ ob_start();
 
 <?php if ($tab === 'products'): ?>
   <section class="card">
-    <form method="get" action="marketplace.php" class="copy-field"><input type="hidden" name="tab" value="products">
+    <form method="get" action="marketplace.php" class="copy-field mk-filter"><input type="hidden" name="tab" value="products">
       <select class="input" name="status" aria-label="Status"><?php foreach (['pending_review' => 'Waiting for review', 'live' => 'Live', 'paused' => 'Paused', 'rejected' => 'Rejected', 'all' => 'All'] as $k => $label): ?><option value="<?= h($k) ?>"<?= ($status === '' ? 'pending_review' : $status) === $k ? ' selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?></select>
       <input class="input" name="q" value="<?= h($q) ?>" placeholder="Title or seller email"><button class="btn btn-secondary btn-sm" type="submit">Filter</button></form>
   </section>
@@ -142,10 +142,10 @@ ob_start();
     <section class="card"><div class="empty-state"><p class="text-faint">Nothing here.</p></div></section>
   <?php endif; ?>
   <?php foreach ($products['rows'] as $p): $pid = (int) $p['id']; ?>
-    <section class="card" data-admin-product="<?= $pid ?>">
+    <section class="card mk-panel" data-admin-product="<?= $pid ?>">
       <div class="card-header"><h2 class="text-break"><?= h((string) $p['title']) ?></h2><?= yolotask_mkt_status_badge((string) $p['status']) ?></div>
-      <div class="mkt-product">
-        <div><?= yolotask_mkt_cover($p, yolotask_mkt_has_cover($p)) ?></div>
+      <div class="mkt-product mk-review">
+        <div><?= yolotask_mkt_media($p, yolotask_mkt_has_cover($p)) ?></div>
         <div class="stack">
           <p class="text-sm">Seller <strong><?= h((string) $p['owner_name']) ?></strong> (<?= h((string) $p['owner_email']) ?>, <?= h((string) $p['owner_role']) ?>)<?= !empty($p['owner_frozen']) ? ' <span class="badge badge-danger">Frozen</span>' : '' ?></p>
           <?php if ($p['parent_product_id'] !== null): ?><p class="text-sm"><span class="badge badge-info">Resale listing</span> of “<?= h((string) $p['parent_title']) ?>” (#<?= (int) $p['parent_product_id'] ?>)</p><?php endif; ?>

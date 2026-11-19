@@ -33,7 +33,7 @@ $affSales = array_sum(array_map(static fn (array $l): int => (int) $l['sales'], 
 ob_start();
 ?>
 <?= yolotask_mkt_tabs('sales') ?>
-<div class="grid grid-4 dash-stats money-stats">
+<div class="grid grid-4 dash-stats money-stats mk-stats">
   <div class="stat-card stat-success"><span class="stat-label">Seller earnings paid</span><span class="stat-value"><?= h(yolotask_money($summary['seller']['released'])) ?></span></div>
   <div class="stat-card stat-warning"><span class="stat-label">Seller earnings on hold</span><span class="stat-value"><?= h(yolotask_money($summary['seller']['held'])) ?></span></div>
   <div class="stat-card stat-success"><span class="stat-label">Commission paid</span><span class="stat-value"><?= h(yolotask_money($summary['affiliate']['released'])) ?></span></div>
@@ -42,7 +42,7 @@ ob_start();
 <p class="text-sm text-faint">Earnings are held for <?= $holdHours ?> hour<?= $holdHours === 1 ? '' : 's' ?> after each sale, then added to your wallet<?= $role === 'advertiser' ? ', where you can withdraw them' : '' ?>.</p>
 
 <?php if ($role === 'earner'): ?>
-<section class="card" aria-labelledby="aff-title">
+<section class="card mk-panel" aria-labelledby="aff-title">
   <div class="card-header"><h2 id="aff-title">My affiliate links</h2><span class="badge badge-info"><?= number_format($clicks) ?> clicks · <?= number_format($affSales) ?> sales</span></div>
   <?php if ($links === []): ?>
     <div class="empty-state"><p class="text-faint">No links yet. Open the <a href="marketplace.php">marketplace</a> and tap “Get my link” on a product.</p></div>
@@ -58,14 +58,14 @@ ob_start();
 </section>
 <?php endif; ?>
 
-<section class="card" aria-labelledby="sales-title">
+<section class="card mk-panel" aria-labelledby="sales-title">
   <div class="card-header"><h2 id="sales-title">Recent sales</h2><span class="badge badge-info">Latest 30</span></div>
   <?php if ($sales === []): ?>
     <div class="empty-state"><p class="text-faint">No sales yet.</p></div>
   <?php else: ?>
-    <ul class="tx-list">
+    <ul class="tx-list mk-rows">
       <?php foreach ($sales as $s): $asSeller = (int) $s['seller_user_id'] === $uid; $mine = $asSeller ? (int) $s['seller_kobo'] : (int) $s['commission_kobo']; ?>
-        <li class="tx-row">
+        <li class="tx-row mk-row">
           <div class="tx-meta"><strong class="text-break"><?= h((string) $s['title']) ?></strong>
             <span class="text-xs text-faint"><?= $s['kind'] === 'resell_rights' ? 'Resell rights · ' : '' ?><?= $asSeller ? 'Your sale' : 'Affiliate commission' ?> · <?= h(yolotask_wat((string) $s['paid_at'])) ?> · price <?= h(yolotask_money($s['base_kobo'])) ?><?= $s['coupon_code'] ? ' (coupon ' . h((string) $s['coupon_code']) . ')' : '' ?><?= $asSeller ? ' · fee ' . h(yolotask_money($s['fee_kobo'])) . ' paid by ' . ($s['fee_bearer'] === 'seller' ? 'you' : 'buyer') . ((int) $s['commission_kobo'] > 0 ? ' · affiliate ' . h(yolotask_money($s['commission_kobo'])) : '') : '' ?></span></div>
           <div class="tx-amount"><span>+<?= h(yolotask_money($mine)) ?></span>

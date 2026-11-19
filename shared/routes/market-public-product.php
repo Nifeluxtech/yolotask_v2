@@ -103,18 +103,29 @@ $csrf = Csrf::token();
 $self = 'p.php?id=' . $id;
 ob_start();
 ?>
-<div class="mkt-product" data-product="<?= $id ?>">
-  <section class="card">
-    <?= yolotask_mkt_cover($product, $hasCover) ?>
-    <h1 class="text-break" style="margin-top:1rem"><?= h((string) $product['title']) ?></h1>
-    <p class="text-sm text-faint">By <?= h((string) $product['owner_name']) ?><?= $product['sales_count'] > 0 ? ' · ' . number_format($product['sales_count']) . ' sold' : '' ?></p>
-    <?= yolotask_mkt_price($product) ?>
-    <div class="mkt-desc" style="margin-top:1rem"><?= h((string) $description) ?></div>
+<div class="mkt-product mk-detail" data-product="<?= $id ?>">
+  <section class="card mk-detail-main" aria-labelledby="mk-product-title">
+    <?= yolotask_mkt_media($product, $hasCover, '', 'mk-media-hero') ?>
+    <div class="mk-detail-head">
+      <?= yolotask_mkt_chips_html($product) ?>
+      <h1 class="mk-detail-title text-break" id="mk-product-title"><?= h((string) $product['title']) ?></h1>
+      <?= yolotask_mkt_seller($product) ?>
+      <div class="mk-price-lg"><?= yolotask_mkt_price($product) ?></div>
+    </div>
+    <ul class="mk-trust" aria-label="Why buy here">
+      <li><span class="mk-trust-icon" aria-hidden="true"><?= yolotask_nav_icon('shield') ?></span><span><strong>Secure payment</strong><small>Paid on a trusted gateway</small></span></li>
+      <li><span class="mk-trust-icon" aria-hidden="true"><?= yolotask_nav_icon('rocket') ?></span><span><strong><?= $product['delivery_type'] === 'file' ? 'Instant download' : 'Instant access' ?></strong><small>Right after payment</small></span></li>
+      <li><span class="mk-trust-icon" aria-hidden="true"><?= yolotask_nav_icon('inbox') ?></span><span><strong>Sent by email</strong><small>No account needed</small></span></li>
+    </ul>
+    <div class="mk-about">
+      <h2 class="mk-section-title">About this product</h2>
+      <div class="mkt-desc mk-desc"><?= h((string) $description) ?></div>
+    </div>
   </section>
 
-  <section class="card" aria-labelledby="buy-title">
-    <div class="card-header"><h2 id="buy-title">Buy now</h2><span class="badge badge-info"><?= $product['delivery_type'] === 'file' ? 'Instant download' : 'Instant access' ?></span></div>
-    <dl class="receipt-list" data-quote>
+  <section class="card mk-buy" id="buy" aria-labelledby="buy-title">
+    <div class="card-header"><h2 id="buy-title">Buy now</h2><span class="badge badge-success"><?= $product['delivery_type'] === 'file' ? 'Instant download' : 'Instant access' ?></span></div>
+    <dl class="receipt-list mk-receipt" data-quote>
       <?php if ($quote['list'] < $product['price_kobo']): ?><div><dt>Normal price</dt><dd><s><?= h(yolotask_money($product['price_kobo'])) ?></s></dd></div><?php endif; ?>
       <div><dt><?= $quote['list'] < $product['price_kobo'] ? 'Bonus price' : 'Price' ?></dt><dd data-list><?= h(yolotask_money($quote['list'])) ?></dd></div>
       <?php if ($quote['discount'] > 0): ?><div><dt>Coupon <?= h((string) ($quote['coupon']['code'] ?? '')) ?></dt><dd data-discount>− <?= h(yolotask_money($quote['discount'])) ?></dd></div><?php endif; ?>
@@ -133,11 +144,15 @@ ob_start();
           <p class="input-hint">Passed to <?= h(Gateway::label($gateway)) ?> for the payment page.</p></div>
         <div class="field"><label class="label" for="coupon">Coupon code (optional)</label>
           <div class="copy-field"><input class="input" id="coupon" name="coupon" maxlength="32" autocomplete="off" value="<?= h($form['coupon']) ?>"><button class="btn btn-secondary btn-sm" type="submit" name="action" value="quote" formnovalidate>Apply</button></div></div>
-        <button class="btn btn-primary btn-block" type="submit" name="action" value="pay">Pay <?= h(yolotask_money($quote['amount'])) ?></button>
-        <p class="text-xs text-faint">You pay on <?= h(Gateway::label($gateway)) ?>'s secure page. As soon as the payment is confirmed you get your product on the next page and by email. No account needed.</p>
+        <button class="btn btn-primary btn-block btn-lg mk-pay" type="submit" name="action" value="pay">Pay <?= h(yolotask_money($quote['amount'])) ?></button>
+        <p class="text-xs text-faint mk-secure"><span aria-hidden="true"><?= yolotask_nav_icon('shield') ?></span><span>You pay on <?= h(Gateway::label($gateway)) ?>'s secure page. As soon as the payment is confirmed you get your product on the next page and by email. No account needed.</span></p>
       </form>
     <?php endif; ?>
   </section>
+</div>
+<div class="mk-buybar">
+  <div class="mk-buybar-price"><span class="mk-buybar-label">You pay</span><strong><?= h(yolotask_money($quote['amount'])) ?></strong><?php if ($quote['list'] < $product['price_kobo']): ?><s aria-label="Normal price"><?= h(yolotask_money($product['price_kobo'])) ?></s><?php endif; ?></div>
+  <a class="btn btn-primary mk-buybar-cta" href="#buy"><?= $configured ? 'Buy now' : 'See details' ?></a>
 </div>
 <?php
 $mktBody = (string) ob_get_clean();

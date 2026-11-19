@@ -45,7 +45,7 @@ $waiting = in_array($status, ['created', 'pending'], true);
 $isRights = (string) $order['kind'] === 'resell_rights';
 ob_start();
 ?>
-<div class="wallet-grid" data-order="<?= h($status) ?>">
+<div class="wallet-grid mk-order" data-order="<?= h($status) ?>">
   <section class="card card-glow dash-hero" aria-labelledby="ord-title">
     <p class="text-xs fw-bold text-primary">ORDER <?= h((string) $order['order_sn']) ?> <?= yolotask_money_badge($status) ?></p>
     <h1 id="ord-title" class="text-break"><?= h(match ($status) {
@@ -73,7 +73,7 @@ ob_start();
   </section>
 
   <?php if ($status === 'paid' && !$isRights): ?>
-    <section class="card" aria-labelledby="dl-title" data-delivery>
+    <section class="card mk-delivery-card" aria-labelledby="dl-title" data-delivery>
       <div class="card-header"><h2 id="dl-title">Your product</h2></div>
       <?php if ($source['delivery_type'] === 'file' && $source['delivery_path'] !== null): ?>
         <p><a class="btn btn-primary" href="<?= h(Orders::downloadUrl($order)) ?>">Download <?= h((string) ($source['delivery_name'] ?? 'file')) ?></a></p>
