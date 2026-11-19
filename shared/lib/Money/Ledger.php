@@ -44,6 +44,8 @@ final class Ledger
     public const JOBS_REVENUE = 'system:jobs_revenue';
     /** Migration 0023: job appeal payouts the platform covered (debit-normal expense). */
     public const JOBS_APPEAL_PAYOUTS = 'system:jobs_appeal_payouts';
+    /** Migration 0024: YOLOTASK job pay paid by the platform (debit-normal expense; equals pay of approved attempts on system jobs). */
+    public const PLATFORM_JOB_PAYOUTS = 'system:platform_job_payouts';
 
     /**
      * @param list<array{0:int,1:string,2:int}> $legs [accountId, 'debit'|'credit', amountKobo]
@@ -164,7 +166,7 @@ final class Ledger
         foreach (\YoloTask\Growth\Checkin::reconcile($pdo) as $p) $problems[] = $p; // daily check-in (0014)
         foreach (\YoloTask\Account\Activation::reconcile($pdo) as $p) $problems[] = $p; // account activation + YOLOTASK task payouts (0018)
         foreach (\YoloTask\Marketplace\Marketplace::reconcile($pdo) as $p) $problems[] = $p; // marketplace (0022)
-        foreach (\YoloTask\Jobs\Jobs::reconcile($pdo) as $p) $problems[] = $p; // jobs (0023)
+        foreach (\YoloTask\Jobs\Jobs::reconcile($pdo) as $p) $problems[] = $p; // jobs (0023) and YOLOTASK jobs (0024)
 
         if ($problems !== []) Logger::error('ledger.reconciliation_mismatch', ['count' => count($problems), 'first' => $problems[0]]);
         return $problems;
