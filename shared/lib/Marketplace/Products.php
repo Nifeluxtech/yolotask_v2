@@ -34,6 +34,8 @@ final class Products
     public const FILE_MAX_BYTES = 52428800;   // 50 MB (the host's upload_max_filesize may be lower)
     public const FILE_EXTENSIONS = ['pdf', 'zip', 'epub', 'mobi', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'mp3', 'm4a', 'wav', 'mp4', 'mov', 'jpg', 'jpeg', 'png', 'webp', 'psd', 'ai', 'svg'];
     public const STATUSES = ['pending_review', 'live', 'paused', 'rejected'];
+    /** The closed "YOLOTASK" system account (migration 0019) sells YOLOTASK's own products; it never signs in but its listings are live. */
+    public const SYSTEM_SELLER_EMAIL = 'platform-tasks@system.yolotask.invalid';
 
     public static function find(PDO $pdo, int $id): ?array
     {
@@ -54,7 +56,8 @@ final class Products
     /** Can the public buy it right now (live, owner active and not frozen)? */
     public static function isBuyable(array $p): bool
     {
-        return $p['status'] === 'live' && (string) ($p['owner_status'] ?? 'active') === 'active' && empty($p['owner_frozen']);
+        $ownerOk = (string) ($p['owner_status'] ?? 'active') === 'active' || (string) ($p['owner_email'] ?? '') === self::SYSTEM_SELLER_EMAIL;
+        return $p['status'] === 'live' && $ownerOk && empty($p['owner_frozen']);
     }
 
     /** The product that holds the delivery content (itself, or the original of a resale listing). */
@@ -90,7 +93,7 @@ final class Products
     /** Live products for the marketplace tab (owner active and not frozen), newest first. */
     public static function liveList(PDO $pdo, string $q, int $page, int $perPage = 20): array
     {
-        $where = "p.status = 'live' AND u.status = 'active' AND NOT EXISTS (SELECT 1 FROM mkt_frozen_sellers f WHERE f.user_id = p.owner_user_id)";
+        $where = "p.status = 'live' AND (u.status = 'active' OR u.email = '" . self::SYSTEM_SELLER_EMAIL . "') AND NOT EXISTS (SELECT 1 FROM mkt_frozen_sellers f WHERE f.user_id = p.owner_user_id)";
         $args = [];
         if ($q !== '') { $where .= ' AND p.title LIKE :q'; $args['q'] = '%' . addcslashes($q, '%_\\') . '%'; }
         $res = \YoloTask\Support\Pagination::query($pdo, "SELECT COUNT(*) FROM mkt_products p JOIN users u ON u.id = p.owner_user_id WHERE {$where}",
