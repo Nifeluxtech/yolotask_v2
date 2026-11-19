@@ -111,6 +111,18 @@ function yolotask_asset(string $path): string
     return $path . '?v=' . $stamp;
 }
 
+/**
+ * Page-specific stylesheets (e.g. assets/css/market.css). A route registers one
+ * before rendering; the layouts link every registered sheet after app.css.
+ * @return list<string>
+ */
+function yolotask_page_css(?string $path = null): array
+{
+    static $sheets = [];
+    if ($path !== null && preg_match('#^assets/css/[a-z0-9-]+\.css$#', $path) === 1 && !in_array($path, $sheets, true)) $sheets[] = $path;
+    return $sheets;
+}
+
 /** Inline SVG icons shared by headers and the bottom dock. */
 function yolotask_nav_icon(string $id): string
 {
