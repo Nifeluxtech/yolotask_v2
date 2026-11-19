@@ -1,1 +1,66 @@
-# Configure for the actual cPanel account and review before use.
+name: Checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4 (matches cPanel ea-php84)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, mbstring, pdo_mysql, curl
+          coverage: none
+
+      - name: PHP syntax lint
+        run: |
+          git ls-files -z '*.php' | xargs -0 -n1 -P4 php -l > /tmp/lint.log || { grep -v '^No syntax errors' /tmp/lint.log; exit 1; }
+          echo "All PHP files lint clean."
+
+      - name: Shell syntax check
+        run: git ls-files -z '*.sh' | xargs -0 -n1 bash -n
+
+      - name: Smoke test - cPanel release permissions
+        run: bash tests/smoke/cpanel-release-permissions.sh
+
+      - name: Smoke test - premium UI assets in sync
+        run: bash tests/smoke/premium-ui.sh
+
+      - name: Unit test - crypto without ext-sodium
+        run: python3 tests/Unit/Crypto/crypto_nosodium_test.py
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
