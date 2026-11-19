@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — YOLOTASK jobs (migration 0024_system_jobs.sql)
+
+- **YOLOTASK jobs** ("system jobs", `jobs.is_system = 1`): jobs posted by YOLOTASK itself, owned by the closed system account (`platform_tasks.owner_user_id`), like YOLOTASK tasks. Full description: `docs/jobs.md` → YOLOTASK jobs.
+- **Admin → Tasks → Jobs → YOLOTASK jobs**: *New YOLOTASK job* form (same fields as the advertiser form; pay from ₦1, `jobs.min_pay_kobo` does not apply), the list of YOLOTASK jobs, the submissions waiting, approve / send back / reject on the attempt page, and Pause / Resume / Close on the job page.
+- **Reviewers**: new **YOLOTASK jobs** queue (`job-reviews.php`, `job-review.php`): claim, then approve, send one step back or reject with the advertiser's rules; logged in My decisions. Reviewers can open the proofs of YOLOTASK job attempts.
+- **Earners**: YOLOTASK jobs appear in the normal Jobs list with a YOLOTASK badge; every earner rule (activation gate, one attempt, time limit, appeals) applies. Messages say "YOLOTASK" instead of "the advertiser".
+- **Money**: no wallet and no escrow; publishing and closing move nothing (`slots` is a cap). The earner gets the full pay, paid by the platform on approval / auto-approval / appeal overturn: Dr `system:platform_job_payouts` (new expense account) / Cr earner or `system:reward_hold` (keys `job-approve:<attempt>`, `job-appeal-approve:<appeal>`). `Jobs::reconcile` skips system jobs in the escrow checks and checks platform payouts = pay of approved YOLOTASK job attempts.
+- **One-off script** `scripts/create-betfugu-jobs.php [--dry-run]`: creates the two BetFugu YOLOTASK jobs (₦50 and ₦150), idempotent on title, runnable from a cPanel cron line.
+- Migration notes: additive — `jobs.is_system` (default 0) + index, CHECK `chk_jobs_system` (binds only system rows), new ENUM values on `job_attempts.decision_source`, `review_claims.item_type`, `reviewer_actions.action` / `item_type`, ledger account `system:platform_job_payouts`; repeats the 0019 system account insert idempotently. The previous release keeps working.
+- Tests: `tests/smoke/system-jobs.php` (no database) and `tests/Integration/Jobs/system_jobs_e2e.php` (MariaDB + four portals); `jobs_e2e.php` still passes.
+- Deploy: run `php scripts/migrate.php` (applies `0024_system_jobs.sql`) before switching the release.
+
 ## Unreleased — Maintenance tester link (no migration)
 
 - **Admin → Maintenance → Tester link** (`maintenance.php#tester`): *Create tester link* generates a secret link `https://yolotask.com.ng/?tester=<64-hex token>` (shown once; `?tester=` works on every portal) valid for 7 days; *Revoke tester link* disables it; a new link replaces the old one. Only the token's sha256 and expiry are stored (settings `maintenance.preview_hash`, `maintenance.preview_expires_at`; no migration). Audited (`admin.maintenance_tester_created` / `_revoked`).
