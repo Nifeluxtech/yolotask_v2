@@ -7,8 +7,17 @@ roles=(main earner advertiser reviewer admin)
 
 # Committed portal assets must match a fresh build from shared/assets.
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+mkt_roles=(main earner advertiser admin)
 for role in "${roles[@]}"; do cp "apps/${role}/public/assets/css/app.css" "$tmp/${role}.css"; cp "apps/${role}/public/assets/js/ui.js" "$tmp/${role}.js"; done
+for role in "${mkt_roles[@]}"; do cp "apps/${role}/public/assets/css/market.css" "$tmp/${role}-market.css" 2>/dev/null || : > "$tmp/${role}-market.css"; done
 bash scripts/build-assets.sh >/dev/null
+for role in "${mkt_roles[@]}"; do
+  cmp -s "$tmp/${role}-market.css" "apps/${role}/public/assets/css/market.css" || { echo "FAIL: $role market.css is stale; run scripts/build-assets.sh" >&2; exit 1; }
+done
+for selector in '.mk-grid' '.mk-card' '.mk-media' '.mk-search' '.mk-detail' '.mk-buybar' 'prefers-reduced-motion'; do
+  grep -Fq "$selector" apps/main/public/assets/css/market.css || { echo "FAIL: missing marketplace selector $selector" >&2; exit 1; }
+done
+grep -Fq "yolotask_page_css('assets/css/market.css')" shared/routes/market-helpers.php || { echo "FAIL: marketplace pages do not load market.css" >&2; exit 1; }
 for role in "${roles[@]}"; do
   cmp -s "$tmp/${role}.css" "apps/${role}/public/assets/css/app.css" || { echo "FAIL: $role app.css is stale; run scripts/build-assets.sh" >&2; exit 1; }
   cmp -s "$tmp/${role}.js" "apps/${role}/public/assets/js/ui.js" || { echo "FAIL: $role ui.js is stale; run scripts/build-assets.sh" >&2; exit 1; }
@@ -34,6 +43,7 @@ if grep -rIl -i -E 'staging|coming soon|lorem ipsum|design preview|in this build
 fi
 
 echo "PASS: portal assets are built from shared/assets and in sync"
+echo "PASS: marketplace stylesheet is built, in sync and loaded by the marketplace pages"
 echo "PASS: header, bottom nav, theme toggle, toasts, cards and page components exist"
 echo "PASS: auth pages, dashboards and error pages use the shared layouts"
 echo "PASS: no internal build language in user-facing views"
