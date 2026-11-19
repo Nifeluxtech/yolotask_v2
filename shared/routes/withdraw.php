@@ -43,8 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if ($amount === null) throw new RuntimeException('Enter an amount in naira, for example 2000.');
         if ($action === 'confirm' && $quoted !== null) {
-            Withdrawals::request($pdo, $user, $amount, is_string($_POST['idem'] ?? null) ? $_POST['idem'] : '', $quoted);
-            yolotask_flash('Withdrawal requested. We will review it and send it to your bank.');
+            $wid = Withdrawals::request($pdo, $user, $amount, is_string($_POST['idem'] ?? null) ? $_POST['idem'] : '', $quoted);
+            $sent = Withdrawals::autoSend($pdo, $wid);
+            yolotask_flash($sent === true ? 'Withdrawal sent to your bank. It usually arrives within minutes.' : 'Withdrawal requested. We will review it and send it to your bank.');
             yolotask_redirect('wallet.php');
         }
         // Preview (also any submit without a quoted fee): nothing is created.

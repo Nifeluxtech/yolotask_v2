@@ -49,12 +49,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'gateway
         foreach (['top-ups' => $payin, 'withdrawals' => $payout] as $what => $g) {
             if (!Gateway::isConfigured($g)) throw new RuntimeException(Gateway::label($g) . ' is not connected yet, so it cannot handle ' . $what . '. Add its key to the private config first.');
         }
+        $auto = ($_POST['auto_payout'] ?? '') === '1' ? '1' : '0';
+        if ($auto === '1' && !KorapayClient::isConfigured()) throw new RuntimeException('Korapay is not connected yet, so straight withdrawals cannot be switched on. Add its key to the private config first.');
         $oldIn = Gateway::payin($pdo);
         $oldOut = Gateway::payout($pdo);
-        Settings::save($pdo, (int) $admin['id'], ['payments.gateway_payin' => $payin, 'payments.gateway_payout' => $payout]);
+        $oldAuto = Settings::get($pdo, 'withdrawals.auto_payout', '0') === '1' ? '1' : '0';
+        Settings::save($pdo, (int) $admin['id'], ['payments.gateway_payin' => $payin, 'payments.gateway_payout' => $payout, 'withdrawals.auto_payout' => $auto]);
         if ($oldIn !== $payin) Audit::record($pdo, (int) $admin['id'], 'admin.payin_gateway_changed', 'settings', null);
         if ($oldOut !== $payout) Audit::record($pdo, (int) $admin['id'], 'admin.payout_gateway_changed', 'settings', null);
-        yolotask_flash('Gateways saved: top-ups and activation through ' . Gateway::label($payin) . ', withdrawals through ' . Gateway::label($payout) . '. Payments already started finish on their own gateway.');
+        if ($oldAuto !== $auto) Audit::record($pdo, (int) $admin['id'], $auto === '1' ? 'admin.auto_payout_enabled' : 'admin.auto_payout_disabled', 'settings', null);
+        yolotask_flash('Gateways saved: top-ups and activation through ' . Gateway::label($payin) . ', withdrawals through ' . Gateway::label($payout) . '. Straight withdrawals ' . ($auto === '1' ? 'ON: new requests go straight to Korapay.' : 'OFF: you approve each withdrawal.') . ' Payments already started finish on their own gateway.');
     } catch (RuntimeException $e) {
         yolotask_flash($e->getMessage(), 'error');
     } catch (Throwable $e) {
@@ -110,6 +114,7 @@ $korapayConfigured = KorapayClient::isConfigured();
 $korapayTest = KorapayClient::isTestMode();
 $payinGateway = Gateway::payin($pdo);
 $payoutGateway = Gateway::payout($pdo);
+$autoPayout = ($all['withdrawals.auto_payout'] ?? '0') === '1';
 $gwOpt = static fn (string $value, string $current, bool $ready): string => '<option value="' . h($value) . '"' . ($value === $current ? ' selected' : '') . ($ready || $value === $current ? '' : ' disabled') . '>' . h(Gateway::label($value)) . ($ready ? '' : ' (not connected)') . '</option>';
 // Readiness: bank numbers are sealed with OpenSSL AES-256-GCM (enc2:). ext-sodium
 // is optional; it is only needed to read legacy enc1: values.
@@ -122,7 +127,7 @@ ob_start();
 <?= yolotask_admin_money_tabs($pdo, 'settings') ?>
 <div class="wallet-grid">
   <section class="card" aria-labelledby="gw-title" data-section="gateways">
-    <div class="card-header"><h2 id="gw-title">Payment gateway</h2><span class="badge badge-info">In: <?= h(Gateway::label($payinGateway)) ?> · Out: <?= h(Gateway::label($payoutGateway)) ?></span></div>
+    <div class="card-header"><h2 id="gw-title">Payment gateway</h2><span class="badge badge-info">In: <?= h(Gateway::label($payinGateway)) ?> · Out: <?= h($autoPayout && $korapayConfigured ? 'Korapay (straight)' : Gateway::label($payoutGateway)) ?></span></div>
     <form method="post" action="payment-settings.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
       <input type="hidden" name="form" value="gateway">
@@ -131,6 +136,9 @@ ob_start();
       <div class="field"><label class="label" for="gateway_payout">Withdrawals (payouts)</label>
         <select class="input" id="gateway_payout" name="gateway_payout"><?= $gwOpt('afrstar', $payoutGateway, $configured) ?><?= $gwOpt('korapay', $payoutGateway, $korapayConfigured) ?></select>
         <p class="input-hint">Applies to new top-ups and to withdrawals you approve from now on. Payments already started keep their gateway and are still confirmed by it.</p></div>
+      <div class="field" data-field="auto-payout">
+        <label class="label" for="auto_payout"><input type="checkbox" id="auto_payout" name="auto_payout" value="1"<?= $autoPayout ? ' checked' : '' ?><?= $korapayConfigured || $autoPayout ? '' : ' disabled' ?>> Straight withdrawals (send to Korapay instantly)</label>
+        <p class="input-hint">ON: every new withdrawal request is sent to Korapay the moment it is made, with no admin review (limits, fees, cooldowns and activation still apply). If Korapay refuses one, it comes back to your review list. OFF: you approve each withdrawal.<?= $korapayConfigured ? '' : ' Connect Korapay first.' ?></p></div>
       <button class="btn btn-primary" type="submit">Save gateways</button>
     </form>
   </section>
