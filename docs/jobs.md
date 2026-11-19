@@ -189,6 +189,70 @@ rows, new ENUM values on `review_claims` / `reviewer_actions`, and
 `reviewer_actions.submission_id` becomes nullable with a new nullable
 `job_attempt_id`. The previous release keeps working against it.
 
+## YOLOTASK jobs (migration 0024)
+
+Jobs YOLOTASK posts itself ("system jobs", `jobs.is_system = 1`), the jobs twin
+of YOLOTASK tasks (migration 0019).
+
+- **Owner**: the closed system account "YOLOTASK"
+  (`platform_tasks.owner_user_id`, `platform-tasks@system.yolotask.invalid`).
+  Earners see them in the normal Jobs list with a **YOLOTASK** badge and
+  "BY YOLOTASK" on the job page; every earner rule applies as usual (verified
+  email, `activation.required`, `jobs.enabled`, one attempt per job,
+  `jobs.max_active_per_earner`, time limit, send-back rounds, appeals).
+- **Posting**: Admin → Tasks → Jobs → **YOLOTASK jobs** → *New YOLOTASK job*
+  (`jobs.php?tab=new`; same fields as the advertiser form), or a script
+  (`scripts/create-betfugu-jobs.php`). Pay from ₦1 (`jobs.min_pay_kobo` does
+  not apply) up to ₦1,000,000; steps 2 to `jobs.max_steps`; slots 1–10,000.
+- **No wallet, no escrow**: publishing moves no money. `funded_kobo`,
+  `spent_kobo`, `refunded_kobo` and `fee_kobo` stay 0 (DB CHECK
+  `chk_jobs_system`); `slots` is only a cap. Closing (or removing) refunds
+  nothing: the cap shrinks to approved + active work, and each active attempt
+  that later ends without approval shrinks it again.
+- **Pay**: the earner gets the full pay (`earner_percent` 100, fee 0), paid by
+  the platform when approved:
+
+  | Event | Ledger | Key |
+  |---|---|---|
+  | Approve (admin, reviewer, auto) | Dr `system:platform_job_payouts` / Cr earner available — or `system:reward_hold` when `tasks.reward_hold_hours` > 0 | `job-approve:<attempt>` |
+  | Held reward release (hourly) | Dr `system:reward_hold` / Cr earner available | `job-release:<attempt>` |
+  | Appeal overturn | as approve (no funding step; with no free slot the cap grows by one) | `job-appeal-approve:<appeal>` |
+
+- **Review**: there is no advertiser, so submissions go straight to staff
+  (like proofs on YOLOTASK tasks). Reviewers: **YOLOTASK jobs** tab
+  (`job-reviews.php`, `job-review.php?id=`): claim (30 minutes,
+  `review_claims.item_type = 'job_attempt'`), then approve, send one step back
+  or reject, with the advertiser's rules; logged in `reviewer_actions`
+  (`job_approved` / `job_sent_back` / `job_rejected`, item type `job_attempt`)
+  and shown in My decisions. Reviewers can open the proofs of YOLOTASK job
+  attempts. Admins: the YOLOTASK jobs tab lists waiting submissions; the
+  attempt page (`jobs.php?attempt=`) has approve / send back / reject (no
+  claim; refused for advertisers' jobs). Undecided submissions are
+  auto-approved after the review window by the usual cron. The reviewer who
+  rejected cannot decide the appeal. Admin job page: Pause / Resume / Close
+  (no reason needed).
+- **Reconciliation** (`Jobs\Jobs::reconcile`): the per-job and total escrow
+  checks skip system jobs; system jobs and their attempts must hold no money
+  and pay the earner in full; `system:platform_job_payouts` = Σ pay of approved
+  attempts on system jobs.
+- **Notifications**: earners as for any job, with "YOLOTASK" instead of "the
+  advertiser"; nothing is sent to the closed system account.
+- **Deploy**: `php scripts/migrate.php` applies `0024_system_jobs.sql`
+  (additive: one defaulted column + index, a CHECK binding only system rows,
+  new ENUM values, one ledger account; the previous release keeps working).
+
+### One-off: BetFugu jobs
+
+`scripts/create-betfugu-jobs.php [--dry-run] [--config-dir=...]` creates two
+YOLOTASK jobs (online, link `https://s.betfugu01.com/hhdcwxfv6tstuba`, 10,000
+slots, 24 hours to finish, 48-hour review): "Sign up on BetFugu and use the
+free bet" (₦50, 4 steps) and "Sign up on BetFugu, use the free bet and
+deposit" (₦150, 5 steps). It prints the created job ids and skips a job when a
+YOLOTASK job with the same title exists, so it is safe to run again. cPanel has
+no shell: add it as a one-time cron line, check the log, then delete the line:
+
+    /opt/cpanel/ea-php84/root/usr/bin/php $HOME/yolotask-v2-live/current/scripts/create-betfugu-jobs.php --config-dir=$HOME/yolotask-v2-live/config-private >> $HOME/yolotask-v2-live/runtime/logs/betfugu-jobs.log 2>&1
+
 ## Tests
 
 - `php tests/smoke/jobs.php` — no database: lint, migration shape, split and
@@ -198,3 +262,7 @@ rows, new ENUM values on `review_claims` / `reviewer_actions`, and
   reject → appeal → reviewer overturn; expiry and auto-approve through the real
   cron scripts; admin pause / settings / remove; close refund; ledger
   reconciliation after every step.
+- `php tests/smoke/system-jobs.php` and `tests/Integration/Jobs/system_jobs_e2e.php`
+  — YOLOTASK jobs (migration 0024): publish with no money moved, platform-paid
+  approve, reward hold, reviewer reject → appeal → overturn, auto-approve,
+  pause / close, admin and reviewer queues, the BetFugu script, reconciliation.
