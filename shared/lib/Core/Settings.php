@@ -68,6 +68,7 @@ final class Settings
         // Payment gateways (rows seeded by migration 0021): 'afrstar' or 'korapay'.
         'payments.gateway_payin' => 'afrstar',   // new top-ups and activation fees
         'payments.gateway_payout' => 'afrstar',  // new withdrawal payouts
+        'withdrawals.auto_payout' => '0',        // 1 = straight withdrawals: a new request is sent to Korapay at once, no admin review (needs Korapay connected); 0 = admin approves each (default)
         // Marketplace (rows seeded by migration 0022).
         'marketplace.fee_bps' => '500',          // platform fee per sale, 5% (0-2000 bps); the product decides whether the buyer or the seller bears it
         'marketplace.hold_hours' => '72',        // seller share and affiliate commission are held this long before they reach the wallet (0-720)
