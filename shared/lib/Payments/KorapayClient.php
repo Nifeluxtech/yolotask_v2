@@ -258,6 +258,28 @@ final class KorapayClient
         return null;
     }
 
+    /**
+     * Account holder name for a Nigerian bank account, via Korapay's
+     * POST /merchant/api/v1/misc/banks/resolve (public key; falls back to the
+     * secret key). Takes an AfrStar bank code like everything else here.
+     * Null when the lookup is unavailable or the account was not found.
+     */
+    public static function resolveAccountName(string $afrstarBankCode, string $accountNumber): ?string
+    {
+        $c = self::config();
+        $key = $c['public_key'] !== '' ? $c['public_key'] : $c['secret_key'];
+        if ($key === '' || !function_exists('curl_init')) return null;
+        $code = self::bankCode($afrstarBankCode);
+        if ($code === null) return null;
+        try {
+            $data = self::request('POST', '/merchant/api/v1/misc/banks/resolve', ['bank' => $code, 'account' => $accountNumber, 'currency' => 'NGN'], 10, $key);
+        } catch (KorapayException $e) {
+            return null;
+        }
+        $name = trim((string) preg_replace('/\s+/', ' ', (string) ($data['account_name'] ?? '')));
+        return $name !== '' ? mb_substr($name, 0, 100) : null;
+    }
+
     /** Why the last banks() call returned no list ('' when it did not fail). */
     public static string $banksError = '';
 

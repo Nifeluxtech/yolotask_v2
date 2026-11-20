@@ -38,6 +38,22 @@ final class BankAccounts
         return $until > time() ? gmdate('Y-m-d H:i:s', $until) : null;
     }
 
+    /**
+     * Ask the bank who owns the account: Korapay first, then Paystack when
+     * configured. Returns [account name, 'korapay'|'paystack'] or null.
+     */
+    public static function lookupName(string $bankCode, string $accountNumber): ?array
+    {
+        if (!BankCodes::isValid($bankCode) || !preg_match('/^\d{10}$/', $accountNumber)) return null;
+        $name = KorapayClient::resolveAccountName($bankCode, $accountNumber);
+        if ($name !== null) return [$name, 'korapay'];
+        if (PaystackClient::isConfigured()) {
+            $name = PaystackClient::resolveAccountName($accountNumber, $bankCode);
+            if ($name !== null) return [mb_substr($name, 0, 100), 'paystack'];
+        }
+        return null;
+    }
+
     /** Save or replace the bank account. Always needs the account password; emails a security alert. */
     public static function save(PDO $pdo, array $user, string $bankCode, string $accountNumber, string $accountName, string $password): void
     {
@@ -49,8 +65,6 @@ final class BankAccounts
         $accountName = trim((string) preg_replace('/\s+/', ' ', $accountName));
         if (!BankCodes::isValid($bankCode)) throw new RuntimeException('Choose your bank from the list.');
         if (!preg_match('/^\d{10}$/', $accountNumber)) throw new RuntimeException('Enter your 10-digit NUBAN account number.');
-        $len = mb_strlen($accountName);
-        if ($len < 3 || $len > 100 || !preg_match("/^[\\p{L} .,'&-]+$/u", $accountName)) throw new RuntimeException('Enter the account name exactly as your bank shows it.');
         if (Throttle::tooMany($pdo, 'bank_account', (string) $userId, 5, 3600)) throw new RuntimeException('Too many changes. Please try again in an hour.');
         Throttle::hit($pdo, 'bank_account', (string) $userId);
 
@@ -60,9 +74,12 @@ final class BankAccounts
         if (!is_array($row) || !password_verify($password, (string) $row['password_hash'])) throw new RuntimeException('Your password is incorrect.');
 
         $verifiedVia = 'none';
-        if (PaystackClient::isConfigured()) {
-            $resolved = PaystackClient::resolveAccountName($accountNumber, $bankCode);
-            if ($resolved !== null) { $accountName = mb_substr($resolved, 0, 100); $verifiedVia = 'paystack'; }
+        $found = self::lookupName($bankCode, $accountNumber);
+        if ($found !== null) {
+            [$accountName, $verifiedVia] = $found;
+        } else {
+            $len = mb_strlen($accountName);
+            if ($len < 3 || $len > 100 || !preg_match("/^[\\p{L} .,'&-]+$/u", $accountName)) throw new RuntimeException('Enter the account name exactly as your bank shows it.');
         }
 
         $existing = self::get($pdo, $userId);
