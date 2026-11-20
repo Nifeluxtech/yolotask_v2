@@ -24,6 +24,8 @@ final class Database
         if ($host==='' || $db==='' || $user==='') throw new RuntimeException('Database configuration is incomplete.');
         $charset=(string)($cfg['charset']??'utf8mb4');
         self::$connection = new PDO("mysql:host={$host};dbname={$db};charset={$charset}",$user,$pass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+        // The server's MySQL clock is EAT (SYSTEM); the app stores UTC, so pin the session to UTC.
+        self::$connection->exec("SET time_zone = '+00:00'");
         return self::$connection;
     }
 }
