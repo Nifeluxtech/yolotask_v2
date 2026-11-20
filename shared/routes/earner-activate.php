@@ -142,7 +142,6 @@ ob_start();
         <li>The fee is non-refundable, is not added to your wallet and cannot be withdrawn.</li>
       </ul>
       <p class="text-sm text-faint">You will pay <?= h(yolotask_money($fee)) ?> on <?= h($gatewayLabel) ?>'s secure page<?= $payinGateway === Gateway::KORAPAY ? ' by bank transfer or card' : ' by bank transfer' ?>. Your account is activated automatically as soon as <?= h($gatewayLabel) ?> confirms the payment.</p>
-      <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Payments from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>
       <?php if ($waiting): ?>
         <p class="text-sm">You already started a payment. Use <strong>Open payment page</strong> above to finish it; a new one is not needed.</p>
       <?php elseif ($status !== 'review'): ?>

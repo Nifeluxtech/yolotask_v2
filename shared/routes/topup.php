@@ -74,7 +74,6 @@ ob_start();
     <p class="text-sm text-faint">You will pay on Korapay's secure page by bank transfer or card. Your wallet is credited automatically as soon as Korapay confirms the payment. No fees.</p>
     <?php else: ?>
     <p class="text-sm text-faint">You will pay on AfrStar's secure page by bank transfer. Your wallet is credited automatically as soon as AfrStar confirms the payment. No fees.</p>
-    <p class="text-sm deposit-notice" role="note"><span class="badge badge-warning">Notice</span> Deposits from <strong>OPay</strong> and <strong>PalmPay</strong> are currently unavailable. Please pay from any other bank.</p>
     <?php endif; ?>
     <form method="post" action="topup.php" class="stack">
       <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
